@@ -258,12 +258,12 @@ function ClassicHome({ openPrestige }: { openPrestige: () => void }) {
               </Button>
             </div>
             <div className="mt-10 grid max-w-2xl grid-cols-2 gap-4 md:grid-cols-4">
-              {[
+              {([
                 ['Flights', Plane],
                 ['Hotels', Building2],
                 ['Experiences', Compass],
                 ['Transfers', CalendarDays],
-              ].map(([label, Icon]) => {
+              ] as const).map(([label, Icon]) => {
                 const ItemIcon = Icon as React.ComponentType<{ className?: string }>;
                 return (
                   <div key={label} className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
@@ -327,12 +327,12 @@ function ClassicHome({ openPrestige }: { openPrestige: () => void }) {
               text="The main site prioritizes leisure travelers, then introduces premium pathways without diluting the core offer."
             />
             <div className="mt-8 space-y-5">
-              {[
+              {([
                 ['Trusted travel advisors', ShieldCheck],
                 ['Tailored travel planning', Star],
                 ['Friendly, accessible journey', Palmtree],
                 ['Clear route into Prestige', Crown],
-              ].map(([label, Icon]) => {
+              ] as const).map(([label, Icon]) => {
                 const ItemIcon = Icon as React.ComponentType<{ className?: string }>;
                 return (
                   <div key={label} className="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
@@ -761,7 +761,7 @@ export default function DestinosPeloMundoUIConcept() {
                 <Phone className="h-4 w-4" /> +258 84 000 0000
               </div>
               <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4" /> contact@dpmundo.com
+                <Mail className="h-4 w-4" /> contact@destinospelomundo.co.mz
               </div>
             </div>
           </div>
