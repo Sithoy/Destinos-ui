@@ -46,7 +46,7 @@ export function Nav({
   const isPrestige = page !== 'home';
 
   return (
-    <div className="sticky top-0 z-50 border-b border-white/10 bg-black/60 backdrop-blur-xl">
+    <div className="sticky top-0 z-50 border-b border-white/10 bg-[#07111d]/95 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3 py-3 sm:gap-4 sm:px-4 md:px-6">
         <button onClick={goHome} className="min-w-0 flex-1 text-left text-white transition hover:opacity-90 sm:flex-none">
           <BrandLockup
@@ -56,7 +56,7 @@ export function Nav({
             gapClass={isPrestige ? 'gap-3 sm:gap-5 md:gap-8' : 'gap-3 sm:gap-5 md:gap-7'}
             logoSize={isPrestige ? 'h-9 sm:h-10 md:h-12' : 'h-9 sm:h-11 md:h-16'}
             logoArtScale={isPrestige ? 'scale-[1.35] sm:scale-[1.45]' : 'scale-[1.45] sm:scale-[1.55] md:scale-[1.65]'}
-            taglineClassName="hidden sm:block"
+            taglineClassName="hidden md:block"
           />
         </button>
 

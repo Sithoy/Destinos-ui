@@ -26,7 +26,7 @@ export function ClassicHome({
 
   return (
     <div className="bg-white text-slate-900">
-      <section className="relative min-h-[calc(100svh-72px)] overflow-hidden">
+      <section className="relative min-h-[calc(100svh-84px)] overflow-hidden bg-[#06101d] md:min-h-[700px] xl:min-h-[720px]">
         <SmartImage
           src={heroImage}
           alt={t('home.hero.imageAlt')}
@@ -38,8 +38,8 @@ export function ClassicHome({
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_26%)]" />
         <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#03101f]/35 to-transparent" />
 
-        <div className="relative mx-auto grid min-h-[calc(100svh-72px)] max-w-7xl items-center gap-10 px-4 py-16 sm:py-20 md:px-6 md:py-24 lg:grid-cols-[1.25fr_0.75fr]">
-          <div className="max-w-4xl">
+        <div className="relative mx-auto grid min-h-[calc(100svh-84px)] max-w-7xl items-start gap-10 px-4 pb-8 pt-10 sm:pb-10 sm:pt-12 md:min-h-[700px] md:px-6 md:pb-12 md:pt-14 xl:min-h-[720px] xl:grid-cols-[1.2fr_0.8fr] xl:items-center xl:py-20">
+          <div className="min-w-0 max-w-4xl">
             <div className="mb-8 sm:mb-10">
               <PrestigeIdentity
                 src={classicLogo}
@@ -49,13 +49,13 @@ export function ClassicHome({
                 theme="classic"
               />
             </div>
-            <h1 className="max-w-3xl text-4xl font-semibold leading-[1.02] tracking-tight text-white sm:text-5xl md:text-7xl">
+            <h1 className="max-w-[21rem] text-3xl font-semibold leading-[1.04] tracking-tight text-white sm:max-w-3xl sm:text-5xl md:text-6xl 2xl:text-7xl">
               {t('home.hero.title')}
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-white/82 sm:text-lg md:mt-6 md:text-xl md:leading-8">
+            <p className="mt-5 max-w-[21rem] text-base leading-7 text-white/82 sm:max-w-2xl sm:text-lg md:mt-6 md:text-xl md:leading-8">
               {t('home.hero.text')}
             </p>
-            <div className="mt-8 grid gap-3 sm:mt-9 sm:flex sm:flex-wrap">
+            <div className="mt-8 grid max-w-[22rem] gap-3 sm:mt-9 sm:flex sm:max-w-none sm:flex-wrap">
               <Button
                 size="lg"
                 className="w-full rounded-full bg-[#f97316] px-7 text-white hover:bg-[#ea580c] sm:w-auto"
@@ -74,7 +74,7 @@ export function ClassicHome({
             </div>
           </div>
 
-          <div className="hidden lg:flex lg:justify-end">
+          <div className="hidden xl:flex xl:justify-end">
             <div className="w-full max-w-[380px] rounded-[30px] border border-white/12 bg-white/10 p-6 text-white shadow-2xl backdrop-blur-md">
               <div className="text-xs uppercase tracking-[0.35em] text-white/60">{t('home.hero.cardEyebrow')}</div>
               <div className="mt-3 text-2xl font-semibold leading-tight">{t('home.hero.cardTitle')}</div>

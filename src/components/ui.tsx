@@ -140,22 +140,29 @@ export function BrandLockup({
   const { t } = useTranslation();
   const alignClass = align === 'center' ? 'items-center text-center' : 'items-start text-left';
   const wordColor = theme === 'dark' ? 'text-slate-900' : theme === 'gold' ? 'text-[#e8ce76]' : 'text-white';
+  const scriptColor = theme === 'gold' ? 'text-[#f4d87a]' : wordColor;
   const subColor = theme === 'dark' ? 'text-slate-600' : theme === 'gold' ? 'text-white/70' : 'text-white/72';
+  const lineColor = theme === 'dark' ? 'bg-slate-400/45' : theme === 'gold' ? 'bg-[#d4af37]/55' : 'bg-white/35';
   const resolvedGap = gapClass ?? (compact ? 'gap-4 sm:gap-5 md:gap-7' : 'gap-5 sm:gap-6 md:gap-10');
   const resolvedLogoSize = logoSize ?? (compact ? 'h-10 sm:h-12 md:h-16' : 'h-14 sm:h-16 md:h-24');
   const resolvedLogoScale = logoArtScale ?? (compact ? 'scale-[1.55] md:scale-[1.65]' : 'scale-[1.65] md:scale-[1.8]');
+  const wordmarkWidth = compact ? 'w-[clamp(8rem,18vw,13rem)] max-w-[calc(100vw-10rem)]' : 'w-[clamp(10rem,26vw,18rem)] max-w-full';
 
   return (
     <div className={`flex ${resolvedGap} ${alignClass}`}>
       <LogoMark src={src} alt={alt} size={resolvedLogoSize} className="shrink-0" artScale={resolvedLogoScale} />
-      <div className="min-w-0">
-        <div className={`whitespace-nowrap font-semibold uppercase tracking-[0.22em] sm:tracking-[0.28em] ${compact ? 'text-[9px] sm:text-[10px] md:text-xs' : 'text-[10px] sm:text-xs md:text-sm'} ${wordColor}`}>
-          Destinos
+      <div className={`min-w-0 ${wordmarkWidth}`}>
+        <div className={`whitespace-nowrap font-serif font-semibold uppercase leading-none tracking-[0.2em] sm:tracking-[0.24em] md:tracking-[0.28em] ${compact ? 'text-[10px] sm:text-xs md:text-sm' : 'text-xs sm:text-sm md:text-lg'} ${wordColor}`}>
+          DESTINOS
         </div>
-        <div className={`whitespace-nowrap ${compact ? 'mt-0.5 text-base sm:text-xl md:text-2xl' : 'mt-1 text-xl sm:text-2xl md:text-4xl'} font-semibold leading-none ${wordColor}`}>
-          pelo mundo
+        <div className={`mt-0.5 flex w-full items-center gap-1.5 ${compact ? 'text-base sm:text-xl md:text-2xl' : 'text-xl sm:text-2xl md:text-4xl'} ${scriptColor}`}>
+          <span className={`h-px min-w-4 flex-1 ${lineColor}`} />
+          <span className="whitespace-nowrap font-serif font-semibold italic leading-none">
+            pelo mundo
+          </span>
+          <span className={`h-px min-w-4 flex-1 ${lineColor}`} />
         </div>
-        <div className={`${taglineClassName} ${compact ? 'mt-1 text-[9px] sm:text-[10px] md:text-xs' : 'mt-2 text-[10px] sm:text-xs md:text-sm'} uppercase tracking-[0.2em] sm:tracking-[0.28em] ${subColor}`}>
+        <div className={`${taglineClassName} overflow-hidden whitespace-nowrap text-center leading-none ${compact ? 'mt-1 text-[8px] sm:text-[9px] md:text-[10px]' : 'mt-2 text-[10px] sm:text-xs md:text-sm'} uppercase tracking-[0.16em] sm:tracking-[0.2em] md:tracking-[0.26em] ${subColor}`}>
           {theme === 'gold' ? t('brand.prestigeTravel') : t('brand.turismo')}
         </div>
       </div>
@@ -182,10 +189,11 @@ export function PrestigeIdentity({
   align?: 'left' | 'center';
   className?: string;
 }) {
-  const logoSize = compact ? 'h-12 sm:h-16 md:h-20 lg:h-24' : 'h-16 sm:h-24 md:h-32 lg:h-44';
-  const titleSize = compact ? 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl' : 'text-[2rem] sm:text-5xl md:text-6xl lg:text-7xl';
-  const scriptSize = compact ? 'text-lg sm:text-xl md:text-2xl lg:text-3xl' : 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl';
-  const ribbonSize = compact ? 'text-base sm:text-lg md:text-xl lg:text-2xl' : 'text-base sm:text-xl md:text-2xl lg:text-3xl';
+  const identityWidth = compact ? 'w-[min(100%,clamp(15rem,52vw,34rem))]' : 'w-[min(100%,clamp(18rem,62vw,48rem))]';
+  const titleSize = compact ? 'text-[clamp(1.45rem,4.8vw,2.85rem)]' : 'text-[clamp(1.75rem,6vw,4.2rem)]';
+  const scriptSize = compact ? 'text-[clamp(1.05rem,3vw,1.875rem)]' : 'text-[clamp(1.35rem,4vw,3rem)]';
+  const ribbonSize = compact ? 'text-[clamp(0.95rem,2.4vw,1.5rem)]' : 'text-[clamp(1rem,2.25vw,1.875rem)]';
+  const identityGap = compact ? 'gap-[clamp(0.8rem,2.5vw,2.5rem)]' : 'gap-[clamp(0.9rem,3vw,3.5rem)]';
   const isClassic = theme === 'classic';
   const titleTone = isClassic
     ? 'bg-[linear-gradient(180deg,#ffffff_0%,#e7f0ff_52%,#a9bfd8_100%)]'
@@ -198,33 +206,33 @@ export function PrestigeIdentity({
   const descriptorLineRight = isClassic ? 'bg-gradient-to-r from-white/45 to-transparent' : 'bg-gradient-to-r from-[#d4af37]/70 to-transparent';
 
   return (
-    <div className={`inline-flex w-fit max-w-full flex-col items-start text-left ${align === 'center' ? 'mx-auto' : ''} ${className}`}>
-      <div className="grid w-fit max-w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-3 sm:gap-5 md:gap-8 lg:gap-10">
+    <div className={`inline-flex min-w-0 ${identityWidth} max-w-full flex-col items-start text-left ${align === 'center' ? 'mx-auto' : ''} ${className}`}>
+      <div className={`grid w-full grid-cols-[0.28fr_minmax(0,0.72fr)] items-center ${identityGap}`}>
         <LogoMark
           src={src}
           alt={alt}
-          size={logoSize}
-          artScale="scale-[1.5] sm:scale-[1.58]"
+          size="w-full"
+          artScale={compact ? 'scale-[1.38]' : 'scale-[1.44]'}
           className="drop-shadow-[0_16px_34px_rgba(0,0,0,0.42)]"
         />
         <div className="min-w-0 self-center text-center">
           <div className="inline-flex max-w-full flex-col">
             <div
-              className={`${titleSize} ${titleTone} px-1 bg-clip-text font-serif font-semibold leading-none tracking-[0.08em] text-transparent drop-shadow-[0_8px_20px_rgba(0,0,0,0.34)]`}
+              className={`${titleSize} ${titleTone} overflow-visible px-2 bg-clip-text font-serif font-semibold leading-none tracking-[0.055em] text-transparent drop-shadow-[0_8px_20px_rgba(0,0,0,0.34)] sm:tracking-[0.065em] xl:tracking-[0.08em]`}
             >
               DESTINOS
             </div>
             <div className={`mt-1 flex items-center gap-3 ${scriptTone} sm:mt-2`}>
-              <span className={`hidden h-px flex-1 ${lineTone} sm:block`} />
+              <span className={`h-px min-w-8 flex-1 ${lineTone}`} />
               <span className={`${scriptSize} whitespace-nowrap font-serif italic leading-none`}>
                 pelo mundo
               </span>
-              <span className={`hidden h-px flex-1 ${lineToneRight} sm:block`} />
+              <span className={`h-px min-w-8 flex-1 ${lineToneRight}`} />
             </div>
 
             {ribbonLabel ? (
-              <div className="mt-4 w-full">
-                <div className="relative overflow-hidden bg-[linear-gradient(90deg,#9b7415_0%,#f0d46f_24%,#b88b24_52%,#f6dc79_78%,#9b7415_100%)] px-5 py-2 text-center shadow-[0_14px_28px_rgba(0,0,0,0.28)] sm:px-6 sm:py-2.5">
+              <div className="mt-[clamp(0.65rem,1.8vw,1rem)] w-full">
+                <div className="relative overflow-hidden bg-[linear-gradient(90deg,#9b7415_0%,#f0d46f_24%,#b88b24_52%,#f6dc79_78%,#9b7415_100%)] px-[clamp(1rem,2vw,1.5rem)] py-[clamp(0.45rem,1vw,0.65rem)] text-center shadow-[0_14px_28px_rgba(0,0,0,0.28)]">
                   <div className="absolute inset-0 bg-[linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.28)_42%,transparent_48%,transparent_100%)]" />
                   <div className={`relative font-serif font-semibold uppercase ${ribbonSize} tracking-[0.28em] text-[#071428] sm:tracking-[0.34em]`}>
                     {ribbonLabel}
@@ -235,9 +243,9 @@ export function PrestigeIdentity({
           </div>
         </div>
       </div>
-      <div className={`mt-5 flex w-full items-center justify-center gap-3 ${descriptorTone}`}>
+      <div className={`mt-[clamp(0.8rem,2vw,1.25rem)] flex w-full items-center justify-center gap-3 ${descriptorTone}`}>
         <span className={`h-px min-w-10 flex-1 ${descriptorLineLeft}`} />
-        <span className="text-center text-[9px] font-semibold uppercase tracking-[0.34em] sm:text-xs sm:tracking-[0.38em] md:text-sm">
+        <span className="text-center text-[clamp(0.55rem,1.3vw,0.875rem)] font-semibold uppercase tracking-[0.34em] sm:tracking-[0.38em]">
           {descriptor}
         </span>
         <span className={`h-px min-w-10 flex-1 ${descriptorLineRight}`} />
