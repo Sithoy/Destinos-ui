@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Mail } from 'lucide-react';
+import { LayoutDashboard, Mail } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { InquiryModal } from './components/InquiryModal';
 import { Nav } from './components/Nav';
 import { PrestigeGateway } from './components/PrestigeGateway';
-import { BrandLockup, InstagramIcon } from './components/ui';
+import { BrandLockup, InstagramIcon, LinkedInIcon } from './components/ui';
+import { CRM_AUTH_EVENT, canAccessCrm, clearCrmSession, fetchCrmCurrentUser, hasCrmApi, readCrmSession, saveCrmSession } from './data/crm';
 import { getPageFromPathname, pageMeta, pageRoutes } from './data/travel';
 import { ClassicHome } from './pages/ClassicHome';
 import { CorporatePage } from './pages/CorporatePage';
@@ -22,6 +23,63 @@ export default function DestinosPeloMundoUIConcept() {
   const [showPrestigeGate, setShowPrestigeGate] = useState(false);
   const [isGatewayNavigating, setIsGatewayNavigating] = useState(false);
   const [inquiryKind, setInquiryKind] = useState<InquiryKind | null>(null);
+  const [crmSession, setCrmSession] = useState(() => readCrmSession());
+  const whatsappNumber = '+258 87 963 2250';
+  const whatsappHref = `https://wa.me/258879632250`;
+  const socialByPage = {
+    home: {
+      href: 'https://www.instagram.com/destinospelomundomoz?igsh=cGdveGw4cWhzdzY1',
+      label: '@destinospelomundomoz',
+      Icon: InstagramIcon,
+    },
+    luxury: {
+      href: 'https://www.instagram.com/dp_luxury_travel',
+      label: '@dp_luxury_travel',
+      Icon: InstagramIcon,
+    },
+    corporate: {
+      href: 'https://www.linkedin.com/company/etios-systems/',
+      label: 'ETIOS Systems on LinkedIn',
+      Icon: LinkedInIcon,
+    },
+    crm: {
+      href: 'https://www.linkedin.com/company/etios-systems/',
+      label: 'ETIOS Systems on LinkedIn',
+      Icon: LinkedInIcon,
+    },
+  } as const;
+  const socialLink = socialByPage[page];
+  const canEnterCrm = hasCrmApi() && canAccessCrm(crmSession?.user);
+
+  useEffect(() => {
+    const refreshSession = () => setCrmSession(readCrmSession());
+    window.addEventListener(CRM_AUTH_EVENT, refreshSession);
+    window.addEventListener('storage', refreshSession);
+    return () => {
+      window.removeEventListener(CRM_AUTH_EVENT, refreshSession);
+      window.removeEventListener('storage', refreshSession);
+    };
+  }, []);
+
+  useEffect(() => {
+    const session = readCrmSession();
+    if (!hasCrmApi() || !session?.token) return;
+
+    fetchCrmCurrentUser(session)
+      .then((user) => {
+        if (!user?.canAccessCrm) {
+          clearCrmSession();
+          setCrmSession(null);
+          return;
+        }
+        saveCrmSession({ ...session, user });
+        setCrmSession({ ...session, user });
+      })
+      .catch(() => {
+        clearCrmSession();
+        setCrmSession(null);
+      });
+  }, [crmSession?.token]);
 
   const openPrestige = () => {
     setIsGatewayNavigating(false);
@@ -61,6 +119,8 @@ export default function DestinosPeloMundoUIConcept() {
           page={page}
           goHome={goHome}
           openPrestige={openPrestige}
+          openCrm={() => navigate(pageRoutes.crm)}
+          canOpenCrm={hasCrmApi() && canAccessCrm(crmSession?.user)}
           setPrestigePage={(nextPage) => {
             navigate(pageRoutes[nextPage]);
             setIsGatewayNavigating(false);
@@ -121,13 +181,22 @@ export default function DestinosPeloMundoUIConcept() {
                 <span>contact@dpmundo.com</span>
               </a>
               <a
-                href="https://www.instagram.com/destinospelomundomoz?igsh=cGdveGw4cWhzdzY1"
+                href={whatsappHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 hover:opacity-80"
               >
-                <InstagramIcon className="h-4 w-4" />
-                <span>@destinospelomundomoz</span>
+                <span className="flex h-4 w-4 items-center justify-center rounded-full border border-current text-[10px] font-semibold">W</span>
+                <span>{whatsappNumber}</span>
+              </a>
+              <a
+                href={socialLink.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 hover:opacity-80"
+              >
+                <socialLink.Icon className="h-4 w-4" />
+                <span>{socialLink.label}</span>
               </a>
             </div>
           </div>
@@ -138,6 +207,22 @@ export default function DestinosPeloMundoUIConcept() {
               <div>{t('footer.luxury')}</div>
               <div>{t('footer.corporate')}</div>
             </div>
+            {hasCrmApi() ? (
+              <div className="mt-5">
+                <button
+                  type="button"
+                  onClick={() => navigate(pageRoutes.crm)}
+                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
+                    page === 'home'
+                      ? 'border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-400 hover:bg-slate-100'
+                      : 'border-white/15 bg-white/5 text-white/75 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>{canEnterCrm ? 'Open CRM' : 'Staff Login'}</span>
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
         <div className={`border-t ${page === 'home' ? 'border-slate-200' : 'border-white/10'}`}>

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { luxuryExperiences, luxuryHeroImage, luxuryLogo } from '../data/travel';
+import { luxuryExperienceCards, luxuryHeroImage, luxuryLogo } from '../data/travel';
 import type { InquiryKind } from '../types';
 import { Button, Card, CardContent, LogoWatermark, PrestigeIdentity, SectionTitle, SmartImage } from '../components/ui';
 export function LuxuryPage({ openInquiry }: { openInquiry: (kind: InquiryKind) => void }) {
@@ -78,14 +78,27 @@ export function LuxuryPage({ openInquiry }: { openInquiry: (kind: InquiryKind) =
           light
         />
         <div className="mt-10 grid gap-5 md:grid-cols-2 md:gap-6 xl:grid-cols-4">
-          {luxuryExperiences.map(([itemKey, Icon]) => (
-            <Card key={itemKey} className="rounded-[28px] border border-[#d4af37]/15 bg-white/5 text-white">
-              <CardContent className="p-6 sm:p-7">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#d4af37]/15 text-[#d4af37]">
+          {luxuryExperienceCards.map(({ itemKey, Icon, image, position }) => (
+            <Card
+              key={itemKey}
+              className="group relative overflow-hidden rounded-[28px] border border-[#d4af37]/20 bg-white/5 text-white shadow-[0_20px_60px_rgba(0,0,0,0.22)] transition duration-500 hover:-translate-y-1 hover:border-[#d4af37]/40 hover:shadow-[0_28px_80px_rgba(0,0,0,0.34)]"
+            >
+              <div className="absolute inset-0">
+                <SmartImage
+                  src={image}
+                  alt={t(itemKey)}
+                  className={`h-full w-full object-cover ${position} opacity-[0.38] transition duration-700 group-hover:scale-110 group-hover:opacity-[0.52]`}
+                />
+              </div>
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,11,8,0.18)_0%,rgba(18,14,9,0.44)_36%,rgba(18,14,9,0.88)_100%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(212,175,55,0.24),transparent_34%)] opacity-70 transition duration-700 group-hover:opacity-100" />
+              <div className="absolute inset-x-6 top-5 h-px bg-gradient-to-r from-transparent via-[#f1da8d]/60 to-transparent opacity-60 transition duration-700 group-hover:via-[#f1da8d] sm:inset-x-7" />
+              <CardContent className="relative flex min-h-[320px] flex-col justify-end p-6 sm:p-7">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#f1da8d]/30 bg-black/25 text-[#f3d985] backdrop-blur-sm transition duration-500 group-hover:scale-105 group-hover:border-[#f1da8d]/50 group-hover:bg-black/35">
                   <Icon className="h-5 w-5" />
                 </div>
-                <div className="mt-5 text-xl font-medium">{t(itemKey)}</div>
-                <p className="mt-3 text-sm leading-7 text-white/65">
+                <div className="mt-5 text-xl font-medium text-white">{t(itemKey)}</div>
+                <p className="mt-3 max-w-[18rem] text-sm leading-7 text-white/75 transition duration-500 group-hover:text-white/88">
                   {t('luxury.experiences.description')}
                 </p>
               </CardContent>

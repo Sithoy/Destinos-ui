@@ -1,4 +1,4 @@
-import { Crown } from 'lucide-react';
+import { Crown, LayoutDashboard } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { pageMeta } from '../data/travel';
 import type { Page, PrestigePage } from '../types';
@@ -36,11 +36,15 @@ export function Nav({
   goHome,
   openPrestige,
   setPrestigePage,
+  openCrm,
+  canOpenCrm = false,
 }: {
   page: Page;
   goHome: () => void;
   openPrestige: () => void;
   setPrestigePage: (page: PrestigePage) => void;
+  openCrm: () => void;
+  canOpenCrm?: boolean;
 }) {
   const { t } = useTranslation();
   const isPrestige = page === 'luxury' || page === 'corporate';
@@ -63,6 +67,16 @@ export function Nav({
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
           <LanguageToggle compact />
+          {canOpenCrm ? (
+            <button
+              onClick={openCrm}
+              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-2 text-xs text-white transition hover:bg-white/12 sm:px-4 sm:text-sm"
+              aria-label="Open CRM"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              <span className="hidden sm:inline">CRM</span>
+            </button>
+          ) : null}
           {isCrm ? (
             <button
               onClick={goHome}

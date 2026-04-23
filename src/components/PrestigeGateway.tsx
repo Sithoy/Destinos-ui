@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowRight, Crown, MapPin, ShieldCheck, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { conciergeImage, corporateLogo, luxuryLogo, monacoImage, retreatImage } from '../data/travel';
+import { conciergeImage, corporateGatewayImage, corporateLogo, luxuryGatewayImage, luxuryLogo } from '../data/travel';
 import type { PrestigePage } from '../types';
 import { BrandLockup, SmartImage } from './ui';
 export function PrestigeGateway({
@@ -102,9 +102,14 @@ export function PrestigeGateway({
                   className="group relative overflow-hidden rounded-[24px] border border-[#d4af37]/20 bg-[linear-gradient(135deg,rgba(36,31,27,1),rgba(58,49,40,1))] p-4 text-left shadow-2xl sm:rounded-[28px] sm:p-6 md:p-7"
                 >
                   <div className="absolute inset-0">
-                    <SmartImage src={retreatImage} alt={t('gateway.luxury.backgroundAlt')} className="h-full w-full object-cover opacity-[0.14] transition duration-500 group-hover:scale-105" />
+                    <SmartImage
+                      src={luxuryGatewayImage}
+                      alt={t('gateway.luxury.backgroundAlt')}
+                      className="h-full w-full object-cover object-center opacity-[0.2] transition duration-700 group-hover:scale-105"
+                    />
                   </div>
-                  <div className="absolute inset-0 bg-gradient-to-br from-transparent to-black/25" />
+                  <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(18,14,9,0.94)_0%,rgba(18,14,9,0.78)_46%,rgba(18,14,9,0.38)_100%)]" />
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(212,175,55,0.16),transparent_34%)] opacity-80 transition duration-700 group-hover:opacity-100" />
                   <div className="relative">
                     <div className="flex items-start justify-between gap-3 sm:gap-4">
                       <BrandLockup src={luxuryLogo} alt={t('brand.luxuryAlt')} theme="gold" compact />
@@ -128,9 +133,14 @@ export function PrestigeGateway({
                   className="group relative overflow-hidden rounded-[24px] border border-[#d4af37]/20 bg-[linear-gradient(135deg,rgba(5,17,36,1),rgba(15,34,67,1))] p-4 text-left shadow-2xl sm:rounded-[28px] sm:p-6 md:p-7"
                 >
                   <div className="absolute inset-0">
-                    <SmartImage src={monacoImage} alt={t('gateway.corporate.backgroundAlt')} className="h-full w-full object-cover opacity-[0.14] transition duration-500 group-hover:scale-105" />
+                    <SmartImage
+                      src={corporateGatewayImage}
+                      alt={t('gateway.corporate.backgroundAlt')}
+                      className="h-full w-full object-cover object-center opacity-[0.24] transition duration-700 group-hover:scale-105"
+                    />
                   </div>
-                  <div className="absolute inset-0 bg-gradient-to-br from-transparent to-black/25" />
+                  <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(5,17,36,0.95)_0%,rgba(5,17,36,0.82)_48%,rgba(5,17,36,0.36)_100%)]" />
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(212,175,55,0.12),transparent_34%)] opacity-75 transition duration-700 group-hover:opacity-95" />
                   <div className="relative">
                     <div className="flex items-start justify-between gap-3 sm:gap-4">
                       <BrandLockup src={corporateLogo} alt={t('brand.corporateAlt')} theme="gold" compact />

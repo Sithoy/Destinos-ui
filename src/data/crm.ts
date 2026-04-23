@@ -1,9 +1,25 @@
-import type { CrmLead } from '../types';
+import type { CrmClient, CrmLead, CrmManagedUser, CrmSession, CrmUser, InquiryKind } from '../types';
 
 const CRM_STORAGE_KEY = 'dpm.crm.leads.v1';
+const CRM_CLIENT_STORAGE_KEY = 'dpm.crm.clients.v1';
+const CRM_AUTH_STORAGE_KEY = 'dpm.crm.auth.v1';
 const CRM_EVENT = 'dpm-crm-leads-updated';
+const CRM_CLIENT_EVENT = 'dpm-crm-clients-updated';
+const CRM_AUTH_EVENT = 'dpm-crm-auth-updated';
 const CRM_DEMO_VERSION_KEY = 'dpm.crm.demo.version';
-const CRM_DEMO_VERSION = 'process-v1';
+const CRM_DEMO_VERSION = 'process-v2';
+
+type CrmLeadCreateInput = Omit<CrmLead, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'emailStatus' | 'internalNotes'>;
+type CrmClientCreateInput = Omit<CrmClient, 'id' | 'createdAt' | 'updatedAt' | 'lastRequestAt' | 'activeRequestCount'>;
+type CrmManagedUserInput = {
+  username: string;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  role: 'admin' | 'manager' | 'agent' | 'viewer';
+  isActive: boolean;
+  password?: string;
+};
 
 const demoCrmLeads: CrmLead[] = [
   {
@@ -30,6 +46,8 @@ const demoCrmLeads: CrmLead[] = [
     status: 'new',
     emailStatus: 'sent',
     internalNotes: 'Celebrating 10th anniversary. Prefers WhatsApp and wants one surprise premium experience built into the itinerary.',
+    clientId: 'client-alicia-mendes',
+    clientName: 'Alicia Mendes',
   },
   {
     id: 'demo-corporate-bluearc-mining',
@@ -55,6 +73,8 @@ const demoCrmLeads: CrmLead[] = [
     status: 'contacted',
     emailStatus: 'sent',
     internalNotes: 'Finance requires separate billing by department. Two travelers may return on different dates.',
+    clientId: 'client-bluearc-mining',
+    clientName: 'BlueArc Mining',
   },
   {
     id: 'demo-classic-cape-town-family',
@@ -80,6 +100,8 @@ const demoCrmLeads: CrmLead[] = [
     status: 'planning',
     emailStatus: 'sent',
     internalNotes: 'Traveling with two children. Wants Table Mountain and aquarium included as options.',
+    clientId: 'client-helena-sitoe',
+    clientName: 'Helena Sitoe',
   },
   {
     id: 'demo-luxury-namibia-safari',
@@ -130,6 +152,8 @@ const demoCrmLeads: CrmLead[] = [
     status: 'proposal',
     emailStatus: 'sent',
     internalNotes: 'Follow up approval and hold negotiated fares. May need visa guidance.',
+    clientId: 'client-luma-capital',
+    clientName: 'Luma Capital',
   },
   {
     id: 'demo-classic-lisbon-city-break',
@@ -180,6 +204,8 @@ const demoCrmLeads: CrmLead[] = [
     status: 'contacted',
     emailStatus: 'sent',
     internalNotes: 'Check suite availability near the 8th arrondissement and reserve two fine dining options.',
+    clientId: 'client-amira-patel',
+    clientName: 'Amira Patel',
   },
   {
     id: 'demo-corporate-lagos-mobility',
@@ -255,6 +281,8 @@ const demoCrmLeads: CrmLead[] = [
     status: 'won',
     emailStatus: 'sent',
     internalNotes: 'Payment conditions accepted. Lock room block and prepare traveler data template.',
+    clientId: 'client-karingana-group',
+    clientName: 'Karingana Group',
   },
   {
     id: 'demo-luxury-marrakech-retreat',
@@ -308,6 +336,105 @@ const demoCrmLeads: CrmLead[] = [
   },
 ];
 
+const demoCrmClients: CrmClient[] = [
+  {
+    id: 'client-alicia-mendes',
+    createdAt: '2026-04-23T06:12:00.000Z',
+    updatedAt: '2026-04-23T06:12:00.000Z',
+    name: 'Alicia Mendes',
+    clientType: 'private',
+    companyName: '',
+    email: 'alicia.mendes@email.com',
+    phone: '+258 84 421 1100',
+    preferredContact: 'WhatsApp',
+    serviceLevel: 'luxury',
+    owner: 'Nadia Cossa',
+    notes: 'Anniversary traveler who values villa privacy, seamless transfers, and discreet concierge support.',
+    lastRequestAt: '2026-04-23T06:12:00.000Z',
+    activeRequestCount: 1,
+  },
+  {
+    id: 'client-bluearc-mining',
+    createdAt: '2026-04-23T05:40:00.000Z',
+    updatedAt: '2026-04-23T05:51:00.000Z',
+    name: 'BlueArc Mining',
+    clientType: 'corporate',
+    companyName: 'BlueArc Mining',
+    email: 'travel@bluearc.example',
+    phone: '+258 87 612 4410',
+    preferredContact: 'Email',
+    serviceLevel: 'corporate',
+    owner: 'Carlos Mavie',
+    notes: 'Corporate account with invoice-split and policy-compliance sensitivity.',
+    lastRequestAt: '2026-04-23T05:40:00.000Z',
+    activeRequestCount: 1,
+  },
+  {
+    id: 'client-helena-sitoe',
+    createdAt: '2026-04-22T14:20:00.000Z',
+    updatedAt: '2026-04-23T08:00:00.000Z',
+    name: 'Helena Sitoe',
+    clientType: 'private',
+    companyName: '',
+    email: 'helena.sitoe@email.com',
+    phone: '+351 912 345 678',
+    preferredContact: 'Email',
+    serviceLevel: 'classic',
+    owner: 'Marta Lopes',
+    notes: 'Family travel profile with preference for practical planning and child-friendly experiences.',
+    lastRequestAt: '2026-04-22T14:20:00.000Z',
+    activeRequestCount: 1,
+  },
+  {
+    id: 'client-luma-capital',
+    createdAt: '2026-04-22T07:10:00.000Z',
+    updatedAt: '2026-04-22T15:20:00.000Z',
+    name: 'Luma Capital',
+    clientType: 'corporate',
+    companyName: 'Luma Capital',
+    email: 'ops@lumacapital.example',
+    phone: '+258 85 100 4420',
+    preferredContact: 'Email',
+    serviceLevel: 'corporate',
+    owner: 'Carlos Mavie',
+    notes: 'Executive account needing premium presentation with policy control.',
+    lastRequestAt: '2026-04-22T07:10:00.000Z',
+    activeRequestCount: 1,
+  },
+  {
+    id: 'client-amira-patel',
+    createdAt: '2026-04-23T04:55:00.000Z',
+    updatedAt: '2026-04-23T05:05:00.000Z',
+    name: 'Amira Patel',
+    clientType: 'private',
+    companyName: '',
+    email: 'amira.patel@email.com',
+    phone: '+258 84 220 9033',
+    preferredContact: 'WhatsApp',
+    serviceLevel: 'luxury',
+    owner: 'Nadia Cossa',
+    notes: 'Private client profile for luxury city travel with VIP dining and experience preferences.',
+    lastRequestAt: '2026-04-23T04:55:00.000Z',
+    activeRequestCount: 1,
+  },
+  {
+    id: 'client-karingana-group',
+    createdAt: '2026-04-19T10:20:00.000Z',
+    updatedAt: '2026-04-23T07:30:00.000Z',
+    name: 'Karingana Group',
+    clientType: 'corporate',
+    companyName: 'Karingana Group',
+    email: 'events@karingana.example',
+    phone: '+258 87 333 0202',
+    preferredContact: 'Email',
+    serviceLevel: 'corporate',
+    owner: 'Carlos Mavie',
+    notes: 'Conference and group-movement account with changing traveler lists.',
+    lastRequestAt: '2026-04-19T10:20:00.000Z',
+    activeRequestCount: 1,
+  },
+];
+
 function hasStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
@@ -326,6 +453,126 @@ function notifyCrmUpdated() {
   }
 }
 
+function notifyCrmClientsUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(CRM_CLIENT_EVENT));
+  }
+}
+
+function notifyCrmAuthUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(CRM_AUTH_EVENT));
+  }
+}
+
+function crmApiBase() {
+  const raw = import.meta.env.VITE_CRM_API_URL?.toString().trim();
+  return raw ? raw.replace(/\/$/, '') : '';
+}
+
+export function hasCrmApi() {
+  return Boolean(crmApiBase());
+}
+
+function authHeaders(session?: CrmSession | null): Record<string, string> {
+  return session?.token ? { Authorization: `Token ${session.token}` } : {};
+}
+
+async function parseApiResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let message = `CRM API request failed (${response.status})`;
+    try {
+      const body = await response.json();
+      message = body.detail || body.non_field_errors?.[0] || body.error || message;
+    } catch {
+      // Keep the status-based message when the response is not JSON.
+    }
+    throw new Error(message);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export function readCrmSession(): CrmSession | null {
+  if (!hasStorage()) return null;
+
+  try {
+    const raw = window.localStorage.getItem(CRM_AUTH_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as CrmSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCrmSession(session: CrmSession) {
+  if (!hasStorage()) return;
+  window.localStorage.setItem(CRM_AUTH_STORAGE_KEY, JSON.stringify(session));
+  notifyCrmAuthUpdated();
+}
+
+export function clearCrmSession() {
+  if (!hasStorage()) return;
+  window.localStorage.removeItem(CRM_AUTH_STORAGE_KEY);
+  notifyCrmAuthUpdated();
+}
+
+export function canAccessCrm(user?: CrmUser | null) {
+  return Boolean(user?.canAccessCrm);
+}
+
+export function canManageClients(user?: CrmUser | null) {
+  return Boolean(user?.canManageClients);
+}
+
+export function canManageUsers(user?: CrmUser | null) {
+  return Boolean(user?.canManageUsers);
+}
+
+export async function loginCrm(username: string, password: string) {
+  const base = crmApiBase();
+  if (!base) throw new Error('CRM API URL is not configured.');
+
+  const session = await parseApiResponse<CrmSession>(
+    await fetch(`${base}/api/auth/login/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    }),
+  );
+  saveCrmSession(session);
+  return session;
+}
+
+export async function logoutCrm(session: CrmSession | null) {
+  const base = crmApiBase();
+  if (base && session?.token) {
+    try {
+      await fetch(`${base}/api/auth/logout/`, {
+        method: 'POST',
+        headers: authHeaders(session),
+      });
+    } catch {
+      // Local sign-out should still happen if the network is unavailable.
+    }
+  }
+  clearCrmSession();
+}
+
+export async function fetchCrmCurrentUser(session?: CrmSession | null): Promise<CrmUser | null> {
+  const base = crmApiBase();
+  if (!base || !session?.token) return null;
+
+  return parseApiResponse<CrmUser>(
+    await fetch(`${base}/api/auth/me/`, {
+      headers: authHeaders(session),
+    }),
+  );
+}
+
 export function readCrmLeads(): CrmLead[] {
   if (!hasStorage()) return [];
 
@@ -338,11 +585,35 @@ export function readCrmLeads(): CrmLead[] {
   }
 }
 
+export function readCrmClients(): CrmClient[] {
+  if (!hasStorage()) return [];
+
+  try {
+    const raw = window.localStorage.getItem(CRM_CLIENT_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCrmLeads(leads: CrmLead[]) {
+  if (!hasStorage()) return;
+  window.localStorage.setItem(CRM_STORAGE_KEY, JSON.stringify(leads));
+  notifyCrmUpdated();
+}
+
+function writeCrmClients(clients: CrmClient[]) {
+  if (!hasStorage()) return;
+  window.localStorage.setItem(CRM_CLIENT_STORAGE_KEY, JSON.stringify(clients));
+  notifyCrmClientsUpdated();
+}
+
 export function ensureCrmDemoLeads(): CrmLead[] {
   if (!hasStorage()) return demoCrmLeads;
 
   const leads = readCrmLeads();
-  if (window.localStorage.getItem(CRM_DEMO_VERSION_KEY) === CRM_DEMO_VERSION) return leads;
+  if (window.localStorage.getItem(CRM_DEMO_VERSION_KEY) === CRM_DEMO_VERSION && leads.length > 0) return leads;
 
   const existingIds = new Set(leads.map((lead) => lead.id));
   const mergedLeads = [...leads, ...demoCrmLeads.filter((lead) => !existingIds.has(lead.id))].sort(
@@ -354,13 +625,19 @@ export function ensureCrmDemoLeads(): CrmLead[] {
   return mergedLeads;
 }
 
-function writeCrmLeads(leads: CrmLead[]) {
-  if (!hasStorage()) return;
-  window.localStorage.setItem(CRM_STORAGE_KEY, JSON.stringify(leads));
-  notifyCrmUpdated();
+export function ensureCrmDemoClients(): CrmClient[] {
+  if (!hasStorage()) return demoCrmClients;
+
+  const clients = readCrmClients();
+  if (window.localStorage.getItem(CRM_DEMO_VERSION_KEY) === CRM_DEMO_VERSION && clients.length > 0) return clients;
+
+  const existingIds = new Set(clients.map((client) => client.id));
+  const mergedClients = [...clients, ...demoCrmClients.filter((client) => !existingIds.has(client.id))].sort((a, b) => a.name.localeCompare(b.name));
+  writeCrmClients(mergedClients);
+  return mergedClients;
 }
 
-export function createCrmLead(input: Omit<CrmLead, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'emailStatus' | 'internalNotes'>) {
+export function createCrmLead(input: CrmLeadCreateInput) {
   const now = new Date().toISOString();
   const lead: CrmLead = {
     ...input,
@@ -374,6 +651,21 @@ export function createCrmLead(input: Omit<CrmLead, 'id' | 'createdAt' | 'updated
 
   writeCrmLeads([lead, ...readCrmLeads()]);
   return lead;
+}
+
+export function createCrmClient(input: CrmClientCreateInput) {
+  const now = new Date().toISOString();
+  const client: CrmClient = {
+    ...input,
+    id: createId(),
+    createdAt: now,
+    updatedAt: now,
+    lastRequestAt: now,
+    activeRequestCount: 0,
+  };
+
+  writeCrmClients([client, ...readCrmClients()]);
+  return client;
 }
 
 export function updateCrmLead(id: string, patch: Partial<Omit<CrmLead, 'id' | 'createdAt'>>) {
@@ -391,8 +683,222 @@ export function updateCrmLead(id: string, patch: Partial<Omit<CrmLead, 'id' | 'c
   );
 }
 
+export function updateCrmClient(id: string, patch: Partial<Omit<CrmClient, 'id' | 'createdAt'>>) {
+  const clients = readCrmClients();
+  writeCrmClients(
+    clients.map((client) =>
+      client.id === id
+        ? {
+            ...client,
+            ...patch,
+            updatedAt: new Date().toISOString(),
+          }
+        : client,
+    ),
+  );
+}
+
 export function deleteCrmLead(id: string) {
   writeCrmLeads(readCrmLeads().filter((lead) => lead.id !== id));
 }
 
-export { CRM_EVENT };
+export async function fetchCrmLeads(session?: CrmSession | null): Promise<CrmLead[]> {
+  const base = crmApiBase();
+  if (!base) return ensureCrmDemoLeads();
+  if (!session?.token) return [];
+
+  return parseApiResponse<CrmLead[]>(
+    await fetch(`${base}/api/leads/`, {
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function fetchCrmClients(session?: CrmSession | null): Promise<CrmClient[]> {
+  const base = crmApiBase();
+  if (!base) return ensureCrmDemoClients();
+  if (!session?.token) return [];
+
+  return parseApiResponse<CrmClient[]>(
+    await fetch(`${base}/api/clients/`, {
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function fetchCrmUsers(session?: CrmSession | null): Promise<CrmManagedUser[]> {
+  const base = crmApiBase();
+  if (!base || !session?.token) return [];
+
+  return parseApiResponse<CrmManagedUser[]>(
+    await fetch(`${base}/api/users/`, {
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function createCrmLeadRecord(input: CrmLeadCreateInput, session?: CrmSession | null): Promise<CrmLead> {
+  const base = crmApiBase();
+  if (!base) return createCrmLead(input);
+
+  const endpoint = session?.token ? `${base}/api/leads/` : `${base}/api/public/leads/`;
+  return parseApiResponse<CrmLead>(
+    await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCrmClientRecord(input: CrmClientCreateInput, session?: CrmSession | null): Promise<CrmClient> {
+  const base = crmApiBase();
+  if (!base || !session?.token) return createCrmClient(input);
+
+  return parseApiResponse<CrmClient>(
+    await fetch(`${base}/api/clients/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCrmLeadRecord(
+  id: string,
+  patch: Partial<Omit<CrmLead, 'id' | 'createdAt'>>,
+  session?: CrmSession | null,
+): Promise<CrmLead | null> {
+  const base = crmApiBase();
+  if (!base || !session?.token) {
+    updateCrmLead(id, patch);
+    return readCrmLeads().find((lead) => lead.id === id) ?? null;
+  }
+
+  return parseApiResponse<CrmLead>(
+    await fetch(`${base}/api/leads/${id}/`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(patch),
+    }),
+  );
+}
+
+export async function updateCrmClientRecord(
+  id: string,
+  patch: Partial<Omit<CrmClient, 'id' | 'createdAt'>>,
+  session?: CrmSession | null,
+): Promise<CrmClient | null> {
+  const base = crmApiBase();
+  if (!base || !session?.token) {
+    updateCrmClient(id, patch);
+    return readCrmClients().find((client) => client.id === id) ?? null;
+  }
+
+  return parseApiResponse<CrmClient>(
+    await fetch(`${base}/api/clients/${id}/`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(patch),
+    }),
+  );
+}
+
+export async function createCrmUserRecord(input: CrmManagedUserInput, session?: CrmSession | null): Promise<CrmManagedUser> {
+  const base = crmApiBase();
+  if (!base || !session?.token) {
+    throw new Error('CRM API URL is not configured for user management.');
+  }
+
+  return parseApiResponse<CrmManagedUser>(
+    await fetch(`${base}/api/users/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCrmUserRecord(
+  id: number,
+  patch: Partial<CrmManagedUserInput>,
+  session?: CrmSession | null,
+): Promise<CrmManagedUser> {
+  const base = crmApiBase();
+  if (!base || !session?.token) {
+    throw new Error('CRM API URL is not configured for user management.');
+  }
+
+  return parseApiResponse<CrmManagedUser>(
+    await fetch(`${base}/api/users/${id}/`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(patch),
+    }),
+  );
+}
+
+export async function deleteCrmLeadRecord(id: string, session?: CrmSession | null) {
+  const base = crmApiBase();
+  if (!base || !session?.token) {
+    deleteCrmLead(id);
+    return;
+  }
+
+  await parseApiResponse<void>(
+    await fetch(`${base}/api/leads/${id}/`, {
+      method: 'DELETE',
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export function emptyClientRegistration(defaults?: Partial<CrmClientCreateInput>): CrmClientCreateInput {
+  return {
+    name: '',
+    clientType: 'private',
+    companyName: '',
+    email: '',
+    phone: '',
+    preferredContact: '',
+    serviceLevel: 'classic',
+    owner: '',
+    notes: '',
+    ...defaults,
+  };
+}
+
+export function makeClientFromLead(lead: CrmLead): CrmClientCreateInput {
+  const serviceLevel = lead.serviceKey as InquiryKind;
+  return {
+    name: lead.name,
+    clientType: serviceLevel === 'corporate' ? 'corporate' : 'private',
+    companyName: serviceLevel === 'corporate' ? lead.name : '',
+    email: lead.email,
+    phone: lead.whatsapp,
+    preferredContact: lead.preferredContact,
+    serviceLevel,
+    owner: serviceLevel === 'luxury' ? 'Nadia Cossa' : serviceLevel === 'corporate' ? 'Carlos Mavie' : 'Marta Lopes',
+    notes: lead.notes,
+  };
+}
+
+export { CRM_AUTH_EVENT, CRM_CLIENT_EVENT, CRM_EVENT };

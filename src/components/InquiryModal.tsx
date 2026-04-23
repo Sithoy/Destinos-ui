@@ -2,7 +2,7 @@ import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { createCrmLead, updateCrmLead } from '../data/crm';
+import { createCrmLeadRecord, updateCrmLeadRecord } from '../data/crm';
 import { inquiryLabelKeys } from '../data/travel';
 import type { InquiryKind } from '../types';
 import { Badge, Button } from './ui';
@@ -322,33 +322,34 @@ export function InquiryModal({
       notes,
       message: details.join('\n'),
     };
-    const lead = createCrmLead({
-      service: label,
-      serviceKey: kind,
-      name,
-      contact,
-      email,
-      whatsapp,
-      preferredContact,
-      requestedServices: requestedServicesText,
-      tripType,
-      departureCity,
-      destination,
-      dates,
-      travelers,
-      budget,
-      urgency,
-      priority,
-      notes: [notes, extraDetailsText].filter(Boolean).join('\n\n'),
-    });
-
     if (email) {
       payload._replyto = email;
     }
 
     setSubmitState('sending');
+    let leadId = '';
 
     try {
+      const lead = await createCrmLeadRecord({
+        service: label,
+        serviceKey: kind,
+        name,
+        contact,
+        email,
+        whatsapp,
+        preferredContact,
+        requestedServices: requestedServicesText,
+        tripType,
+        departureCity,
+        destination,
+        dates,
+        travelers,
+        budget,
+        urgency,
+        priority,
+        notes: [notes, extraDetailsText].filter(Boolean).join('\n\n'),
+      });
+      leadId = lead.id;
       const response = await fetch('https://formsubmit.co/ajax/contact@dpmundo.com', {
         method: 'POST',
         headers: {
@@ -363,10 +364,10 @@ export function InquiryModal({
       }
 
       setSubmitState('sent');
-      updateCrmLead(lead.id, { emailStatus: 'sent' });
+      void updateCrmLeadRecord(leadId, { emailStatus: 'sent' });
       form.reset();
     } catch {
-      updateCrmLead(lead.id, { emailStatus: 'failed' });
+      if (leadId) void updateCrmLeadRecord(leadId, { emailStatus: 'failed' });
       setSubmitState('error');
     }
   }

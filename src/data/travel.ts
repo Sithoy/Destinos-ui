@@ -25,6 +25,8 @@ export const champagneImage = 'https://images.pexels.com/photos/60217/pexels-pho
 export const retreatImage = 'https://images.pexels.com/photos/261102/pexels-photo-261102.jpeg?auto=compress&cs=tinysrgb&w=1400';
 export const luxuryHeroImage = 'https://www.uniqhotels.com/media/hotels/16/2._zannier_hotels_sonop_-_exterior.jpg';
 export const conciergeImage = 'https://images.unsplash.com/photo-1651084296297-2c66780dc322?auto=format&fit=crop&fm=jpg&q=70&w=1600';
+export const luxuryGatewayImage = 'https://images.pexels.com/photos/4577176/pexels-photo-4577176.jpeg?auto=compress&cs=tinysrgb&w=1400';
+export const corporateGatewayImage = 'https://images.pexels.com/photos/7643758/pexels-photo-7643758.jpeg?auto=compress&cs=tinysrgb&w=1400';
 
 export const classicDestinations = [
   {
@@ -68,6 +70,33 @@ export const luxuryExperiences = [
   ['luxury.experiences.items.transfers', MapPin],
   ['luxury.experiences.items.honeymoon', Crown],
   ['luxury.experiences.items.safari', Palmtree],
+] as const;
+
+export const luxuryExperienceCards = [
+  {
+    itemKey: 'luxury.experiences.items.resorts',
+    Icon: Sparkles,
+    image: 'https://images.pexels.com/photos/30037392/pexels-photo-30037392.jpeg?auto=compress&cs=tinysrgb&w=1200',
+    position: 'object-center',
+  },
+  {
+    itemKey: 'luxury.experiences.items.transfers',
+    Icon: MapPin,
+    image: 'https://images.pexels.com/photos/36498953/pexels-photo-36498953.jpeg?auto=compress&cs=tinysrgb&w=1200',
+    position: 'object-center',
+  },
+  {
+    itemKey: 'luxury.experiences.items.honeymoon',
+    Icon: Crown,
+    image: 'https://images.pexels.com/photos/32556099/pexels-photo-32556099.jpeg?auto=compress&cs=tinysrgb&w=1200',
+    position: 'object-center',
+  },
+  {
+    itemKey: 'luxury.experiences.items.safari',
+    Icon: Palmtree,
+    image: 'https://images.pexels.com/photos/26921854/pexels-photo-26921854.jpeg?auto=compress&cs=tinysrgb&w=1200',
+    position: 'object-center',
+  },
 ] as const;
 
 export const corporateServices = [

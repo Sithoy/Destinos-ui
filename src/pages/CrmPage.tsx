@@ -13,6 +13,7 @@ import {
   Filter,
   Inbox,
   LayoutDashboard,
+  Lock,
   Mail,
   Moon,
   MoreHorizontal,
@@ -20,15 +21,40 @@ import {
   Plus,
   Search,
   Settings,
+  Shield,
   Sparkles,
   Sun,
   Users,
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { CRM_EVENT, createCrmLead, ensureCrmDemoLeads, readCrmLeads, updateCrmLead } from '../data/crm';
+import {
+  canManageClients,
+  canManageUsers,
+  CRM_EVENT,
+  CRM_AUTH_EVENT,
+  CRM_CLIENT_EVENT,
+  createCrmLeadRecord,
+  createCrmClientRecord,
+  createCrmUserRecord,
+  emptyClientRegistration,
+  fetchCrmCurrentUser,
+  fetchCrmLeads,
+  fetchCrmClients,
+  fetchCrmUsers,
+  hasCrmApi,
+  loginCrm,
+  logoutCrm,
+  makeClientFromLead,
+  readCrmLeads,
+  readCrmSession,
+  saveCrmSession,
+  updateCrmLeadRecord,
+  updateCrmClientRecord,
+  updateCrmUserRecord,
+} from '../data/crm';
 import { classicLogo } from '../data/travel';
-import type { CrmLead, InquiryKind, LeadPriority, LeadStatus } from '../types';
+import type { CrmClient, CrmLead, CrmManagedUser, CrmRole, CrmSession, InquiryKind, LeadPriority, LeadStatus } from '../types';
 
 type LeadTypeFilter = 'all' | InquiryKind;
 type StatusFilter = 'all' | LeadStatus | 'confirmedGroup' | 'workflowGroup';
@@ -37,6 +63,15 @@ type CrmTheme = 'dark' | 'light';
 type DetailTab = 'overview' | 'tasks' | 'notes' | 'history';
 type CrmNavId = 'command' | 'workflow' | 'tasks' | 'calendar' | 'clients' | 'trips' | 'reports' | 'settings';
 type ProcessTaskTone = 'urgent' | 'normal' | 'upcoming';
+type UserFormState = {
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: Extract<CrmRole, 'admin' | 'manager' | 'agent' | 'viewer'>;
+  isActive: boolean;
+  password: string;
+};
 
 type ProcessTask = {
   title: string;
@@ -48,6 +83,14 @@ type ProcessHistoryItem = {
   label: string;
   meta: string;
   tone: 'done' | 'current' | 'upcoming' | 'closed';
+};
+
+type MetricCard = {
+  label: string;
+  value: number;
+  meta: string;
+  Icon: LucideIcon;
+  filter?: StatusFilter;
 };
 
 const PAGE_SIZE = 10;
@@ -182,6 +225,20 @@ const navItems: Array<{ id: CrmNavId; label: string; Icon: LucideIcon }> = [
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
 
+const crmRoleLabels: Record<Extract<CrmRole, 'admin' | 'manager' | 'agent' | 'viewer'>, string> = {
+  admin: 'Admin',
+  manager: 'Manager',
+  agent: 'Agent',
+  viewer: 'Viewer',
+};
+
+const crmRoleDescriptions: Record<Extract<CrmRole, 'admin' | 'manager' | 'agent' | 'viewer'>, string> = {
+  admin: 'Full CRM access, user management, and operational control.',
+  manager: 'Team oversight, client management, and access administration.',
+  agent: 'Request handling, client registration, and workflow execution.',
+  viewer: 'Read-only visibility across CRM queues and records.',
+};
+
 const themeStyles = {
   dark: {
     shell: 'bg-[#07111d] text-white',
@@ -310,6 +367,37 @@ function leadOwner(lead: CrmLead) {
   return ownerByService[lead.serviceKey];
 }
 
+function clientLabel(client: CrmClient) {
+  return client.clientType === 'corporate' ? (client.companyName || client.name) : client.name;
+}
+
+function clientSegment(client: CrmClient) {
+  return client.clientType === 'corporate' ? 'Corporate Account' : client.serviceLevel === 'luxury' ? 'Private Prestige Client' : 'Private Client';
+}
+
+function normalizeLookupValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function normalizePhoneLookup(value: string) {
+  return value.replace(/\D/g, '');
+}
+
+function findMatchingClientRecord(clients: CrmClient[], input: ReturnType<typeof emptyClientRegistration>) {
+  const email = normalizeLookupValue(input.email);
+  const phone = normalizePhoneLookup(input.phone);
+  const companyName = normalizeLookupValue(input.companyName);
+
+  return (
+    clients.find((client) => {
+      if (email && normalizeLookupValue(client.email) === email) return true;
+      if (phone && normalizePhoneLookup(client.phone) === phone) return true;
+      if (input.clientType === 'corporate' && companyName && normalizeLookupValue(client.companyName) === companyName) return true;
+      return false;
+    }) ?? null
+  );
+}
+
 function processForLead(lead: CrmLead) {
   const process = statusProcess[lead.status];
   return {
@@ -418,6 +506,31 @@ function exportCsv(leads: CrmLead[]) {
   URL.revokeObjectURL(url);
 }
 
+function exportClientsCsv(clients: CrmClient[]) {
+  const headers = ['Created', 'Name', 'Type', 'Company', 'Email', 'Phone', 'Preferred contact', 'Service level', 'Owner', 'Open requests', 'Notes'];
+  const rows = clients.map((client) => [
+    client.createdAt,
+    client.name,
+    client.clientType,
+    client.companyName,
+    client.email,
+    client.phone,
+    client.preferredContact,
+    client.serviceLevel,
+    client.owner,
+    client.activeRequestCount,
+    client.notes,
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map((cell) => csvEscape(cell)).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `dpm-clients-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function CrmBrandMark({ theme }: { theme: CrmTheme }) {
   const isLight = theme === 'light';
   const titleTone = isLight
@@ -474,13 +587,35 @@ function emptyManualRequest(): Record<string, string> {
   };
 }
 
+function emptyUserForm(): UserFormState {
+  return {
+    username: '',
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: 'viewer',
+    isActive: true,
+    password: '',
+  };
+}
+
 export function CrmPage() {
-  const [leads, setLeads] = useState<CrmLead[]>(() => ensureCrmDemoLeads());
+  const apiEnabled = hasCrmApi();
+  const [crmSession, setCrmSession] = useState<CrmSession | null>(() => readCrmSession());
+  const [leads, setLeads] = useState<CrmLead[]>(() => (apiEnabled ? [] : readCrmLeads()));
+  const [clients, setClients] = useState<CrmClient[]>([]);
+  const [crmUsers, setCrmUsers] = useState<CrmManagedUser[]>([]);
+  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
+  const [crmError, setCrmError] = useState('');
+  const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<LeadTypeFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [page, setPage] = useState(1);
   const [theme, setTheme] = useState<CrmTheme>(() => readCrmTheme());
@@ -488,17 +623,64 @@ export function CrmPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [showManualRequest, setShowManualRequest] = useState(false);
   const [manualRequest, setManualRequest] = useState<Record<string, string>>(() => emptyManualRequest());
+  const [showClientRegistration, setShowClientRegistration] = useState(false);
+  const [clientForm, setClientForm] = useState(() => emptyClientRegistration());
+  const [showUserManagementModal, setShowUserManagementModal] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const [userForm, setUserForm] = useState<UserFormState>(() => emptyUserForm());
   const styles = themeStyles[theme];
 
   useEffect(() => {
-    const refresh = () => setLeads(readCrmLeads());
+    const session = readCrmSession();
+    if (!apiEnabled || !session?.token) return;
+
+    fetchCrmCurrentUser(session)
+      .then((user) => {
+        if (!user?.canAccessCrm) {
+          setCrmSession(null);
+          return;
+        }
+        const nextSession = { ...session, user };
+        setCrmSession(nextSession);
+        saveCrmSession(nextSession);
+      })
+      .catch(() => {
+        setCrmSession(null);
+      });
+  }, [apiEnabled, crmSession?.token]);
+
+  useEffect(() => {
+    const refresh = () => {
+      setIsLoadingLeads(true);
+      Promise.all([
+        fetchCrmLeads(crmSession),
+        fetchCrmClients(crmSession),
+        canManageUsers(crmSession?.user) ? fetchCrmUsers(crmSession) : Promise.resolve([]),
+      ])
+        .then(([nextLeads, nextClients, nextUsers]) => {
+          setLeads(nextLeads);
+          setClients(nextClients);
+          setCrmUsers(nextUsers);
+          setCrmError('');
+        })
+        .catch((error: Error) => {
+          setCrmError(error.message);
+        })
+        .finally(() => setIsLoadingLeads(false));
+    };
+
+    refresh();
     window.addEventListener(CRM_EVENT, refresh);
+    window.addEventListener(CRM_AUTH_EVENT, refresh);
+    window.addEventListener(CRM_CLIENT_EVENT, refresh);
     window.addEventListener('storage', refresh);
     return () => {
       window.removeEventListener(CRM_EVENT, refresh);
+      window.removeEventListener(CRM_AUTH_EVENT, refresh);
+      window.removeEventListener(CRM_CLIENT_EVENT, refresh);
       window.removeEventListener('storage', refresh);
     };
-  }, []);
+  }, [crmSession, apiEnabled]);
 
   const filteredLeads = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -540,24 +722,79 @@ export function CrmPage() {
     });
   }, [activeNav, leads, priorityFilter, query, statusFilter, typeFilter]);
 
+  const filteredClients = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return clients.filter((client) => {
+      const matchesType = typeFilter === 'all' || client.serviceLevel === typeFilter;
+      const matchesPriority = priorityFilter === 'all';
+      const matchesQuery =
+        !needle ||
+        [
+          client.name,
+          client.companyName,
+          client.email,
+          client.phone,
+          client.owner,
+          client.notes,
+          clientSegment(client),
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(needle);
+
+      return matchesType && matchesPriority && matchesQuery;
+    });
+  }, [clients, priorityFilter, query, typeFilter]);
+
+  const filteredUsers = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return crmUsers.filter((user) => {
+      return (
+        !needle ||
+        [
+          user.displayName,
+          user.username,
+          user.email,
+          crmRoleLabels[user.role as keyof typeof crmRoleLabels] ?? user.role,
+          user.groups.join(' '),
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(needle)
+      );
+    });
+  }, [crmUsers, query]);
+
   const typeCounts = useMemo(() => {
+    const source = activeNav === 'clients' ? filteredClients : leads;
     return typeFilters.reduce(
       (counts, filter) => ({
         ...counts,
-        [filter]: filter === 'all' ? leads.length : leads.filter((lead) => lead.serviceKey === filter).length,
+        [filter]:
+          filter === 'all'
+            ? source.length
+            : activeNav === 'clients'
+              ? filteredClients.filter((client) => client.serviceLevel === filter).length
+              : leads.filter((lead) => lead.serviceKey === filter).length,
       }),
       {} as Record<LeadTypeFilter, number>,
     );
-  }, [leads]);
+  }, [activeNav, filteredClients, leads]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / PAGE_SIZE));
+  const activeItems = activeNav === 'clients' ? filteredClients : activeNav === 'settings' ? filteredUsers : filteredLeads;
+  const totalPages = Math.max(1, Math.ceil(activeItems.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const pageLeads = filteredLeads.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageClients = filteredClients.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageUsers = filteredUsers.slice(pageStart, pageStart + PAGE_SIZE);
   const selectedLead = filteredLeads.find((lead) => lead.id === selectedLeadId) ?? pageLeads[0] ?? filteredLeads[0] ?? null;
+  const selectedClient = filteredClients.find((client) => client.id === selectedClientId) ?? pageClients[0] ?? filteredClients[0] ?? null;
   const selectedProcess = selectedLead ? processForLead(selectedLead) : null;
   const selectedTasks = selectedLead ? leadTasks(selectedLead) : [];
   const selectedHistory = selectedLead ? workflowHistory(selectedLead) : [];
+  const selectedClientLeads = selectedClient ? leads.filter((lead) => lead.clientId === selectedClient.id) : [];
+  const potentialClientMatch = useMemo(() => findMatchingClientRecord(clients, clientForm), [clients, clientForm]);
 
   const newCount = leads.filter((lead) => lead.status === 'new').length;
   const qualificationCount = leads.filter((lead) => lead.status === 'contacted').length;
@@ -567,7 +804,11 @@ export function CrmPage() {
   const workflowCount = leads.filter((lead) => lead.status === 'contacted' || lead.status === 'planning' || lead.status === 'proposal' || lead.status === 'execution').length;
   const taskCount = leads.filter((lead) => fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high').length;
   const calendarCount = leads.filter((lead) => Boolean(lead.dates) && lead.status !== 'lost' && lead.status !== 'completed').length;
-  const clientCount = new Set(leads.map((lead) => lead.name.trim()).filter(Boolean)).size;
+  const clientCount = clients.length;
+  const activeUserCount = crmUsers.filter((user) => user.isActive).length;
+  const managerAdminCount = crmUsers.filter((user) => user.role === 'admin' || user.role === 'manager').length;
+  const activeAgentCount = crmUsers.filter((user) => user.role === 'agent' && user.isActive).length;
+  const inactiveUserCount = crmUsers.filter((user) => !user.isActive).length;
   const navCounts: Partial<Record<CrmNavId, number>> = {
     command: newCount,
     workflow: workflowCount,
@@ -576,6 +817,7 @@ export function CrmPage() {
     clients: clientCount,
     trips: confirmedCount,
     reports: filteredLeads.length,
+    settings: crmUsers.length,
   };
   const navCopy: Record<CrmNavId, { title: string; subtitle: string }> = {
     command: { title: 'Command Center', subtitle: 'Incoming requests from website forms and phone intake' },
@@ -585,18 +827,69 @@ export function CrmPage() {
     clients: { title: 'Clients', subtitle: 'Client and company requests captured in the CRM pipeline' },
     trips: { title: 'Trips', subtitle: 'Confirmed, executing, and completed travel work' },
     reports: { title: 'Reports', subtitle: 'Filtered CRM data ready for export and review' },
-    settings: { title: 'Settings', subtitle: 'Theme, working filters, and CRM operating preferences' },
+    settings: { title: 'Settings', subtitle: 'CRM access, user roles, and operating preferences' },
   };
-  const metricCards: Array<{ label: string; value: number; meta: string; Icon: LucideIcon; filter: StatusFilter }> = [
+  const metricCards: MetricCard[] = [
     { label: 'New Requests', value: newCount, meta: `${urgentNewCount} priority`, Icon: Inbox, filter: 'new' },
     { label: 'In Qualification', value: qualificationCount, meta: 'View all', Icon: Mail, filter: 'contacted' },
     { label: 'Proposals Sent', value: proposalsCount, meta: 'View all', Icon: FileText, filter: 'proposal' },
     { label: 'Confirmed Trips', value: confirmedCount, meta: 'View all', Icon: CheckSquare, filter: 'confirmedGroup' },
   ];
+  const settingsMetricCards: MetricCard[] = [
+    { label: 'CRM Users', value: crmUsers.length, meta: `${activeUserCount} active`, Icon: Users },
+    { label: 'Managers + Admins', value: managerAdminCount, meta: 'Access control roles', Icon: Shield },
+    { label: 'Active Agents', value: activeAgentCount, meta: 'Operational users', Icon: Briefcase },
+    { label: 'Inactive Accounts', value: inactiveUserCount, meta: 'Review before reactivation', Icon: Lock },
+  ];
 
-  function refreshLead(id: string, patch: Partial<Pick<CrmLead, 'status' | 'priority' | 'internalNotes'>>) {
-    updateCrmLead(id, patch);
-    setLeads(readCrmLeads());
+  async function reloadLeads() {
+    const nextLeads = await fetchCrmLeads(crmSession);
+    setLeads(nextLeads);
+    return nextLeads;
+  }
+
+  async function reloadClients() {
+    const nextClients = await fetchCrmClients(crmSession);
+    setClients(nextClients);
+    return nextClients;
+  }
+
+  async function reloadUsers() {
+    if (!canManageUsers(crmSession?.user)) {
+      setCrmUsers([]);
+      return [];
+    }
+    const nextUsers = await fetchCrmUsers(crmSession);
+    setCrmUsers(nextUsers);
+    return nextUsers;
+  }
+
+  async function refreshLead(id: string, patch: Partial<Pick<CrmLead, 'status' | 'priority' | 'internalNotes'>>) {
+    try {
+      const updatedLead = await updateCrmLeadRecord(id, patch, crmSession);
+      if (updatedLead) {
+        setLeads((currentLeads) => currentLeads.map((lead) => (lead.id === id ? updatedLead : lead)));
+      } else {
+        await reloadLeads();
+      }
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not update CRM lead.');
+    }
+  }
+
+  async function refreshClient(id: string, patch: Partial<Pick<CrmClient, 'notes' | 'owner' | 'preferredContact'>>) {
+    try {
+      const updatedClient = await updateCrmClientRecord(id, patch, crmSession);
+      if (updatedClient) {
+        setClients((currentClients) => currentClients.map((client) => (client.id === id ? updatedClient : client)));
+      } else {
+        await reloadClients();
+      }
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not update CRM client.');
+    }
   }
 
   function toggleTheme() {
@@ -692,36 +985,248 @@ export function CrmPage() {
     setManualRequest((current) => ({ ...current, [field]: value }));
   }
 
-  function submitManualRequest(event: React.FormEvent<HTMLFormElement>) {
+  function openUserModal(user?: CrmManagedUser) {
+    if (user) {
+      setEditingUserId(user.id);
+      setUserForm({
+        username: user.username,
+        email: user.email,
+        first_name: user.first_name ?? '',
+        last_name: user.last_name ?? '',
+        role: user.role === 'admin' || user.role === 'manager' || user.role === 'agent' || user.role === 'viewer' ? user.role : 'viewer',
+        isActive: user.isActive,
+        password: '',
+      });
+    } else {
+      setEditingUserId(null);
+      setUserForm(emptyUserForm());
+    }
+    setShowUserManagementModal(true);
+  }
+
+  function updateUserField<K extends keyof UserFormState>(field: K, value: UserFormState[K]) {
+    setUserForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submitManualRequest(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const serviceKey = manualRequest.serviceKey as InquiryKind;
     const dates = [manualRequest.startDate, manualRequest.endDate].filter(Boolean).join(' - ');
-    const lead = createCrmLead({
-      service: `${typeLabels[serviceKey]} Phone Request`,
-      serviceKey,
-      name: manualRequest.name || 'Phone request',
-      contact: [manualRequest.email, manualRequest.phone].filter(Boolean).join(' / '),
-      email: manualRequest.email,
-      whatsapp: manualRequest.phone,
-      preferredContact: manualRequest.phone ? 'Phone / WhatsApp' : 'Email',
-      requestedServices: serviceKey === 'corporate' ? 'Corporate coordination' : serviceKey === 'luxury' ? 'Concierge support' : 'Travel planning',
-      tripType: serviceKey === 'corporate' ? 'Corporate travel' : serviceKey === 'luxury' ? 'Luxury / Prestige travel' : 'Leisure trip',
-      departureCity: manualRequest.departureCity,
-      destination: manualRequest.destination,
-      dates,
-      travelers: manualRequest.travelers,
-      budget: manualRequest.budget || 'Not captured',
-      urgency: 'Needs attention this week',
-      priority: 'high',
-      notes: [`Phone intake`, manualRequest.notes].filter(Boolean).join('\n\n'),
-    });
-    setLeads(readCrmLeads());
-    setSelectedLeadId(lead.id);
-    setTypeFilter(serviceKey);
-    setStatusFilter('new');
-    setPriorityFilter('all');
-    setShowManualRequest(false);
-    setManualRequest(emptyManualRequest());
+    try {
+      const lead = await createCrmLeadRecord(
+        {
+          service: `${typeLabels[serviceKey]} Phone Request`,
+          serviceKey,
+          name: manualRequest.name || 'Phone request',
+          contact: [manualRequest.email, manualRequest.phone].filter(Boolean).join(' / '),
+          email: manualRequest.email,
+          whatsapp: manualRequest.phone,
+          preferredContact: manualRequest.phone ? 'Phone / WhatsApp' : 'Email',
+          requestedServices: serviceKey === 'corporate' ? 'Corporate coordination' : serviceKey === 'luxury' ? 'Concierge support' : 'Travel planning',
+          tripType: serviceKey === 'corporate' ? 'Corporate travel' : serviceKey === 'luxury' ? 'Luxury / Prestige travel' : 'Leisure trip',
+          departureCity: manualRequest.departureCity,
+          destination: manualRequest.destination,
+          dates,
+          travelers: manualRequest.travelers,
+          budget: manualRequest.budget || 'Not captured',
+          urgency: 'Needs attention this week',
+          priority: 'high',
+          notes: [`Phone intake`, manualRequest.notes].filter(Boolean).join('\n\n'),
+        },
+        crmSession,
+      );
+      await reloadLeads();
+      setSelectedLeadId(lead.id);
+      setTypeFilter(serviceKey);
+      setStatusFilter('new');
+      setPriorityFilter('all');
+      setShowManualRequest(false);
+      setManualRequest(emptyManualRequest());
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not create phone request.');
+    }
+  }
+
+  function openClientRegistrationFromLead(lead?: CrmLead | null) {
+    if (lead) {
+      setClientForm(makeClientFromLead(lead));
+    } else {
+      setClientForm(emptyClientRegistration());
+    }
+    setShowClientRegistration(true);
+  }
+
+  function updateClientField(field: string, value: string) {
+    setClientForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submitClientRegistration(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    try {
+      if (potentialClientMatch) {
+        if (selectedLead && selectedLead.clientId !== potentialClientMatch.id) {
+          await updateCrmLeadRecord(selectedLead.id, { clientId: potentialClientMatch.id }, crmSession);
+          await Promise.all([reloadClients(), reloadLeads()]);
+        }
+        setSelectedClientId(potentialClientMatch.id);
+        setActiveNav('clients');
+        setShowClientRegistration(false);
+        setClientForm(emptyClientRegistration());
+        setCrmError('');
+        return;
+      }
+
+      const client = await createCrmClientRecord(clientForm, crmSession);
+      if (selectedLead && !selectedLead.clientId) {
+        await updateCrmLeadRecord(selectedLead.id, { clientId: client.id }, crmSession);
+      }
+      await Promise.all([reloadClients(), reloadLeads()]);
+      setSelectedClientId(client.id);
+      setSelectedLeadId(selectedLead?.id ?? null);
+      setActiveNav('clients');
+      setShowClientRegistration(false);
+      setClientForm(emptyClientRegistration());
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not register client.');
+    }
+  }
+
+  async function submitUserManagement(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    try {
+      if (editingUserId) {
+        await updateCrmUserRecord(
+          editingUserId,
+          {
+            username: userForm.username,
+            email: userForm.email,
+            first_name: userForm.first_name,
+            last_name: userForm.last_name,
+            role: userForm.role,
+            isActive: userForm.isActive,
+            password: userForm.password || undefined,
+          },
+          crmSession,
+        );
+      } else {
+        await createCrmUserRecord(
+          {
+            username: userForm.username,
+            email: userForm.email,
+            first_name: userForm.first_name,
+            last_name: userForm.last_name,
+            role: userForm.role,
+            isActive: userForm.isActive,
+            password: userForm.password,
+          },
+          crmSession,
+        );
+      }
+
+      await reloadUsers();
+      if (crmSession?.user?.id === editingUserId) {
+        const nextUser = await fetchCrmCurrentUser(crmSession);
+        if (nextUser?.canAccessCrm) {
+          const nextSession = { ...crmSession, user: nextUser };
+          setCrmSession(nextSession);
+          saveCrmSession(nextSession);
+        }
+      }
+      setShowUserManagementModal(false);
+      setEditingUserId(null);
+      setUserForm(emptyUserForm());
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not save CRM user.');
+    }
+  }
+
+  async function submitLogin(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsLoggingIn(true);
+    setCrmError('');
+
+    try {
+      const session = await loginCrm(loginIdentifier, loginPassword);
+      setCrmSession(session);
+      setLoginPassword('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not sign in to CRM.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
+  async function signOut() {
+    await logoutCrm(crmSession);
+    setCrmSession(null);
+    setLeads([]);
+    setClients([]);
+    setCrmUsers([]);
+  }
+
+  if (!apiEnabled) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#07111d] px-4 text-white">
+        <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0d1828] p-6 shadow-2xl">
+          <CrmBrandMark theme="dark" />
+          <div className="mt-8">
+            <h1 className="text-2xl font-semibold">CRM backend required</h1>
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              CRM access is role-based and only works when the backend API is configured. Set `VITE_CRM_API_URL` and sign in with a CRM-enabled account.
+            </p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!crmSession) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#07111d] px-4 text-white">
+        <form onSubmit={submitLogin} className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1828] p-6 shadow-2xl">
+          <CrmBrandMark theme="dark" />
+          <div className="mt-8">
+            <h1 className="text-2xl font-semibold">CRM Sign In</h1>
+            <p className="mt-2 text-sm leading-6 text-white/60">Use a DPM staff account with CRM access to manage requests, client records, notes, and workflow status.</p>
+          </div>
+          <label className="mt-6 block text-sm font-medium text-white/75">
+            Username or email
+            <input
+              value={loginIdentifier}
+              onChange={(event) => setLoginIdentifier(event.target.value)}
+              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              placeholder="staff@dpmundo.com"
+              autoComplete="username"
+              required
+            />
+          </label>
+          <label className="mt-4 block text-sm font-medium text-white/75">
+            Password
+            <input
+              value={loginPassword}
+              onChange={(event) => setLoginPassword(event.target.value)}
+              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </label>
+          {crmError ? <div className="mt-4 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">{crmError}</div> : null}
+          <button
+            type="submit"
+            disabled={isLoggingIn}
+            className="mt-6 h-11 w-full rounded-lg bg-[#d4af37] px-4 text-sm font-semibold text-[#241f1b] transition hover:bg-[#e0bc4e] disabled:opacity-55"
+          >
+            {isLoggingIn ? 'Signing in...' : 'Sign in'}
+          </button>
+        </form>
+      </main>
+    );
   }
 
   return (
@@ -785,11 +1290,21 @@ export function CrmPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowManualRequest(true)}
-                  className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#12305a] px-4 text-sm font-medium text-white transition hover:bg-[#173d72]"
+                  onClick={() =>
+                    activeNav === 'clients'
+                      ? openClientRegistrationFromLead(selectedLead)
+                      : activeNav === 'settings'
+                        ? openUserModal()
+                        : setShowManualRequest(true)
+                  }
+                  disabled={
+                    (activeNav === 'clients' && !canManageClients(crmSession?.user)) ||
+                    (activeNav === 'settings' && !canManageUsers(crmSession?.user))
+                  }
+                  className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#12305a] px-4 text-sm font-medium text-white transition hover:bg-[#173d72] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Plus className="h-4 w-4" />
-                  New Request
+                  {activeNav === 'clients' ? 'Register Client' : activeNav === 'settings' ? 'Add User' : 'New Request'}
                 </button>
                 <button
                   type="button"
@@ -807,29 +1322,38 @@ export function CrmPage() {
                 <button type="button" onClick={toggleTheme} className={`inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`}>
                   {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 </button>
+                {apiEnabled ? (
+                  <button type="button" onClick={signOut} className={`inline-flex h-11 items-center justify-center rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
+                    Sign out
+                  </button>
+                ) : null}
               </div>
             </div>
           </header>
 
           <div className="p-5">
+            {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
+            {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading CRM requests...</div> : null}
             <div className="grid gap-4 lg:grid-cols-4">
-              {metricCards.map(({ label, value, meta, Icon, filter }) => (
+              {(activeNav === 'settings' ? settingsMetricCards : metricCards).map((card) => (
                 <button
-                  key={label}
+                  key={card.label}
                   type="button"
-                  onClick={() => changeStatusFilter(filter)}
+                  onClick={() => {
+                    if (card.filter) changeStatusFilter(card.filter);
+                  }}
                   className={`rounded-xl border p-4 text-left transition ${
-                    statusFilter === filter ? `${styles.panelSoft} ring-1 ring-[#d4af37]/45` : styles.panel
+                    activeNav !== 'settings' && card.filter && statusFilter === card.filter ? `${styles.panelSoft} ring-1 ring-[#d4af37]/45` : styles.panel
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <span className={`text-sm ${styles.soft}`}>{label}</span>
+                    <span className={`text-sm ${styles.soft}`}>{card.label}</span>
                     <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#12305a] text-white">
-                      <Icon className="h-4 w-4" />
+                      <card.Icon className="h-4 w-4" />
                     </span>
                   </div>
-                  <div className="mt-3 text-3xl font-semibold">{value}</div>
-                  <div className={`mt-3 text-sm ${label === 'New Requests' ? 'text-emerald-400' : styles.muted}`}>{meta}</div>
+                  <div className="mt-3 text-3xl font-semibold">{card.value}</div>
+                  <div className={`mt-3 text-sm ${card.label === 'New Requests' ? 'text-emerald-400' : styles.muted}`}>{card.meta}</div>
                 </button>
               ))}
             </div>
@@ -926,96 +1450,234 @@ export function CrmPage() {
             <div className="mt-5">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-lg font-semibold">
-                  {statusFilter === 'all'
+                  {activeNav === 'settings'
+                    ? 'CRM User Access'
+                    : statusFilter === 'all'
                     ? activeNav === 'calendar'
                       ? 'Dated Requests'
                       : activeNav === 'clients'
-                        ? 'Client Requests'
+                        ? 'Registered Clients'
                         : 'Requests'
                     : statusFilter === 'confirmedGroup'
                       ? 'Confirmed Pipeline'
                       : statusFilter === 'workflowGroup'
                         ? 'Active Workflow'
-                        : statusLabels[statusFilter]}
+                      : statusLabels[statusFilter]}
                 </h2>
-                <button type="button" onClick={() => exportCsv(filteredLeads)} className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
-                  <Download className="h-4 w-4" />
-                  CSV
-                </button>
+                {activeNav !== 'settings' ? (
+                  <button
+                    type="button"
+                    onClick={() => (activeNav === 'clients' ? exportClientsCsv(filteredClients) : exportCsv(filteredLeads))}
+                    className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
+                  >
+                    <Download className="h-4 w-4" />
+                    CSV
+                  </button>
+                ) : null}
               </div>
 
               <div className={`overflow-hidden rounded-xl border ${styles.panel}`}>
-                <div className={`grid grid-cols-[1.5fr_1fr_1fr_1fr_100px_84px] gap-4 border-b px-5 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
-                  <div>Client / Request</div>
-                  <div>Segment</div>
-                  <div>Travel Dates</div>
-                  <div>Budget</div>
-                  <div>Priority</div>
-                  <div className="text-right">Received</div>
-                </div>
+                {activeNav === 'settings' ? (
+                  <>
+                    <div className={`grid grid-cols-[1.5fr_110px_100px_1fr_84px] gap-4 border-b px-5 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
+                      <div>User</div>
+                      <div>Role</div>
+                      <div>Status</div>
+                      <div>Groups</div>
+                      <div className="text-right">Action</div>
+                    </div>
 
-                {pageLeads.length === 0 ? (
-                  <div className="p-10 text-center">
-                    <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                    <div className="mt-4 text-lg font-semibold">No requests in this queue</div>
-                    <p className={`mt-2 text-sm ${styles.muted}`}>Adjust filters or submit a form to create a request.</p>
-                  </div>
+                    {pageUsers.length === 0 ? (
+                      <div className="p-10 text-center">
+                        <Shield className={`mx-auto h-10 w-10 ${styles.muted}`} />
+                        <div className="mt-4 text-lg font-semibold">No CRM users found</div>
+                        <p className={`mt-2 text-sm ${styles.muted}`}>Create CRM accounts for managers, agents, and viewers from this screen.</p>
+                      </div>
+                    ) : (
+                      pageUsers.map((user) => {
+                        const isCurrentUser = crmSession?.user?.id === user.id;
+                        const roleLabel = crmRoleLabels[user.role as keyof typeof crmRoleLabels] ?? user.role;
+                        return (
+                          <div
+                            key={user.id}
+                            className={`grid grid-cols-[1.5fr_110px_100px_1fr_84px] gap-4 border-b px-5 py-4 text-left transition ${styles.row}`}
+                          >
+                            <div className="flex min-w-0 items-center gap-4">
+                              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#12305a] text-sm font-semibold text-white">
+                                {initials(user.displayName || user.username)}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold">
+                                  {user.displayName}
+                                  {isCurrentUser ? <span className={`ml-2 text-xs font-medium ${styles.muted}`}>(you)</span> : null}
+                                </span>
+                                <span className={`mt-1 block truncate text-xs ${styles.muted}`}>
+                                  {user.email || user.username}
+                                </span>
+                              </span>
+                            </div>
+                            <div className="flex items-center">
+                              <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${user.role === 'admin' || user.role === 'manager' ? styles.type.corporate : user.role === 'agent' ? styles.type.classic : styles.panelSoft}`}>
+                                {roleLabel}
+                              </span>
+                            </div>
+                            <div className="flex items-center">
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${user.isActive ? 'bg-emerald-500/12 text-emerald-300 ring-emerald-400/20' : 'bg-slate-500/12 text-slate-300 ring-slate-400/20'}`}>
+                                {user.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </div>
+                            <div className={`flex min-w-0 items-center truncate text-sm ${styles.soft}`}>
+                              {user.groups.length > 0 ? user.groups.join(', ') : 'No CRM groups assigned'}
+                            </div>
+                            <div className="flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={() => openUserModal(user)}
+                                disabled={!canManageUsers(crmSession?.user)}
+                                className={`inline-flex h-9 items-center rounded-lg px-3 text-xs ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-45`}
+                              >
+                                Edit
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </>
+                ) : activeNav === 'clients' ? (
+                  <>
+                    <div className={`grid grid-cols-[1.5fr_1fr_1fr_110px_84px] gap-4 border-b px-5 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
+                      <div>Client</div>
+                      <div>Segment</div>
+                      <div>Primary Contact</div>
+                      <div>Open Requests</div>
+                      <div className="text-right">Updated</div>
+                    </div>
+
+                    {pageClients.length === 0 ? (
+                      <div className="p-10 text-center">
+                        <Users className={`mx-auto h-10 w-10 ${styles.muted}`} />
+                        <div className="mt-4 text-lg font-semibold">No registered clients yet</div>
+                        <p className={`mt-2 text-sm ${styles.muted}`}>Register clients from a selected request or add one manually.</p>
+                      </div>
+                    ) : (
+                      pageClients.map((client) => {
+                        const isSelected = selectedClient?.id === client.id;
+                        return (
+                          <button
+                            key={client.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedClientId(client.id);
+                              setDetailTab('overview');
+                            }}
+                            className={`grid w-full grid-cols-[1.5fr_1fr_1fr_110px_84px] gap-4 border-b px-5 py-4 text-left transition ${
+                              isSelected ? styles.rowActive : styles.row
+                            }`}
+                          >
+                            <div className="flex min-w-0 items-center gap-4">
+                              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-sm font-semibold text-white">
+                                {initials(clientLabel(client))}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold">{clientLabel(client)}</span>
+                                <span className={`mt-1 block truncate text-xs ${styles.muted}`}>
+                                  {clientSegment(client)} - {client.owner || 'Owner pending'}
+                                </span>
+                              </span>
+                            </div>
+                            <div className="flex items-center">
+                              <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${styles.type[client.serviceLevel]}`}>
+                                {typeLabels[client.serviceLevel]}
+                              </span>
+                            </div>
+                            <div className="flex min-w-0 flex-col justify-center">
+                              <span className={`truncate text-sm ${styles.soft}`}>{client.email || client.phone || 'Contact pending'}</span>
+                              <span className={`mt-1 truncate text-xs ${styles.muted}`}>{client.preferredContact || 'Preferred contact pending'}</span>
+                            </div>
+                            <div className={`flex items-center text-sm ${styles.soft}`}>{client.activeRequestCount}</div>
+                            <div className={`flex items-center justify-end text-sm ${styles.muted}`}>{formatDate(client.updatedAt)}</div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </>
                 ) : (
-                  pageLeads.map((lead) => {
-                    const priority = fallbackPriority(lead);
-                    const isSelected = selectedLead?.id === lead.id;
-                    return (
-                      <button
-                        key={lead.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedLeadId(lead.id);
-                          setDetailTab('overview');
-                        }}
-                        className={`grid w-full grid-cols-[1.5fr_1fr_1fr_1fr_100px_84px] gap-4 border-b px-5 py-4 text-left transition ${
-                          isSelected ? styles.rowActive : styles.row
-                        }`}
-                      >
-                        <div className="flex min-w-0 items-center gap-4">
-                          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-sm font-semibold text-white">
-                            {initials(lead.name)}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-semibold">{lead.name}</span>
-                            <span className={`mt-1 block truncate text-xs ${styles.muted}`}>
-                              {leadSegment(lead)} - {lead.destination || 'Destination pending'} - {statusLabels[lead.status]}
-                            </span>
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
-                            {typeLabels[lead.serviceKey]}
-                          </span>
-                        </div>
-                        <div className="flex min-w-0 flex-col justify-center">
-                          <span className={`truncate text-sm ${styles.soft}`}>{lead.dates || 'Dates pending'}</span>
-                          <span className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.travelers || 'Travelers pending'}</span>
-                        </div>
-                        <div className="flex min-w-0 flex-col justify-center">
-                          <span className={`truncate text-sm ${styles.soft}`}>{lead.budget || 'Budget pending'}</span>
-                          <span className={`mt-1 text-xs ${styles.muted}`}>USD</span>
-                        </div>
-                        <div className="flex items-center">
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.priority[priority]}`}>
-                            <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${styles.attention[attentionLevel(lead)]}`} />
-                            {priorityLabels[priority]}
-                          </span>
-                        </div>
-                        <div className={`flex items-center justify-end text-sm ${styles.muted}`}>{formatDate(lead.createdAt)}</div>
-                      </button>
-                    );
-                  })
+                  <>
+                    <div className={`grid grid-cols-[1.5fr_1fr_1fr_1fr_100px_84px] gap-4 border-b px-5 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
+                      <div>Client / Request</div>
+                      <div>Segment</div>
+                      <div>Travel Dates</div>
+                      <div>Budget</div>
+                      <div>Priority</div>
+                      <div className="text-right">Received</div>
+                    </div>
+
+                    {pageLeads.length === 0 ? (
+                      <div className="p-10 text-center">
+                        <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
+                        <div className="mt-4 text-lg font-semibold">No requests in this queue</div>
+                        <p className={`mt-2 text-sm ${styles.muted}`}>Adjust filters or submit a form to create a request.</p>
+                      </div>
+                    ) : (
+                      pageLeads.map((lead) => {
+                        const priority = fallbackPriority(lead);
+                        const isSelected = selectedLead?.id === lead.id;
+                        return (
+                          <button
+                            key={lead.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedLeadId(lead.id);
+                              setDetailTab('overview');
+                            }}
+                            className={`grid w-full grid-cols-[1.5fr_1fr_1fr_1fr_100px_84px] gap-4 border-b px-5 py-4 text-left transition ${
+                              isSelected ? styles.rowActive : styles.row
+                            }`}
+                          >
+                            <div className="flex min-w-0 items-center gap-4">
+                              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-sm font-semibold text-white">
+                                {initials(lead.name)}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold">{lead.name}</span>
+                                <span className={`mt-1 block truncate text-xs ${styles.muted}`}>
+                                  {leadSegment(lead)} - {lead.destination || 'Destination pending'} - {statusLabels[lead.status]}
+                                </span>
+                              </span>
+                            </div>
+                            <div className="flex items-center">
+                              <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
+                                {typeLabels[lead.serviceKey]}
+                              </span>
+                            </div>
+                            <div className="flex min-w-0 flex-col justify-center">
+                              <span className={`truncate text-sm ${styles.soft}`}>{lead.dates || 'Dates pending'}</span>
+                              <span className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.travelers || 'Travelers pending'}</span>
+                            </div>
+                            <div className="flex min-w-0 flex-col justify-center">
+                              <span className={`truncate text-sm ${styles.soft}`}>{lead.budget || 'Budget pending'}</span>
+                              <span className={`mt-1 text-xs ${styles.muted}`}>USD</span>
+                            </div>
+                            <div className="flex items-center">
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.priority[priority]}`}>
+                                <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${styles.attention[attentionLevel(lead)]}`} />
+                                {priorityLabels[priority]}
+                              </span>
+                            </div>
+                            <div className={`flex items-center justify-end text-sm ${styles.muted}`}>{formatDate(lead.createdAt)}</div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </>
                 )}
               </div>
 
               <div className={`flex flex-wrap items-center justify-between gap-3 px-1 py-4 text-sm ${styles.muted}`}>
                 <div>
-                  {filteredLeads.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filteredLeads.length)} of {filteredLeads.length} requests
+                  {activeItems.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, activeItems.length)} of {activeItems.length}{' '}
+                  {activeNav === 'clients' ? 'clients' : activeNav === 'settings' ? 'users' : 'requests'}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -1046,7 +1708,152 @@ export function CrmPage() {
         </section>
 
         <aside className={`hidden min-h-screen px-5 py-6 xl:block ${styles.rightPane}`}>
-          {selectedLead ? (
+          {activeNav === 'settings' ? (
+            <div className="grid gap-4">
+              <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                <div className="flex items-center gap-3">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#12305a] text-white">
+                    <Shield className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <div className="text-lg font-semibold">Access Policy</div>
+                    <p className={`mt-1 text-sm ${styles.muted}`}>Only admin and manager accounts can create or edit CRM users.</p>
+                  </div>
+                </div>
+                <div className={`mt-4 rounded-lg border px-4 py-4 text-sm ${styles.panelSoft}`}>
+                  <div className="font-medium">Current session</div>
+                  <div className={`mt-2 ${styles.soft}`}>{crmSession.user.first_name || crmSession.user.last_name ? `${crmSession.user.first_name ?? ''} ${crmSession.user.last_name ?? ''}`.trim() : crmSession.user.username}</div>
+                  <div className={`mt-1 text-xs ${styles.muted}`}>{crmRoleLabels[(crmSession.user.role === 'admin' || crmSession.user.role === 'manager' || crmSession.user.role === 'agent' || crmSession.user.role === 'viewer' ? crmSession.user.role : 'viewer') as keyof typeof crmRoleLabels]}</div>
+                </div>
+              </div>
+
+              <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                <div className="font-semibold">Role Guide</div>
+                <div className="mt-4 grid gap-3">
+                  {(Object.keys(crmRoleLabels) as Array<keyof typeof crmRoleLabels>).map((role) => (
+                    <div key={role} className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-medium">{crmRoleLabels[role]}</div>
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ${role === 'admin' || role === 'manager' ? styles.type.corporate : role === 'agent' ? styles.type.classic : styles.priority.low}`}>
+                          {role}
+                        </span>
+                      </div>
+                      <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{crmRoleDescriptions[role]}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                <div className="font-semibold">Recommended Setup</div>
+                <div className="mt-4 grid gap-3 text-sm">
+                  <div className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
+                    <div className="font-medium">Admin / Manager</div>
+                    <p className={`mt-2 leading-6 ${styles.muted}`}>Use for operations leadership, account supervision, and access control ownership.</p>
+                  </div>
+                  <div className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
+                    <div className="font-medium">Agent</div>
+                    <p className={`mt-2 leading-6 ${styles.muted}`}>Use for day-to-day request handling, client registration, and workflow execution.</p>
+                  </div>
+                  <div className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
+                    <div className="font-medium">Viewer</div>
+                    <p className={`mt-2 leading-6 ${styles.muted}`}>Use for oversight roles that need visibility without operational edit permissions.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : activeNav === 'clients' ? (
+            selectedClient ? (
+              <div className="grid gap-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-4">
+                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-lg font-semibold text-white">
+                      {initials(clientLabel(selectedClient))}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h2 className="truncate text-lg font-semibold">{clientLabel(selectedClient)}</h2>
+                        <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${styles.type[selectedClient.serviceLevel]}`}>
+                          {typeLabels[selectedClient.serviceLevel]}
+                        </span>
+                      </div>
+                      <p className={`mt-1 text-sm ${styles.muted}`}>{clientSegment(selectedClient)} - {selectedClient.owner || 'Owner pending'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                  <div className="grid grid-cols-2 gap-5">
+                    <div>
+                      <div className={`text-sm ${styles.muted}`}>Primary Email</div>
+                      <div className="mt-1 font-semibold">{selectedClient.email || '-'}</div>
+                    </div>
+                    <div>
+                      <div className={`text-sm ${styles.muted}`}>Phone</div>
+                      <div className="mt-1 font-semibold">{selectedClient.phone || '-'}</div>
+                    </div>
+                    <div>
+                      <div className={`text-sm ${styles.muted}`}>Preferred Contact</div>
+                      <div className="mt-1 font-semibold">{selectedClient.preferredContact || '-'}</div>
+                    </div>
+                    <div>
+                      <div className={`text-sm ${styles.muted}`}>Open Requests</div>
+                      <div className="mt-1 font-semibold">{selectedClient.activeRequestCount}</div>
+                    </div>
+                  </div>
+
+                  <label className="mt-5 block">
+                    <span className="font-semibold">Client Notes</span>
+                    <textarea
+                      value={selectedClient.notes || ''}
+                      onChange={(event) => refreshClient(selectedClient.id, { notes: event.target.value })}
+                      className={`mt-3 min-h-24 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
+                      placeholder="Relationship notes, preferences, commercial context..."
+                    />
+                  </label>
+                </div>
+
+                <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-semibold">Related Requests</div>
+                    <span className={`text-sm ${styles.muted}`}>{selectedClientLeads.length} linked</span>
+                  </div>
+                  <div className="mt-4 grid gap-3">
+                    {selectedClientLeads.length === 0 ? (
+                      <div className={`rounded-lg border p-4 text-sm ${styles.panelSoft}`}>No requests linked to this client yet.</div>
+                    ) : (
+                      selectedClientLeads.map((lead) => (
+                        <button
+                          key={lead.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveNav('command');
+                            setSelectedLeadId(lead.id);
+                            setDetailTab('overview');
+                          }}
+                          className={`rounded-lg border p-4 text-left transition ${styles.panelSoft}`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-medium">{lead.destination || lead.service}</div>
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
+                              {typeLabels[lead.serviceKey]}
+                            </span>
+                          </div>
+                          <div className={`mt-2 text-sm ${styles.muted}`}>{lead.dates || 'Dates pending'} - {statusLabels[lead.status]}</div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-8 text-center">
+                <Users className={`mx-auto h-10 w-10 ${styles.muted}`} />
+                <div className="mt-4 text-lg font-semibold">Select a client</div>
+                <p className={`mt-2 text-sm ${styles.muted}`}>Registered client context appears here.</p>
+              </div>
+            )
+          ) : selectedLead ? (
             <div className="grid gap-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex min-w-0 items-center gap-4">
@@ -1185,6 +1992,37 @@ export function CrmPage() {
                       <div>
                         <div className={`text-xs ${styles.muted}`}>Preferred</div>
                         <div className="mt-1 text-sm">{selectedLead.preferredContact || '-'}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-semibold">Client Record</div>
+                        {!selectedLead.clientId && canManageClients(crmSession?.user) ? (
+                          <button
+                            type="button"
+                            onClick={() => openClientRegistrationFromLead(selectedLead)}
+                            className={`inline-flex h-8 items-center rounded-lg px-3 text-xs ${styles.buttonGhost}`}
+                          >
+                            Convert to client
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className={`mt-3 rounded-lg border px-3 py-3 text-sm ${styles.panelSoft}`}>
+                        {selectedLead.clientId ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveNav('clients');
+                              setSelectedClientId(selectedLead.clientId ?? null);
+                            }}
+                            className="font-medium text-[#d4af37]"
+                          >
+                            {selectedLead.clientName || 'Open linked client'}
+                          </button>
+                        ) : (
+                          <span className={styles.muted}>This request is not linked to a registered client yet.</span>
+                        )}
                       </div>
                     </div>
 
@@ -1412,6 +2250,264 @@ export function CrmPage() {
               </button>
               <button type="submit" className="rounded-lg bg-[#12305a] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#173d72]">
                 Create phone request
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {showClientRegistration ? (
+        <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-black/55 px-4 py-6 backdrop-blur-sm">
+          <form onSubmit={submitClientRegistration} className={`w-full max-w-2xl rounded-xl border p-5 shadow-2xl ${styles.panel}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className={`text-xs uppercase tracking-[0.18em] ${styles.muted}`}>Client registration</div>
+                <h2 className="mt-1 text-xl font-semibold">{selectedLead ? 'Convert request to client' : 'Create CRM client record'}</h2>
+                <p className={`mt-1 text-sm ${styles.muted}`}>
+                  {selectedLead ? 'Turn this request into a reusable client record and link future requests cleanly.' : 'Register a reusable client profile and link it to future requests.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowClientRegistration(false)}
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${styles.buttonGhost}`}
+                aria-label="Close client registration form"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {potentialClientMatch ? (
+              <div className={`mt-5 rounded-xl border px-4 py-4 ${styles.panelSoft}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">Existing client found</div>
+                    <p className={`mt-1 text-sm ${styles.muted}`}>
+                      {clientLabel(potentialClientMatch)} already exists with matching contact details. Saving will link this request to that client instead of creating a duplicate record.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedClientId(potentialClientMatch.id);
+                      setActiveNav('clients');
+                      setShowClientRegistration(false);
+                    }}
+                    className={`inline-flex h-9 items-center rounded-lg px-3 text-xs ${styles.buttonGhost}`}
+                  >
+                    Open existing client
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <label className="text-sm font-medium">
+                Client name
+                <input
+                  value={clientForm.name}
+                  onChange={(event) => updateClientField('name', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                  required
+                />
+              </label>
+              <label className="text-sm font-medium">
+                Client type
+                <select
+                  value={clientForm.clientType}
+                  onChange={(event) => updateClientField('clientType', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}
+                >
+                  <option value="private">Private</option>
+                  <option value="corporate">Corporate</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium">
+                Company name
+                <input
+                  value={clientForm.companyName}
+                  onChange={(event) => updateClientField('companyName', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                />
+              </label>
+              <label className="text-sm font-medium">
+                Service level
+                <select
+                  value={clientForm.serviceLevel}
+                  onChange={(event) => updateClientField('serviceLevel', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}
+                >
+                  <option value="classic">Classic</option>
+                  <option value="luxury">Luxury</option>
+                  <option value="corporate">Corporate</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium">
+                Email
+                <input
+                  value={clientForm.email}
+                  onChange={(event) => updateClientField('email', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                  type="email"
+                />
+              </label>
+              <label className="text-sm font-medium">
+                Phone
+                <input
+                  value={clientForm.phone}
+                  onChange={(event) => updateClientField('phone', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                />
+              </label>
+              <label className="text-sm font-medium">
+                Preferred contact
+                <input
+                  value={clientForm.preferredContact}
+                  onChange={(event) => updateClientField('preferredContact', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                />
+              </label>
+              <label className="text-sm font-medium">
+                Owner
+                <input
+                  value={clientForm.owner}
+                  onChange={(event) => updateClientField('owner', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                />
+              </label>
+            </div>
+
+            <label className="mt-4 block text-sm font-medium">
+              Notes
+              <textarea
+                value={clientForm.notes}
+                onChange={(event) => updateClientField('notes', event.target.value)}
+                className={`mt-2 min-h-24 w-full rounded-lg border px-3 py-3 text-sm outline-none ${styles.input}`}
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-3">
+              <button type="button" onClick={() => setShowClientRegistration(false)} className={`rounded-lg px-4 py-2 text-sm ${styles.buttonGhost}`}>
+                Cancel
+              </button>
+              <button type="submit" className="rounded-lg bg-[#12305a] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#173d72]">
+                {potentialClientMatch ? 'Link existing client' : selectedLead ? 'Convert to client' : 'Save client'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {showUserManagementModal ? (
+        <div className="fixed inset-0 z-[95] flex items-start justify-center overflow-y-auto bg-black/55 px-4 py-6 backdrop-blur-sm">
+          <form onSubmit={submitUserManagement} className={`w-full max-w-2xl rounded-xl border p-5 shadow-2xl ${styles.panel}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className={`text-xs uppercase tracking-[0.18em] ${styles.muted}`}>CRM access</div>
+                <h2 className="mt-1 text-xl font-semibold">{editingUserId ? 'Update CRM user' : 'Create CRM user'}</h2>
+                <p className={`mt-1 text-sm ${styles.muted}`}>Set credentials, active status, and role-based CRM access.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUserManagementModal(false);
+                  setEditingUserId(null);
+                  setUserForm(emptyUserForm());
+                }}
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${styles.buttonGhost}`}
+                aria-label="Close CRM user form"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <label className="text-sm font-medium">
+                First name
+                <input
+                  value={userForm.first_name}
+                  onChange={(event) => updateUserField('first_name', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                />
+              </label>
+              <label className="text-sm font-medium">
+                Last name
+                <input
+                  value={userForm.last_name}
+                  onChange={(event) => updateUserField('last_name', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                />
+              </label>
+              <label className="text-sm font-medium">
+                Username
+                <input
+                  value={userForm.username}
+                  onChange={(event) => updateUserField('username', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                  required
+                />
+              </label>
+              <label className="text-sm font-medium">
+                Email
+                <input
+                  value={userForm.email}
+                  onChange={(event) => updateUserField('email', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                  type="email"
+                  required
+                />
+              </label>
+              <label className="text-sm font-medium">
+                Role
+                <select
+                  value={userForm.role}
+                  onChange={(event) => updateUserField('role', event.target.value as UserFormState['role'])}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}
+                >
+                  {(Object.keys(crmRoleLabels) as Array<keyof typeof crmRoleLabels>).map((role) => (
+                    <option key={role} value={role}>
+                      {crmRoleLabels[role]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-medium">
+                Password
+                <input
+                  value={userForm.password}
+                  onChange={(event) => updateUserField('password', event.target.value)}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+                  type="password"
+                  placeholder={editingUserId ? 'Leave blank to keep current password' : 'Required for new user'}
+                  required={!editingUserId}
+                />
+              </label>
+            </div>
+
+            <label className={`mt-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm ${styles.panelSoft}`}>
+              <input
+                checked={userForm.isActive}
+                onChange={(event) => updateUserField('isActive', event.target.checked)}
+                type="checkbox"
+                className="h-4 w-4 rounded border-white/20"
+              />
+              <span>
+                <span className="font-medium">Active CRM account</span>
+                <span className={`mt-1 block ${styles.muted}`}>Inactive users keep their record but cannot sign in.</span>
+              </span>
+            </label>
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUserManagementModal(false);
+                  setEditingUserId(null);
+                  setUserForm(emptyUserForm());
+                }}
+                className={`rounded-lg px-4 py-2 text-sm ${styles.buttonGhost}`}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="rounded-lg bg-[#12305a] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#173d72]">
+                {editingUserId ? 'Save user' : 'Create user'}
               </button>
             </div>
           </form>
