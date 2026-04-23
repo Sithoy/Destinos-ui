@@ -43,7 +43,8 @@ export function Nav({
   setPrestigePage: (page: PrestigePage) => void;
 }) {
   const { t } = useTranslation();
-  const isPrestige = page !== 'home';
+  const isPrestige = page === 'luxury' || page === 'corporate';
+  const isCrm = page === 'crm';
 
   return (
     <div className="sticky top-0 z-50 border-b border-white/10 bg-[#07111d]/95 backdrop-blur-xl">
@@ -62,7 +63,14 @@ export function Nav({
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
           <LanguageToggle compact />
-          {isPrestige ? (
+          {isCrm ? (
+            <button
+              onClick={goHome}
+              className="hidden rounded-full border border-white/10 px-4 py-2 text-sm text-white/75 transition hover:bg-white/10 hover:text-white md:inline-flex"
+            >
+              {t('nav.backHome')}
+            </button>
+          ) : isPrestige ? (
             <>
               <button
                 onClick={goHome}

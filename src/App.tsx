@@ -10,6 +10,7 @@ import { BrandLockup, InstagramIcon } from './components/ui';
 import { getPageFromPathname, pageMeta, pageRoutes } from './data/travel';
 import { ClassicHome } from './pages/ClassicHome';
 import { CorporatePage } from './pages/CorporatePage';
+import { CrmPage } from './pages/CrmPage';
 import { LuxuryPage } from './pages/LuxuryPage';
 import type { InquiryKind } from './types';
 
@@ -43,7 +44,9 @@ export default function DestinosPeloMundoUIConcept() {
   };
 
   const screen =
-    page === 'luxury' ? (
+    page === 'crm' ? (
+      <CrmPage />
+    ) : page === 'luxury' ? (
       <LuxuryPage openInquiry={openInquiry} />
     ) : page === 'corporate' ? (
       <CorporatePage openInquiry={openInquiry} />
@@ -53,16 +56,18 @@ export default function DestinosPeloMundoUIConcept() {
 
   return (
     <div className={`min-h-screen ${pageMeta[page].bg}`}>
-      <Nav
-        page={page}
-        goHome={goHome}
-        openPrestige={openPrestige}
-        setPrestigePage={(nextPage) => {
-          navigate(pageRoutes[nextPage]);
-          setIsGatewayNavigating(false);
-          setShowPrestigeGate(false);
-        }}
-      />
+      {page !== 'crm' ? (
+        <Nav
+          page={page}
+          goHome={goHome}
+          openPrestige={openPrestige}
+          setPrestigePage={(nextPage) => {
+            navigate(pageRoutes[nextPage]);
+            setIsGatewayNavigating(false);
+            setShowPrestigeGate(false);
+          }}
+        />
+      ) : null}
 
       <AnimatePresence mode="wait">
         <motion.div
@@ -92,6 +97,7 @@ export default function DestinosPeloMundoUIConcept() {
 
       <InquiryModal kind={inquiryKind} onClose={() => setInquiryKind(null)} />
 
+      {page !== 'crm' ? (
       <footer className={`border-t ${page === 'home' ? 'border-slate-200 bg-white text-slate-700' : 'border-white/10 bg-black/20 text-white/70'}`}>
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 md:grid-cols-3 md:px-6">
           <div>
@@ -159,6 +165,7 @@ export default function DestinosPeloMundoUIConcept() {
           </a>
         </div>
       </footer>
+      ) : null}
     </div>
   );
 }

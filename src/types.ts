@@ -1,3 +1,32 @@
-export type Page = 'home' | 'luxury' | 'corporate';
+export type Page = 'home' | 'luxury' | 'corporate' | 'crm';
 export type PrestigePage = Extract<Page, 'luxury' | 'corporate'>;
 export type InquiryKind = 'classic' | 'luxury' | 'corporate';
+export type LeadStatus = 'new' | 'contacted' | 'planning' | 'proposal' | 'won' | 'execution' | 'completed' | 'lost';
+export type LeadEmailStatus = 'pending' | 'sent' | 'failed';
+export type LeadPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+export type CrmLead = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  service: string;
+  serviceKey: InquiryKind;
+  name: string;
+  contact: string;
+  email: string;
+  whatsapp: string;
+  preferredContact: string;
+  requestedServices: string;
+  tripType: string;
+  departureCity: string;
+  destination: string;
+  dates: string;
+  travelers: string;
+  budget: string;
+  urgency: string;
+  priority: LeadPriority;
+  notes: string;
+  status: LeadStatus;
+  emailStatus: LeadEmailStatus;
+  internalNotes: string;
+};
