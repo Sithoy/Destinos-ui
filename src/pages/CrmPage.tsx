@@ -398,6 +398,13 @@ function findMatchingClientRecord(clients: CrmClient[], input: ReturnType<typeof
   );
 }
 
+function canEditManagedUser(actor: CrmSession['user'] | null | undefined, target: CrmManagedUser) {
+  if (!actor || !canManageUsers(actor)) return false;
+  if (actor.role === 'admin') return true;
+  if (actor.role === 'manager') return target.role === 'agent' || target.role === 'viewer' || target.role === 'client' || target.role === 'none';
+  return false;
+}
+
 function processForLead(lead: CrmLead) {
   const process = statusProcess[lead.status];
   return {
@@ -795,6 +802,11 @@ export function CrmPage() {
   const selectedHistory = selectedLead ? workflowHistory(selectedLead) : [];
   const selectedClientLeads = selectedClient ? leads.filter((lead) => lead.clientId === selectedClient.id) : [];
   const potentialClientMatch = useMemo(() => findMatchingClientRecord(clients, clientForm), [clients, clientForm]);
+  const manageableRoleOptions = useMemo<Array<keyof typeof crmRoleLabels>>(() => {
+    if (crmSession?.user.role === 'admin') return ['admin', 'manager', 'agent', 'viewer'];
+    if (crmSession?.user.role === 'manager') return ['agent', 'viewer'];
+    return [];
+  }, [crmSession?.user.role]);
 
   const newCount = leads.filter((lead) => lead.status === 'new').length;
   const qualificationCount = leads.filter((lead) => lead.status === 'contacted').length;
@@ -986,6 +998,11 @@ export function CrmPage() {
   }
 
   function openUserModal(user?: CrmManagedUser) {
+    if (user && !canEditManagedUser(crmSession?.user, user)) {
+      setCrmError('Managers can only manage agent and viewer accounts.');
+      return;
+    }
+
     if (user) {
       setEditingUserId(user.id);
       setUserForm({
@@ -999,7 +1016,11 @@ export function CrmPage() {
       });
     } else {
       setEditingUserId(null);
-      setUserForm(emptyUserForm());
+      const emptyForm = emptyUserForm();
+      setUserForm({
+        ...emptyForm,
+        role: manageableRoleOptions[0] ?? emptyForm.role,
+      });
     }
     setShowUserManagementModal(true);
   }
@@ -1496,6 +1517,7 @@ export function CrmPage() {
                     ) : (
                       pageUsers.map((user) => {
                         const isCurrentUser = crmSession?.user?.id === user.id;
+                        const canEditUser = canEditManagedUser(crmSession?.user, user);
                         const roleLabel = crmRoleLabels[user.role as keyof typeof crmRoleLabels] ?? user.role;
                         return (
                           <div
@@ -1533,10 +1555,11 @@ export function CrmPage() {
                               <button
                                 type="button"
                                 onClick={() => openUserModal(user)}
-                                disabled={!canManageUsers(crmSession?.user)}
+                                disabled={!canEditUser}
+                                title={canEditUser ? 'Edit CRM user' : 'Only admins can modify admin or manager accounts'}
                                 className={`inline-flex h-9 items-center rounded-lg px-3 text-xs ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-45`}
                               >
-                                Edit
+                                {canEditUser ? 'Edit' : 'Protected'}
                               </button>
                             </div>
                           </div>
@@ -1717,7 +1740,7 @@ export function CrmPage() {
                   </span>
                   <div>
                     <div className="text-lg font-semibold">Access Policy</div>
-                    <p className={`mt-1 text-sm ${styles.muted}`}>Only admin and manager accounts can create or edit CRM users.</p>
+                    <p className={`mt-1 text-sm ${styles.muted}`}>Admins can manage everyone. Managers can maintain agent and viewer accounts only.</p>
                   </div>
                 </div>
                 <div className={`mt-4 rounded-lg border px-4 py-4 text-sm ${styles.panelSoft}`}>
@@ -1749,7 +1772,7 @@ export function CrmPage() {
                 <div className="mt-4 grid gap-3 text-sm">
                   <div className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
                     <div className="font-medium">Admin / Manager</div>
-                    <p className={`mt-2 leading-6 ${styles.muted}`}>Use for operations leadership, account supervision, and access control ownership.</p>
+                    <p className={`mt-2 leading-6 ${styles.muted}`}>Admins own access control. Managers supervise operations but should not modify protected leadership accounts.</p>
                   </div>
                   <div className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
                     <div className="font-medium">Agent</div>
@@ -2461,7 +2484,7 @@ export function CrmPage() {
                   onChange={(event) => updateUserField('role', event.target.value as UserFormState['role'])}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}
                 >
-                  {(Object.keys(crmRoleLabels) as Array<keyof typeof crmRoleLabels>).map((role) => (
+                  {manageableRoleOptions.map((role) => (
                     <option key={role} value={role}>
                       {crmRoleLabels[role]}
                     </option>

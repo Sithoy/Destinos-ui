@@ -15,6 +15,7 @@ from .serializers import (
     UserSerializer,
     can_access_crm,
     can_manage_clients,
+    can_manage_user_target,
     can_manage_users,
 )
 
@@ -32,6 +33,9 @@ class CanManageClients(permissions.BasePermission):
 class CanManageUsers(permissions.BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and can_manage_users(request.user))
+
+    def has_object_permission(self, request, view, obj):
+        return bool(request.user and request.user.is_authenticated and can_manage_user_target(request.user, obj))
 
 
 class LeadViewSet(viewsets.ModelViewSet):

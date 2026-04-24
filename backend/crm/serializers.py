@@ -44,6 +44,27 @@ def can_manage_users(user: User) -> bool:
     return get_user_role(user) in {"admin", "manager"}
 
 
+def can_manage_user_target(actor: User, target: User) -> bool:
+    actor_role = get_user_role(actor)
+    target_role = get_user_role(target)
+
+    if actor_role == "admin":
+        return True
+    if actor_role == "manager":
+        return target_role in {"agent", "viewer", "client", "none"}
+    return False
+
+
+def can_assign_user_role(actor: User, role: str) -> bool:
+    actor_role = get_user_role(actor)
+
+    if actor_role == "admin":
+        return role in {"admin", "manager", "agent", "viewer"}
+    if actor_role == "manager":
+        return role in {"agent", "viewer"}
+    return False
+
+
 def assign_user_role(user: User, role: str) -> User:
     crm_groups = list(Group.objects.filter(name__in=CRM_GROUP_ROLE_MAP.keys()))
     if crm_groups:
@@ -242,8 +263,20 @@ class UserManagementSerializer(UserSerializer):
         return value
 
     def validate(self, attrs):
+        request = self.context.get("request")
+        actor = getattr(request, "user", None)
+        next_role = attrs.get("role", get_user_role(self.instance) if self.instance else "viewer")
+
         if self.instance is None and not attrs.get("password"):
             raise serializers.ValidationError({"password": "Password is required for new users."})
+
+        if actor and getattr(actor, "is_authenticated", False):
+            if self.instance is not None and not can_manage_user_target(actor, self.instance):
+                raise serializers.ValidationError("You do not have permission to modify this CRM user.")
+
+            if not can_assign_user_role(actor, next_role):
+                raise serializers.ValidationError({"role": "You do not have permission to assign this CRM role."})
+
         return attrs
 
     def create(self, validated_data):
