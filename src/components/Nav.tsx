@@ -73,8 +73,10 @@ export function Nav({
               className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-2 text-xs text-white transition hover:bg-white/12 sm:px-4 sm:text-sm"
               aria-label="Open CRM"
             >
-              <LayoutDashboard className="h-4 w-4" />
-              <span className="hidden sm:inline">CRM</span>
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#12305a] text-white">
+                <LayoutDashboard className="h-3.5 w-3.5" />
+              </span>
+              <span className="hidden sm:inline">Open CRM</span>
             </button>
           ) : null}
           {isCrm ? (

@@ -111,6 +111,7 @@ export const pageMeta: Record<Page, { logo: string; bg: string }> = {
   luxury: { logo: luxuryLogo, bg: 'bg-[rgb(36,31,27)] text-white' },
   corporate: { logo: corporateLogo, bg: 'bg-[rgb(5,17,36)] text-white' },
   crm: { logo: classicLogo, bg: 'bg-[#07111d] text-white' },
+  corporatePortal: { logo: classicLogo, bg: 'bg-[#07111f] text-white' },
 };
 
 export const pageRoutes: Record<Page, string> = {
@@ -118,6 +119,7 @@ export const pageRoutes: Record<Page, string> = {
   luxury: '/prestige/luxury',
   corporate: '/prestige/corporate',
   crm: '/crm',
+  corporatePortal: '/corporate-portal',
 };
 
 export const inquiryLabelKeys: Record<InquiryKind, string> = {
@@ -127,6 +129,7 @@ export const inquiryLabelKeys: Record<InquiryKind, string> = {
 };
 
 export function getPageFromPathname(pathname: string): Page {
+  if (pathname.startsWith(pageRoutes.corporatePortal)) return 'corporatePortal';
   if (pathname === pageRoutes.crm) return 'crm';
   if (pathname === pageRoutes.luxury) return 'luxury';
   if (pathname === pageRoutes.corporate) return 'corporate';

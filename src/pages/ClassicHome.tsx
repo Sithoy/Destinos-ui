@@ -1,4 +1,4 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, LayoutDashboard, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   champagneImage,
@@ -18,9 +18,13 @@ import { Button, Card, PrestigeIdentity, SectionTitle, SmartImage } from '../com
 export function ClassicHome({
   openPrestige,
   openInquiry,
+  openCrm,
+  canOpenCrm,
 }: {
   openPrestige: () => void;
   openInquiry: (kind: InquiryKind) => void;
+  openCrm: () => void;
+  canOpenCrm: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -72,6 +76,16 @@ export function ClassicHome({
                 {t('nav.enterPrestige')} <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={openCrm}
+                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-white/85 backdrop-blur-sm transition hover:bg-white/15 hover:text-white"
+              >
+                <LayoutDashboard className="h-4 w-4" />
+                <span>{canOpenCrm ? 'Open CRM' : 'Staff Login'}</span>
+              </button>
+            </div>
           </div>
 
           <div className="hidden xl:flex xl:justify-end">
@@ -82,6 +96,25 @@ export function ClassicHome({
                 <div className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">{t('home.hero.cardItems.flights')}</div>
                 <div className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">{t('home.hero.cardItems.luxury')}</div>
                 <div className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">{t('home.hero.cardItems.corporate')}</div>
+              </div>
+              <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-white/55">DPM staff access</div>
+                    <div className="mt-2 text-sm leading-6 text-white/78">Open the operational workspace for leads, clients, and follow-up.</div>
+                  </div>
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-white">
+                    <Shield className="h-4 w-4" />
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={openCrm}
+                  className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/15"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>{canOpenCrm ? 'Open CRM' : 'Staff Login'}</span>
+                </button>
               </div>
             </div>
           </div>

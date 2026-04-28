@@ -13,6 +13,7 @@ import { ClassicHome } from './pages/ClassicHome';
 import { CorporatePage } from './pages/CorporatePage';
 import { CrmPage } from './pages/CrmPage';
 import { LuxuryPage } from './pages/LuxuryPage';
+import { CorporatePortalApp } from './pages/corporate-portal/CorporatePortalApp';
 import type { InquiryKind } from './types';
 
 export default function DestinosPeloMundoUIConcept() {
@@ -43,6 +44,11 @@ export default function DestinosPeloMundoUIConcept() {
       Icon: LinkedInIcon,
     },
     crm: {
+      href: 'https://www.linkedin.com/company/etios-systems/',
+      label: 'ETIOS Systems on LinkedIn',
+      Icon: LinkedInIcon,
+    },
+    corporatePortal: {
       href: 'https://www.linkedin.com/company/etios-systems/',
       label: 'ETIOS Systems on LinkedIn',
       Icon: LinkedInIcon,
@@ -104,17 +110,19 @@ export default function DestinosPeloMundoUIConcept() {
   const screen =
     page === 'crm' ? (
       <CrmPage />
+    ) : page === 'corporatePortal' ? (
+      <CorporatePortalApp />
     ) : page === 'luxury' ? (
       <LuxuryPage openInquiry={openInquiry} />
     ) : page === 'corporate' ? (
       <CorporatePage openInquiry={openInquiry} />
     ) : (
-      <ClassicHome openPrestige={openPrestige} openInquiry={openInquiry} />
+      <ClassicHome openPrestige={openPrestige} openInquiry={openInquiry} openCrm={() => navigate(pageRoutes.crm)} canOpenCrm={canEnterCrm} />
     );
 
   return (
     <div className={`min-h-screen ${pageMeta[page].bg}`}>
-      {page !== 'crm' ? (
+      {page !== 'crm' && page !== 'corporatePortal' ? (
         <Nav
           page={page}
           goHome={goHome}
@@ -157,7 +165,7 @@ export default function DestinosPeloMundoUIConcept() {
 
       <InquiryModal kind={inquiryKind} onClose={() => setInquiryKind(null)} />
 
-      {page !== 'crm' ? (
+      {page !== 'crm' && page !== 'corporatePortal' ? (
       <footer className={`border-t ${page === 'home' ? 'border-slate-200 bg-white text-slate-700' : 'border-white/10 bg-black/20 text-white/70'}`}>
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 md:grid-cols-3 md:px-6">
           <div>

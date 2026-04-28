@@ -1,4 +1,4 @@
-export type Page = 'home' | 'luxury' | 'corporate' | 'crm';
+export type Page = 'home' | 'luxury' | 'corporate' | 'crm' | 'corporatePortal';
 export type PrestigePage = Extract<Page, 'luxury' | 'corporate'>;
 export type InquiryKind = 'classic' | 'luxury' | 'corporate';
 export type LeadStatus = 'new' | 'contacted' | 'planning' | 'proposal' | 'won' | 'execution' | 'completed' | 'lost';

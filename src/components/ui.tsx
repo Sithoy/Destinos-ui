@@ -125,6 +125,8 @@ export function BrandLockup({
   gapClass,
   logoSize,
   logoArtScale,
+  logoArtOffset,
+  wordmarkWidthClass,
   taglineClassName = '',
 }: {
   src: string;
@@ -135,6 +137,8 @@ export function BrandLockup({
   gapClass?: string;
   logoSize?: string;
   logoArtScale?: string;
+  logoArtOffset?: string;
+  wordmarkWidthClass?: string;
   taglineClassName?: string;
 }) {
   const { t } = useTranslation();
@@ -146,11 +150,12 @@ export function BrandLockup({
   const resolvedGap = gapClass ?? (compact ? 'gap-4 sm:gap-5 md:gap-7' : 'gap-5 sm:gap-6 md:gap-10');
   const resolvedLogoSize = logoSize ?? (compact ? 'h-10 sm:h-12 md:h-16' : 'h-14 sm:h-16 md:h-24');
   const resolvedLogoScale = logoArtScale ?? (compact ? 'scale-[1.55] md:scale-[1.65]' : 'scale-[1.65] md:scale-[1.8]');
-  const wordmarkWidth = compact ? 'w-[clamp(8rem,18vw,13rem)] max-w-[calc(100vw-10rem)]' : 'w-[clamp(10rem,26vw,18rem)] max-w-full';
+  const resolvedLogoOffset = logoArtOffset ?? 'translate-x-1.5 sm:translate-x-2';
+  const wordmarkWidth = wordmarkWidthClass ?? (compact ? 'w-[clamp(8rem,18vw,13rem)] max-w-[calc(100vw-10rem)]' : 'w-[clamp(10rem,26vw,18rem)] max-w-full');
 
   return (
     <div className={`flex ${resolvedGap} ${alignClass}`}>
-      <LogoMark src={src} alt={alt} size={resolvedLogoSize} className="shrink-0" artScale={resolvedLogoScale} />
+      <LogoMark src={src} alt={alt} size={resolvedLogoSize} className="shrink-0" artScale={resolvedLogoScale} artOffset={resolvedLogoOffset} />
       <div className={`min-w-0 ${wordmarkWidth}`}>
         <div className={`whitespace-nowrap font-serif font-semibold uppercase leading-none tracking-[0.2em] sm:tracking-[0.24em] md:tracking-[0.28em] ${compact ? 'text-[10px] sm:text-xs md:text-sm' : 'text-xs sm:text-sm md:text-lg'} ${wordColor}`}>
           DESTINOS

@@ -14,6 +14,7 @@ import {
   Inbox,
   LayoutDashboard,
   Lock,
+  LogOut,
   Mail,
   Moon,
   MoreHorizontal,
@@ -54,6 +55,7 @@ import {
   updateCrmUserRecord,
 } from '../data/crm';
 import { classicLogo } from '../data/travel';
+import { BrandLockup } from '../components/ui';
 import type { CrmClient, CrmLead, CrmManagedUser, CrmRole, CrmSession, InquiryKind, LeadPriority, LeadStatus } from '../types';
 
 type LeadTypeFilter = 'all' | InquiryKind;
@@ -539,41 +541,20 @@ function exportClientsCsv(clients: CrmClient[]) {
 }
 
 function CrmBrandMark({ theme }: { theme: CrmTheme }) {
-  const isLight = theme === 'light';
-  const titleTone = isLight
-    ? 'bg-[linear-gradient(180deg,#334155_0%,#0f172a_55%,#020617_100%)]'
-    : 'bg-[linear-gradient(180deg,#ffffff_0%,#e7f0ff_52%,#a9bfd8_100%)]';
-  const scriptTone = isLight ? 'text-slate-900' : 'text-white';
-  const lineTone = isLight ? 'bg-slate-400/55' : 'bg-white/35';
-  const descriptorTone = isLight ? 'text-slate-600' : 'text-white/70';
-  const descriptorLineTone = isLight ? 'bg-slate-300' : 'bg-white/25';
-
   return (
-    <div className="flex w-full items-center gap-3 overflow-hidden">
-      <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-visible">
-        <img
-          src={classicLogo}
-          alt="Destinos pelo Mundo"
-          className="h-full w-full scale-[1.35] object-contain drop-shadow-[0_10px_22px_rgba(0,0,0,0.32)]"
-          loading="lazy"
-          decoding="async"
-        />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className={`block whitespace-nowrap bg-clip-text font-serif text-xl font-semibold uppercase leading-none tracking-[0.08em] text-transparent drop-shadow-[0_5px_12px_rgba(0,0,0,0.28)] ${titleTone}`}>
-          Destinos
-        </span>
-        <span className={`mt-0.5 flex items-center gap-1.5 text-base ${scriptTone}`}>
-          <span className={`h-px min-w-3 flex-1 ${lineTone}`} />
-          <span className="whitespace-nowrap font-serif font-semibold italic leading-none">pelo mundo</span>
-          <span className={`h-px min-w-3 flex-1 ${lineTone}`} />
-        </span>
-        <span className={`mt-1.5 flex items-center gap-1.5 ${descriptorTone}`}>
-          <span className={`h-px min-w-2 flex-1 ${descriptorLineTone}`} />
-          <span className="whitespace-nowrap text-[7px] font-semibold uppercase tracking-[0.22em]">Tourism & Travel</span>
-          <span className={`h-px min-w-2 flex-1 ${descriptorLineTone}`} />
-        </span>
-      </span>
+    <div className="max-w-[208px]">
+      <BrandLockup
+        src={classicLogo}
+        alt="Destinos pelo Mundo"
+        theme={theme === 'light' ? 'dark' : 'light'}
+        compact
+        align="left"
+        gapClass="gap-2.5"
+        logoSize="h-10"
+        logoArtScale="scale-[1.06]"
+        logoArtOffset="translate-x-0"
+        wordmarkWidthClass="w-[10.75rem] max-w-[calc(100vw-9rem)]"
+      />
     </div>
   );
 }
@@ -1252,7 +1233,7 @@ export function CrmPage() {
 
   return (
     <main className={`min-h-screen ${styles.shell}`}>
-      <div className="grid min-h-screen xl:grid-cols-[244px_minmax(660px,1fr)_430px]">
+      <div className="grid min-h-screen xl:grid-cols-[244px_minmax(0,1fr)]">
         <aside className={`hidden min-h-screen border-r px-4 py-5 xl:flex xl:flex-col ${styles.sidebar}`}>
           <div className="mb-7">
             <CrmBrandMark theme={theme} />
@@ -1301,14 +1282,26 @@ export function CrmPage() {
           </a>
         </aside>
 
-        <section className="min-w-0 border-r border-white/10">
+        <section className="min-w-0">
           <header className={`border-b px-5 py-5 ${styles.header}`}>
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">{navCopy[activeNav].title}</h1>
+              <div className="min-w-[240px] flex-1">
+                <div className="text-[11px] uppercase tracking-[0.26em] text-[#d9b46f]">DPM CRM workspace</div>
+                <h1 className="mt-1 text-2xl font-semibold tracking-tight">{navCopy[activeNav].title}</h1>
                 <p className={`mt-1 text-sm ${styles.muted}`}>{navCopy[activeNav].subtitle}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="hidden min-w-[320px] flex-1 justify-center px-6 lg:flex">
+                <label className={`flex h-11 w-full max-w-2xl items-center gap-2 rounded-lg border px-3 ${styles.input}`}>
+                  <Search className={`h-4 w-4 ${styles.muted}`} />
+                  <input
+                    value={query}
+                    onChange={(event) => changeQuery(event.target.value)}
+                    className="w-full bg-transparent text-sm outline-none placeholder:inherit"
+                    placeholder="Search client, destination, date..."
+                  />
+                </label>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() =>
@@ -1344,14 +1337,28 @@ export function CrmPage() {
                   {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 </button>
                 {apiEnabled ? (
-                  <button type="button" onClick={signOut} className={`inline-flex h-11 items-center justify-center rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
+                  <button type="button" onClick={signOut} className={`inline-flex h-11 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
+                    <LogOut className="h-4 w-4" />
                     Sign out
                   </button>
                 ) : null}
               </div>
             </div>
+            <div className="mt-4 lg:hidden">
+              <label className={`flex h-11 w-full items-center gap-2 rounded-lg border px-3 ${styles.input}`}>
+                <Search className={`h-4 w-4 ${styles.muted}`} />
+                <input
+                  value={query}
+                  onChange={(event) => changeQuery(event.target.value)}
+                  className="w-full bg-transparent text-sm outline-none placeholder:inherit"
+                  placeholder="Search client, destination, date..."
+                />
+              </label>
+            </div>
           </header>
 
+          <div className="grid xl:grid-cols-[minmax(720px,1fr)_430px]">
+            <div className={`min-w-0 border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}>
           <div className="p-5">
             {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
             {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading CRM requests...</div> : null}
@@ -1395,16 +1402,7 @@ export function CrmPage() {
                 </button>
               ))}
 
-              <div className="ml-auto flex min-w-[280px] flex-1 items-center justify-end gap-2">
-                <label className="relative min-w-[260px] flex-1 xl:max-w-[360px]">
-                  <Search className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${styles.muted}`} />
-                  <input
-                    value={query}
-                    onChange={(event) => changeQuery(event.target.value)}
-                    className={`h-11 w-full rounded-xl border pl-10 pr-4 text-sm outline-none transition ${styles.input}`}
-                    placeholder="Search client, destination, date..."
-                  />
-                </label>
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                 <select
                   value={statusFilter}
                   onChange={(event) => changeStatusFilter(event.target.value as StatusFilter)}
@@ -1728,9 +1726,9 @@ export function CrmPage() {
               </div>
             </div>
           </div>
-        </section>
+            </div>
 
-        <aside className={`hidden min-h-screen px-5 py-6 xl:block ${styles.rightPane}`}>
+        <aside className={`hidden min-h-full px-5 py-6 xl:block ${styles.rightPane}`}>
           {activeNav === 'settings' ? (
             <div className="grid gap-4">
               <div className={`rounded-xl border p-5 ${styles.panel}`}>
@@ -2141,6 +2139,8 @@ export function CrmPage() {
             </div>
           )}
         </aside>
+          </div>
+        </section>
       </div>
       {showManualRequest ? (
         <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/55 px-4 py-6 backdrop-blur-sm">
