@@ -43,13 +43,14 @@ class LeadViewSet(viewsets.ModelViewSet):
     serializer_class = LeadSerializer
     permission_classes = [HasCrmAccess]
     filter_backends = [filters.OrderingFilter]
-    ordering_fields = ["created_at", "updated_at", "priority", "status"]
+    ordering_fields = ["created_at", "updated_at", "priority", "status", "lifecycle_stage"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
         queryset = super().get_queryset()
         service_key = self.request.query_params.get("serviceKey")
         status_value = self.request.query_params.get("status")
+        lifecycle_stage = self.request.query_params.get("lifecycleStage")
         priority = self.request.query_params.get("priority")
         search = self.request.query_params.get("search")
 
@@ -57,6 +58,8 @@ class LeadViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(service_key=service_key)
         if status_value:
             queryset = queryset.filter(status=status_value)
+        if lifecycle_stage:
+            queryset = queryset.filter(lifecycle_stage=lifecycle_stage)
         if priority:
             queryset = queryset.filter(priority=priority)
         if search:

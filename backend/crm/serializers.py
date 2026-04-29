@@ -152,6 +152,7 @@ class LeadSerializer(serializers.ModelSerializer):
     tripType = serializers.CharField(source="trip_type", required=False, allow_blank=True)
     departureCity = serializers.CharField(source="departure_city", required=False, allow_blank=True)
     emailStatus = serializers.ChoiceField(source="email_status", choices=Lead.EmailStatus.choices, required=False)
+    lifecycleStage = serializers.ChoiceField(source="lifecycle_stage", choices=Lead.LifecycleStage.choices, required=False)
     internalNotes = serializers.CharField(source="internal_notes", required=False, allow_blank=True)
     clientId = serializers.PrimaryKeyRelatedField(source="client", queryset=Client.objects.all(), required=False, allow_null=True)
     clientName = serializers.CharField(source="client.name", read_only=True)
@@ -180,6 +181,7 @@ class LeadSerializer(serializers.ModelSerializer):
             "priority",
             "notes",
             "status",
+            "lifecycleStage",
             "emailStatus",
             "internalNotes",
             "clientId",
@@ -190,7 +192,7 @@ class LeadSerializer(serializers.ModelSerializer):
 
 class PublicLeadSerializer(LeadSerializer):
     class Meta(LeadSerializer.Meta):
-        read_only_fields = ["id", "createdAt", "updatedAt", "status", "internalNotes"]
+        read_only_fields = ["id", "createdAt", "updatedAt", "status", "lifecycleStage", "internalNotes"]
 
 
 class LoginSerializer(serializers.Serializer):

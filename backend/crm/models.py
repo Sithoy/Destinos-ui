@@ -50,6 +50,22 @@ class Lead(models.Model):
         COMPLETED = "completed", "Completed"
         LOST = "lost", "Cancelled"
 
+    class LifecycleStage(models.TextChoices):
+        NEW_REQUEST = "new_request", "New Request"
+        PENDING_INFORMATION = "pending_information", "Pending Information"
+        VALIDATED = "validated", "Validated"
+        QUOTE_IN_PROGRESS = "quote_in_progress", "Quote in Progress"
+        QUOTE_SENT = "quote_sent", "Quote Sent"
+        AWAITING_APPROVAL = "awaiting_approval", "Awaiting Approval"
+        APPROVED = "approved", "Approved"
+        AWAITING_PAYMENT_FINANCE = "awaiting_payment_finance", "Awaiting Payment / Finance"
+        BOOKING_IN_PROGRESS = "booking_in_progress", "Booking in Progress"
+        CONFIRMED = "confirmed", "Confirmed"
+        TRAVEL_PACK_SENT = "travel_pack_sent", "Travel Pack Sent"
+        IN_TRAVEL = "in_travel", "In Travel"
+        COMPLETED = "completed", "Completed"
+        CLOSED = "closed", "Closed"
+
     class EmailStatus(models.TextChoices):
         PENDING = "pending", "Pending"
         SENT = "sent", "Sent"
@@ -83,6 +99,7 @@ class Lead(models.Model):
     priority = models.CharField(max_length=20, choices=Priority.choices, default=Priority.NORMAL)
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW)
+    lifecycle_stage = models.CharField(max_length=40, choices=LifecycleStage.choices, default=LifecycleStage.NEW_REQUEST)
     email_status = models.CharField(max_length=20, choices=EmailStatus.choices, default=EmailStatus.PENDING)
     internal_notes = models.TextField(blank=True)
     client = models.ForeignKey(Client, related_name="leads", on_delete=models.SET_NULL, null=True, blank=True)
@@ -91,6 +108,7 @@ class Lead(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["status", "priority"]),
+            models.Index(fields=["lifecycle_stage", "service_key"]),
             models.Index(fields=["service_key", "created_at"]),
             models.Index(fields=["destination"]),
         ]

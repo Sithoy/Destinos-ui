@@ -2,6 +2,21 @@ export type Page = 'home' | 'luxury' | 'corporate' | 'crm' | 'corporatePortal';
 export type PrestigePage = Extract<Page, 'luxury' | 'corporate'>;
 export type InquiryKind = 'classic' | 'luxury' | 'corporate';
 export type LeadStatus = 'new' | 'contacted' | 'planning' | 'proposal' | 'won' | 'execution' | 'completed' | 'lost';
+export type LeadLifecycleStage =
+  | 'new_request'
+  | 'pending_information'
+  | 'validated'
+  | 'quote_in_progress'
+  | 'quote_sent'
+  | 'awaiting_approval'
+  | 'approved'
+  | 'awaiting_payment_finance'
+  | 'booking_in_progress'
+  | 'confirmed'
+  | 'travel_pack_sent'
+  | 'in_travel'
+  | 'completed'
+  | 'closed';
 export type LeadEmailStatus = 'pending' | 'sent' | 'failed';
 export type LeadPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type CrmRole = 'admin' | 'manager' | 'agent' | 'client' | 'viewer' | 'none';
@@ -71,6 +86,7 @@ export type CrmLead = {
   priority: LeadPriority;
   notes: string;
   status: LeadStatus;
+  lifecycleStage?: LeadLifecycleStage;
   emailStatus: LeadEmailStatus;
   internalNotes: string;
   clientId?: string | null;

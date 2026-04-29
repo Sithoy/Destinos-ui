@@ -1,4 +1,4 @@
-import type { CrmClient, CrmLead, CrmManagedUser, CrmSession, CrmUser, InquiryKind } from '../types';
+import type { CrmClient, CrmLead, CrmManagedUser, CrmSession, CrmUser, InquiryKind, LeadLifecycleStage, LeadStatus } from '../types';
 
 const CRM_STORAGE_KEY = 'dpm.crm.leads.v1';
 const CRM_CLIENT_STORAGE_KEY = 'dpm.crm.clients.v1';
@@ -7,7 +7,7 @@ const CRM_EVENT = 'dpm-crm-leads-updated';
 const CRM_CLIENT_EVENT = 'dpm-crm-clients-updated';
 const CRM_AUTH_EVENT = 'dpm-crm-auth-updated';
 const CRM_DEMO_VERSION_KEY = 'dpm.crm.demo.version';
-const CRM_DEMO_VERSION = 'process-v2';
+const CRM_DEMO_VERSION = 'process-v3';
 
 type CrmLeadCreateInput = Omit<CrmLead, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'emailStatus' | 'internalNotes'>;
 type CrmClientCreateInput = Omit<CrmClient, 'id' | 'createdAt' | 'updatedAt' | 'lastRequestAt' | 'activeRequestCount'>;
@@ -20,6 +20,39 @@ type CrmManagedUserInput = {
   isActive: boolean;
   password?: string;
 };
+
+const statusLifecycleFallback: Record<LeadStatus, LeadLifecycleStage> = {
+  new: 'new_request',
+  contacted: 'pending_information',
+  planning: 'quote_in_progress',
+  proposal: 'awaiting_approval',
+  won: 'awaiting_payment_finance',
+  execution: 'booking_in_progress',
+  completed: 'completed',
+  lost: 'closed',
+};
+
+const demoLifecycleStages: Record<string, LeadLifecycleStage> = {
+  'demo-luxury-zanzibar-anniversary': 'new_request',
+  'demo-corporate-bluearc-mining': 'pending_information',
+  'demo-classic-cape-town-family': 'quote_in_progress',
+  'demo-luxury-namibia-safari': 'travel_pack_sent',
+  'demo-corporate-dubai-summit': 'awaiting_approval',
+  'demo-classic-lisbon-city-break': 'closed',
+  'demo-luxury-paris-fashion-week': 'validated',
+  'demo-corporate-lagos-mobility': 'pending_information',
+  'demo-classic-vilanculos-holiday': 'new_request',
+  'demo-corporate-karingana-conference': 'awaiting_payment_finance',
+  'demo-luxury-marrakech-retreat': 'confirmed',
+  'demo-classic-durban-school-break': 'booking_in_progress',
+};
+
+function normalizeCrmLead(lead: CrmLead): CrmLead {
+  return {
+    ...lead,
+    lifecycleStage: lead.lifecycleStage ?? demoLifecycleStages[lead.id] ?? statusLifecycleFallback[lead.status],
+  };
+}
 
 const demoCrmLeads: CrmLead[] = [
   {
@@ -579,7 +612,7 @@ export function readCrmLeads(): CrmLead[] {
   try {
     const raw = window.localStorage.getItem(CRM_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? (parsed as CrmLead[]).map(normalizeCrmLead) : [];
   } catch {
     return [];
   }
@@ -615,8 +648,14 @@ export function ensureCrmDemoLeads(): CrmLead[] {
   const leads = readCrmLeads();
   if (window.localStorage.getItem(CRM_DEMO_VERSION_KEY) === CRM_DEMO_VERSION && leads.length > 0) return leads;
 
-  const existingIds = new Set(leads.map((lead) => lead.id));
-  const mergedLeads = [...leads, ...demoCrmLeads.filter((lead) => !existingIds.has(lead.id))].sort(
+  const demoLeadById = new Map(demoCrmLeads.map((lead) => [lead.id, normalizeCrmLead(lead)]));
+  const refreshedExistingLeads = leads.map((lead) => {
+    const demoLead = demoLeadById.get(lead.id);
+    if (!demoLead) return normalizeCrmLead(lead);
+    return normalizeCrmLead({ ...demoLead, ...lead, lifecycleStage: lead.lifecycleStage ?? demoLead.lifecycleStage });
+  });
+  const existingIds = new Set(refreshedExistingLeads.map((lead) => lead.id));
+  const mergedLeads = [...refreshedExistingLeads, ...demoCrmLeads.filter((lead) => !existingIds.has(lead.id)).map(normalizeCrmLead)].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 
@@ -645,6 +684,7 @@ export function createCrmLead(input: CrmLeadCreateInput) {
     createdAt: now,
     updatedAt: now,
     status: 'new',
+    lifecycleStage: 'new_request',
     emailStatus: 'pending',
     internalNotes: '',
   };
@@ -707,11 +747,11 @@ export async function fetchCrmLeads(session?: CrmSession | null): Promise<CrmLea
   if (!base) return ensureCrmDemoLeads();
   if (!session?.token) return [];
 
-  return parseApiResponse<CrmLead[]>(
+  return (await parseApiResponse<CrmLead[]>(
     await fetch(`${base}/api/leads/`, {
       headers: authHeaders(session),
     }),
-  );
+  )).map(normalizeCrmLead);
 }
 
 export async function fetchCrmClients(session?: CrmSession | null): Promise<CrmClient[]> {
@@ -742,7 +782,7 @@ export async function createCrmLeadRecord(input: CrmLeadCreateInput, session?: C
   if (!base) return createCrmLead(input);
 
   const endpoint = session?.token ? `${base}/api/leads/` : `${base}/api/public/leads/`;
-  return parseApiResponse<CrmLead>(
+  return normalizeCrmLead(await parseApiResponse<CrmLead>(
     await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -751,7 +791,7 @@ export async function createCrmLeadRecord(input: CrmLeadCreateInput, session?: C
       },
       body: JSON.stringify(input),
     }),
-  );
+  ));
 }
 
 export async function createCrmClientRecord(input: CrmClientCreateInput, session?: CrmSession | null): Promise<CrmClient> {
@@ -781,7 +821,7 @@ export async function updateCrmLeadRecord(
     return readCrmLeads().find((lead) => lead.id === id) ?? null;
   }
 
-  return parseApiResponse<CrmLead>(
+  return normalizeCrmLead(await parseApiResponse<CrmLead>(
     await fetch(`${base}/api/leads/${id}/`, {
       method: 'PATCH',
       headers: {
@@ -790,7 +830,7 @@ export async function updateCrmLeadRecord(
       },
       body: JSON.stringify(patch),
     }),
-  );
+  ));
 }
 
 export async function updateCrmClientRecord(

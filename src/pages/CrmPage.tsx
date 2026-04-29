@@ -56,7 +56,7 @@ import {
 } from '../data/crm';
 import { classicLogo } from '../data/travel';
 import { BrandLockup } from '../components/ui';
-import type { CrmClient, CrmLead, CrmManagedUser, CrmRole, CrmSession, InquiryKind, LeadPriority, LeadStatus } from '../types';
+import type { CrmClient, CrmLead, CrmManagedUser, CrmRole, CrmSession, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus } from '../types';
 
 type LeadTypeFilter = 'all' | InquiryKind;
 type StatusFilter = 'all' | LeadStatus | 'confirmedGroup' | 'workflowGroup';
@@ -188,6 +188,69 @@ const statusLabels: Record<LeadStatus, string> = {
   execution: 'Execution',
   completed: 'Completed',
   lost: 'Cancelled',
+};
+
+const lifecycleStageLabels: Record<LeadLifecycleStage, string> = {
+  new_request: 'New Request',
+  pending_information: 'Pending Information',
+  validated: 'Validated',
+  quote_in_progress: 'Quote in Progress',
+  quote_sent: 'Quote Sent',
+  awaiting_approval: 'Awaiting Approval',
+  approved: 'Approved',
+  awaiting_payment_finance: 'Awaiting Payment / Finance',
+  booking_in_progress: 'Booking in Progress',
+  confirmed: 'Confirmed',
+  travel_pack_sent: 'Travel Pack Sent',
+  in_travel: 'In Travel',
+  completed: 'Completed',
+  closed: 'Closed',
+};
+
+const lifecycleStageOrder: LeadLifecycleStage[] = [
+  'new_request',
+  'pending_information',
+  'validated',
+  'quote_in_progress',
+  'quote_sent',
+  'awaiting_approval',
+  'approved',
+  'awaiting_payment_finance',
+  'booking_in_progress',
+  'confirmed',
+  'travel_pack_sent',
+  'in_travel',
+  'completed',
+];
+
+const lifecycleWorkflowSteps = lifecycleStageOrder.map((stage) => [stage, lifecycleStageLabels[stage]] as const);
+
+const statusToLifecycleStage: Record<LeadStatus, LeadLifecycleStage> = {
+  new: 'new_request',
+  contacted: 'pending_information',
+  planning: 'quote_in_progress',
+  proposal: 'quote_sent',
+  won: 'awaiting_payment_finance',
+  execution: 'booking_in_progress',
+  completed: 'completed',
+  lost: 'closed',
+};
+
+const lifecycleStageToStatus: Record<LeadLifecycleStage, LeadStatus> = {
+  new_request: 'new',
+  pending_information: 'contacted',
+  validated: 'planning',
+  quote_in_progress: 'planning',
+  quote_sent: 'proposal',
+  awaiting_approval: 'proposal',
+  approved: 'won',
+  awaiting_payment_finance: 'won',
+  booking_in_progress: 'execution',
+  confirmed: 'execution',
+  travel_pack_sent: 'execution',
+  in_travel: 'execution',
+  completed: 'completed',
+  closed: 'lost',
 };
 
 const priorityLabels: Record<LeadPriority, string> = {
@@ -378,6 +441,15 @@ const leisureWorkbenchTabs: Array<{ id: DetailTab; label: string; Icon: LucideIc
   { id: 'travelPack', label: 'Travel Pack', Icon: Download },
 ];
 
+const corporateWorkbenchTabs: Array<{ id: DetailTab; label: string; Icon: LucideIcon }> = [
+  { id: 'travelers', label: 'Travelers', Icon: Users },
+  { id: 'approvals', label: 'Approvals', Icon: Shield },
+  { id: 'finance', label: 'Finance', Icon: FileText },
+  { id: 'documents', label: 'Documents', Icon: ClipboardCheck },
+  { id: 'itinerary', label: 'Booking Release', Icon: Briefcase },
+  { id: 'history', label: 'Fulfilment', Icon: CheckSquare },
+];
+
 const crmRoleLabels: Record<Extract<CrmRole, 'admin' | 'manager' | 'agent' | 'viewer'>, string> = {
   admin: 'Admin',
   manager: 'Manager',
@@ -528,9 +600,23 @@ function workflowStepsForLead(lead: CrmLead) {
   return isCorporateLead(lead) ? corporateWorkflowSteps : traditionalWorkflowSteps;
 }
 
-function leadStatusLabel(lead: CrmLead, status: LeadStatus) {
-  const steps = workflowStepsForLead(lead);
-  return steps.find(([step]) => step === status)?.[1] ?? statusLabels[status];
+function leadLifecycleStage(lead: CrmLead): LeadLifecycleStage {
+  return lead.lifecycleStage ?? statusToLifecycleStage[lead.status];
+}
+
+function leadLifecycleLabel(lead: CrmLead) {
+  return lifecycleStageLabels[leadLifecycleStage(lead)];
+}
+
+function nextLifecycleStage(lead: CrmLead): LeadLifecycleStage | null {
+  const currentStage = leadLifecycleStage(lead);
+  if (currentStage === 'closed') return 'new_request';
+  const currentIndex = lifecycleStageOrder.indexOf(currentStage);
+  return currentIndex >= 0 ? lifecycleStageOrder[currentIndex + 1] ?? null : null;
+}
+
+function lifecycleStageActionLabel(nextStage: LeadLifecycleStage | null) {
+  return nextStage ? `Move to ${lifecycleStageLabels[nextStage]}` : 'Lifecycle complete';
 }
 
 function leadFlowTitle(lead: CrmLead) {
@@ -713,7 +799,7 @@ function corporateDocumentCards(lead: CrmLead): InfoCard[] {
     {
       label: 'Next control point',
       value: lead.status === 'execution' ? 'Final travel documents and active support' : 'Readiness check before booking release',
-      meta: `Status: ${leadStatusLabel(lead, lead.status)}`,
+      meta: `Stage: ${leadLifecycleLabel(lead)}`,
     },
   ];
 }
@@ -828,6 +914,15 @@ function mockBookingRecords(lead: CrmLead): MockBookingRecord[] {
 }
 
 function leadPrimaryBlocker(lead: CrmLead) {
+  const lifecycleStage = leadLifecycleStage(lead);
+  if (lifecycleStage === 'pending_information') return 'Missing information before validation';
+  if (lifecycleStage === 'awaiting_approval') return isCorporateLead(lead) ? 'Company approval still pending' : 'Client approval still pending';
+  if (lifecycleStage === 'awaiting_payment_finance') return isCorporateLead(lead) ? 'Finance clearance before booking release' : 'Payment confirmation before booking release';
+  if (lifecycleStage === 'booking_in_progress') return 'Supplier confirmations still in progress';
+  if (lifecycleStage === 'travel_pack_sent') return 'Travel pack sent, monitor readiness';
+  if (lifecycleStage === 'in_travel') return 'Active travel support in progress';
+  if (lifecycleStage === 'closed') return 'Request closed';
+
   if (lead.serviceKey === 'corporate') {
     if (lead.status === 'proposal') return 'Client approval still pending';
     if (lead.status === 'won') return 'Finance clearance before booking release';
@@ -851,7 +946,7 @@ function leftRailStatusCards(lead: CrmLead): InfoCard[] {
   return [
     {
       label: 'Current stage',
-      value: leadStatusLabel(lead, lead.status),
+      value: leadLifecycleLabel(lead),
       meta: leadFlowTitle(lead),
     },
     {
@@ -1055,12 +1150,12 @@ function leadTasks(lead: CrmLead): ProcessTask[] {
 }
 
 function workflowHistory(lead: CrmLead): ProcessHistoryItem[] {
-  const flowSteps = workflowStepsForLead(lead);
-  const activeIndex = flowSteps.findIndex(([status]) => status === lead.status);
+  const currentStage = leadLifecycleStage(lead);
+  const activeIndex = lifecycleWorkflowSteps.findIndex(([stage]) => stage === currentStage);
   const visibleSteps =
-    lead.status === 'lost'
-      ? flowSteps.slice(0, 3)
-      : flowSteps.slice(0, Math.max(1, activeIndex + 1));
+    currentStage === 'closed'
+      ? lifecycleWorkflowSteps.slice(0, 3)
+      : lifecycleWorkflowSteps.slice(0, Math.max(1, activeIndex + 1));
 
   const history: ProcessHistoryItem[] = [
     {
@@ -1073,14 +1168,14 @@ function workflowHistory(lead: CrmLead): ProcessHistoryItem[] {
       meta: `${typeLabels[lead.serviceKey]} · ${leadFlowTitle(lead)}`,
       tone: 'done',
     },
-    ...visibleSteps.slice(1).map(([status], index) => ({
-      label: leadStatusLabel(lead, status),
-      meta: lead.status !== 'lost' && index === visibleSteps.length - 2 ? 'Current operating stage' : 'Completed stage gate',
-      tone: lead.status !== 'lost' && index === visibleSteps.length - 2 ? ('current' as const) : ('done' as const),
+    ...visibleSteps.slice(1).map(([stage], index) => ({
+      label: lifecycleStageLabels[stage],
+      meta: currentStage !== 'closed' && index === visibleSteps.length - 2 ? 'Current value-chain stage' : 'Completed value-chain gate',
+      tone: currentStage !== 'closed' && index === visibleSteps.length - 2 ? ('current' as const) : ('done' as const),
     })),
   ];
 
-  if (lead.status === 'lost') {
+  if (currentStage === 'closed') {
     history.push({
       label: 'Request cancelled or closed',
       meta: 'Record reason and nurture if relevant',
@@ -1097,6 +1192,7 @@ function exportCsv(leads: CrmLead[]) {
     'Type',
     'Service',
     'Status',
+    'Lifecycle stage',
     'Priority',
     'Name',
     'Email',
@@ -1118,6 +1214,7 @@ function exportCsv(leads: CrmLead[]) {
     typeLabels[lead.serviceKey] ?? lead.serviceKey,
     lead.service,
     statusLabels[lead.status],
+    leadLifecycleLabel(lead),
     priorityLabels[fallbackPriority(lead)],
     lead.name,
     lead.email,
@@ -1337,6 +1434,7 @@ export function CrmPage() {
           lead.dates,
           lead.urgency,
           statusLabels[lead.status],
+          leadLifecycleLabel(lead),
           processForLead(lead).nextAction,
           lead.notes,
           lead.internalNotes,
@@ -1444,7 +1542,9 @@ export function CrmPage() {
   const selectedProcess = selectedLead ? processForLead(selectedLead) : null;
   const selectedDetailTabs = useMemo(() => {
     if (!selectedLead) return [];
-    return activeNav === 'leisureStudio' ? leisureWorkbenchTabs.map((tab) => tab.id) : detailTabsForLead(selectedLead);
+    if (activeNav === 'leisureStudio') return leisureWorkbenchTabs.map((tab) => tab.id);
+    if (activeNav === 'corporateDesk') return corporateWorkbenchTabs.map((tab) => tab.id);
+    return detailTabsForLead(selectedLead);
   }, [activeNav, selectedLead]);
   const selectedTasks = selectedLead ? leadTasks(selectedLead) : [];
   const selectedHistory = selectedLead ? workflowHistory(selectedLead) : [];
@@ -1635,7 +1735,7 @@ export function CrmPage() {
     return nextUsers;
   }
 
-  async function refreshLead(id: string, patch: Partial<Pick<CrmLead, 'status' | 'priority' | 'internalNotes'>>) {
+  async function refreshLead(id: string, patch: Partial<Pick<CrmLead, 'status' | 'lifecycleStage' | 'priority' | 'internalNotes'>>) {
     try {
       const updatedLead = await updateCrmLeadRecord(id, patch, crmSession);
       if (updatedLead) {
@@ -1647,6 +1747,15 @@ export function CrmPage() {
     } catch (error) {
       setCrmError(error instanceof Error ? error.message : 'Could not update CRM lead.');
     }
+  }
+
+  async function advanceLeadLifecycle(lead: CrmLead) {
+    const nextStage = nextLifecycleStage(lead);
+    if (!nextStage) return;
+    await refreshLead(lead.id, {
+      lifecycleStage: nextStage,
+      status: lifecycleStageToStatus[nextStage],
+    });
   }
 
   async function refreshClient(id: string, patch: Partial<Pick<CrmClient, 'notes' | 'owner' | 'preferredContact'>>) {
@@ -1731,7 +1840,8 @@ export function CrmPage() {
       setDeskView('corporate');
       setTypeFilter('corporate');
       setStatusFilter('all');
-      setShowFilters(false);
+      setDetailTab('travelers');
+      setShowFilters(true);
       return;
     }
 
@@ -2157,12 +2267,12 @@ export function CrmPage() {
             </div>
           </header>
 
-          <div className={activeNav === 'leisureStudio' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid xl:grid-cols-[minmax(720px,1fr)_430px]'}>
+          <div className={activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid xl:grid-cols-[minmax(720px,1fr)_430px]'}>
             <div className={`min-w-0 border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}>
           <div className="p-5">
             {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
             {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading CRM requests...</div> : null}
-            {activeNav !== 'leisureStudio' ? (
+            {activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
               <div className={`grid gap-4 ${activeNav === 'command' ? 'md:grid-cols-2 xl:grid-cols-5' : 'lg:grid-cols-4'}`}>
                 {(activeNav === 'settings' ? settingsMetricCards : metricCards).map((card) => (
                   <button
@@ -2204,7 +2314,7 @@ export function CrmPage() {
               </div>
             ) : null}
 
-            {activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'command' && activeNav !== 'leisureStudio' && selectedLead ? (
+            {activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' && selectedLead ? (
               <div className={`mt-5 rounded-xl border p-4 ${styles.panel}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -2213,7 +2323,7 @@ export function CrmPage() {
                     <div className={`mt-1 text-sm ${styles.muted}`}>{leadSegment(selectedLead)} · {selectedLead.destination || 'Destination pending'}</div>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
-                    {leadStatusLabel(selectedLead, selectedLead.status)}
+                    {leadLifecycleLabel(selectedLead)}
                   </span>
                 </div>
                 <div className="mt-4 grid gap-3">
@@ -2277,7 +2387,7 @@ export function CrmPage() {
               </div>
             ) : null}
 
-            {activeNav !== 'command' && activeNav !== 'leisureStudio' ? (
+            {activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
             <div className="mt-5 flex flex-wrap items-center gap-3">
               {visibleTypeFilters.map((filter) => (
                 <button
@@ -2321,7 +2431,7 @@ export function CrmPage() {
             </div>
             ) : null}
 
-            {showFilters && activeNav !== 'leisureStudio' ? (
+            {showFilters && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
               <div className={`mt-3 grid gap-3 rounded-xl border p-3 md:grid-cols-[1fr_1fr_auto] ${styles.panelSoft}`}>
                 <label className="text-xs font-medium uppercase tracking-[0.14em]">
                   <span className={styles.muted}>Priority</span>
@@ -2565,7 +2675,7 @@ export function CrmPage() {
                                 </div>
                                 <div className="flex items-center">
                                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
-                                    {leadStatusLabel(lead, lead.status)}
+                                    {leadLifecycleLabel(lead)}
                                   </span>
                                 </div>
                                 <div className="flex min-w-0 items-center">
@@ -2590,28 +2700,37 @@ export function CrmPage() {
                     ) : pageLeads.length === 0 ? (
                       <div className="p-10 text-center">
                         <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                        <div className="mt-4 text-lg font-semibold">{activeNav === 'leisureStudio' ? 'No leisure trips in this inbox' : 'No requests in this queue'}</div>
-                        <p className={`mt-2 text-sm ${styles.muted}`}>{activeNav === 'leisureStudio' ? 'Adjust the stage lens or add a leisure request to start working.' : 'Adjust filters or submit a form to create a request.'}</p>
+                        <div className="mt-4 text-lg font-semibold">{activeNav === 'leisureStudio' ? 'No leisure trips in this inbox' : activeNav === 'corporateDesk' ? 'No corporate trips in this inbox' : 'No requests in this queue'}</div>
+                        <p className={`mt-2 text-sm ${styles.muted}`}>{activeNav === 'leisureStudio' ? 'Adjust the stage lens or add a leisure request to start working.' : activeNav === 'corporateDesk' ? 'Adjust the stage lens or wait for CTM requests to arrive.' : 'Adjust filters or submit a form to create a request.'}</p>
                       </div>
                     ) : (
                       leadSections.map((section) => (
                         <div key={section.key}>
-                          <div className={`${activeNav === 'leisureStudio' ? 'border-b px-4 py-3' : `border-b px-5 py-3 ${styles.panelSoft}`}`}>
-                            {activeNav === 'leisureStudio' ? (
+                          <div className={`${activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? 'border-b px-4 py-3' : `border-b px-5 py-3 ${styles.panelSoft}`}`}>
+                            {activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? (
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <div className="text-sm font-semibold">{section.title}</div>
                                   <span className={`rounded-full px-2 py-0.5 text-[11px] ${styles.buttonGhost}`}>{section.leads.length}</span>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                  {([
-                                    { key: 'all', label: 'All' },
-                                    { key: 'contacted', label: 'Brief' },
-                                    { key: 'planning', label: 'Research' },
-                                    { key: 'proposal', label: 'Package' },
-                                    { key: 'won', label: 'Payment' },
-                                    { key: 'execution', label: 'Travel Pack' },
-                                  ] as Array<{ key: StatusFilter; label: string }>).map((filter) => (
+                                  {(activeNav === 'corporateDesk'
+                                    ? ([
+                                        { key: 'all', label: 'All' },
+                                        { key: 'contacted', label: 'Qualify' },
+                                        { key: 'planning', label: 'Plan' },
+                                        { key: 'proposal', label: 'Approval' },
+                                        { key: 'won', label: 'Finance' },
+                                        { key: 'execution', label: 'Release' },
+                                      ] as Array<{ key: StatusFilter; label: string }>)
+                                    : ([
+                                        { key: 'all', label: 'All' },
+                                        { key: 'contacted', label: 'Brief' },
+                                        { key: 'planning', label: 'Research' },
+                                        { key: 'proposal', label: 'Package' },
+                                        { key: 'won', label: 'Payment' },
+                                        { key: 'execution', label: 'Travel Pack' },
+                                      ] as Array<{ key: StatusFilter; label: string }>)).map((filter) => (
                                     <button
                                       key={filter.key}
                                       type="button"
@@ -2635,18 +2754,18 @@ export function CrmPage() {
                               </div>
                             )}
                           </div>
-                          <div className={activeNav === 'leisureStudio' ? 'grid' : 'grid gap-3 p-4'}>
+                          <div className={activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? 'grid' : 'grid gap-3 p-4'}>
                             {section.leads.map((lead) => {
                               const priority = fallbackPriority(lead);
                               const isSelected = selectedLead?.id === lead.id;
                               return (
-                                activeNav === 'leisureStudio' ? (
+                                activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? (
                                   <button
                                     key={lead.id}
                                     type="button"
                                     onClick={() => {
                                       setSelectedLeadId(lead.id);
-                                      setDetailTab('brief');
+                                      setDetailTab(activeNav === 'corporateDesk' ? 'travelers' : 'brief');
                                     }}
                                     className={`grid w-full grid-cols-[minmax(0,1fr)_92px] gap-3 border-b px-4 py-3 text-left transition ${
                                       isSelected ? styles.rowActive : styles.row
@@ -2654,18 +2773,20 @@ export function CrmPage() {
                                   >
                                     <div className="min-w-0">
                                       <div className="flex items-center gap-2">
-                                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${lead.serviceKey === 'luxury' ? 'bg-[#d4af37]' : 'bg-emerald-400'}`} />
+                                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${activeNav === 'corporateDesk' ? 'bg-sky-400' : lead.serviceKey === 'luxury' ? 'bg-[#d4af37]' : 'bg-emerald-400'}`} />
                                         <div className="truncate text-sm font-semibold">{lead.name}</div>
                                       </div>
                                       <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || 'Destination pending'}</div>
-                                      <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{lead.dates || 'Dates pending'} - {leadStatusLabel(lead, lead.status)}</div>
+                                      <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{lead.dates || 'Dates pending'} - {leadLifecycleLabel(lead)}</div>
+                                      {activeNav === 'corporateDesk' ? <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{lead.travelers || 'Traveler list pending'}</div> : null}
                                     </div>
                                     <div className="flex flex-col items-end justify-center gap-1">
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] ring-1 ${styles.type[lead.serviceKey]}`}>{typeLabels[lead.serviceKey]}</span>
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] ring-1 ${styles.type[lead.serviceKey]}`}>{activeNav === 'corporateDesk' ? 'CTM' : typeLabels[lead.serviceKey]}</span>
                                       <span className={`inline-flex items-center gap-1 text-[10px] ${priority === 'urgent' || priority === 'high' ? 'text-red-300' : priority === 'normal' ? styles.soft : styles.muted}`}>
                                         <span className={`${priority === 'urgent' || priority === 'high' ? 'text-red-400' : priority === 'normal' ? 'text-sky-300' : 'text-slate-400'}`}>⚑</span>
                                         {priorityLabels[priority]}
                                       </span>
+                                      {activeNav === 'corporateDesk' ? <span className={`truncate text-[10px] ${styles.muted}`}>{leadOwner(lead)}</span> : null}
                                     </div>
                                   </button>
                                 ) : (
@@ -2895,7 +3016,7 @@ export function CrmPage() {
                               {typeLabels[lead.serviceKey]}
                             </span>
                           </div>
-                          <div className={`mt-2 text-sm ${styles.muted}`}>{lead.dates || 'Dates pending'} - {statusLabels[lead.status]}</div>
+                          <div className={`mt-2 text-sm ${styles.muted}`}>{lead.dates || 'Dates pending'} - {leadLifecycleLabel(lead)}</div>
                         </button>
                       ))
                     )}
@@ -2928,7 +3049,7 @@ export function CrmPage() {
                       <p className={`mt-1 text-xs uppercase tracking-[0.16em] ${styles.muted}`}>Manager decision board</p>
                     </div>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadStatusLabel(selectedLead, selectedLead.status)}</span>
+                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadLifecycleLabel(selectedLead)}</span>
                 </div>
 
                 <div className={`rounded-xl border p-4 ${styles.panel}`}>
@@ -2936,7 +3057,7 @@ export function CrmPage() {
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                       <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current status</div>
-                      <div className="mt-1 text-sm font-semibold">{leadStatusLabel(selectedLead, selectedLead.status)}</div>
+                      <div className="mt-1 text-sm font-semibold">{leadLifecycleLabel(selectedLead)}</div>
                     </div>
                     <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                       <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current owner</div>
@@ -2963,8 +3084,10 @@ export function CrmPage() {
                     <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{managerMeta?.task || selectedProcess?.primaryAction || 'Review request'}</span>
                   </div>
                   {(() => {
-                    const steps = workflowStepsForLead(selectedLead);
-                    const activeIndex = selectedLead.status === 'lost' ? -1 : steps.findIndex(([step]) => step === selectedLead.status);
+                    const currentStage = leadLifecycleStage(selectedLead);
+                    const nextStage = nextLifecycleStage(selectedLead);
+                    const steps = lifecycleWorkflowSteps;
+                    const activeIndex = currentStage === 'closed' ? -1 : steps.findIndex(([step]) => step === currentStage);
                     const currentStep =
                       activeIndex >= 0 ? steps[activeIndex] : null;
 
@@ -2973,14 +3096,14 @@ export function CrmPage() {
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                           <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Stage roadmap</div>
                           <div className="mt-3 grid grid-cols-4 gap-x-2 gap-y-3">
-                            {steps.map(([status, label], index) => {
+                            {steps.map(([stage, label], index) => {
                               const isDone = activeIndex >= 0 && index < activeIndex;
                               const isCurrent = activeIndex === index;
-                              const isBlocked = (selectedLead.status === 'proposal' || selectedLead.status === 'won') && isCurrent;
+                              const isBlocked = (currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance') && isCurrent;
                               const StageIcon = isDone ? CheckSquare : isCurrent ? (isBlocked ? Bell : ClipboardCheck) : MoreHorizontal;
 
                               return (
-                                <div key={status} className="flex min-w-0 flex-col items-center text-center">
+                                <div key={stage} className="flex min-w-0 flex-col items-center text-center">
                                   <span
                                     className={`flex h-9 w-9 items-center justify-center rounded-full border ${
                                       isDone
@@ -3003,7 +3126,7 @@ export function CrmPage() {
                           </div>
                         </div>
 
-                        {selectedLead.status === 'lost' ? (
+                        {currentStage === 'closed' ? (
                           <div className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-3 text-sm text-red-200">
                             Request closed. Capture the reason and decide whether it should return to nurture.
                           </div>
@@ -3016,12 +3139,12 @@ export function CrmPage() {
                               </div>
                               <span
                                 className={`rounded-full px-2 py-0.5 text-[11px] ${
-                                  selectedLead.status === 'proposal' || selectedLead.status === 'won'
+                                  currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance'
                                     ? 'bg-red-500/15 text-red-300'
                                     : 'bg-sky-500/15 text-sky-300'
                                 }`}
                               >
-                                {selectedLead.status === 'proposal' || selectedLead.status === 'won' ? 'Current blocker' : 'In progress'}
+                                {currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance' ? 'Current blocker' : 'In progress'}
                               </span>
                             </div>
                             <div className={`mt-3 text-sm leading-6 ${styles.soft}`}>
@@ -3031,6 +3154,15 @@ export function CrmPage() {
                               <span className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Next move</span>
                               <div className={`mt-1 ${styles.soft}`}>{selectedProcess?.nextAction || 'No active process note yet.'}</div>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => advanceLeadLifecycle(selectedLead)}
+                              disabled={!nextStage}
+                              className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              <CheckSquare className="h-4 w-4" />
+                              {lifecycleStageActionLabel(nextStage)}
+                            </button>
                           </div>
                         ) : null}
                       </div>
@@ -3043,6 +3175,283 @@ export function CrmPage() {
                 <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
                 <div className="mt-4 text-lg font-semibold">Select a request</div>
                 <p className={`mt-2 text-sm ${styles.muted}`}>Manager decision context appears here.</p>
+              </div>
+            )
+          ) : activeNav === 'corporateDesk' ? (
+            selectedLead ? (() => {
+              const currentStage = leadLifecycleStage(selectedLead);
+              const nextStage = nextLifecycleStage(selectedLead);
+              const currentCorporateIndex = corporateWorkbenchTabs.findIndex((tab) => tab.id === detailTab);
+              const activeCorporateIndex = lifecycleWorkflowSteps.findIndex(([stage]) => stage === currentStage);
+              const currentCorporateLabel = corporateWorkbenchTabs.find((tab) => tab.id === detailTab)?.label ?? 'Travelers';
+              const bookings = mockBookingRecords(selectedLead);
+              const readinessCards =
+                detailTab === 'travelers'
+                  ? corporateTravelerCards(selectedLead)
+                  : detailTab === 'approvals'
+                    ? corporateApprovalCards(selectedLead)
+                    : detailTab === 'finance'
+                      ? corporateFinanceCards(selectedLead)
+                      : corporateDocumentCards(selectedLead);
+
+              return (
+                <div className="grid gap-4">
+                  <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">DPM Corporate Desk</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <h2 className="text-2xl font-semibold">{selectedLead.name}</h2>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>CTM request</span>
+                          <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadLifecycleLabel(selectedLead)}</span>
+                        </div>
+                        <div className={`mt-2 text-sm ${styles.muted}`}>
+                          {selectedLead.destination || 'Destination pending'} - {selectedLead.tripType || selectedLead.service} - {selectedLead.dates || 'Dates pending'}
+                        </div>
+                        <div className={`mt-2 text-sm ${styles.soft}`}>
+                          Keep traveler readiness, approval ownership, finance clearance, documents, and booking release visible in one operating view.
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-right">
+                        <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
+                          <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Travelers</div>
+                          <div className="mt-1 text-sm font-semibold">{selectedLead.travelers || 'Pending'}</div>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
+                          <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Owner</div>
+                          <div className="mt-1 text-sm font-semibold">{managerMeta?.owner || leadOwner(selectedLead)}</div>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
+                          <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Urgency</div>
+                          <div className="mt-1 text-sm font-semibold">{priorityLabels[fallbackPriority(selectedLead)]}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                        <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Route</div>
+                        <div className="mt-1 text-sm font-semibold">{selectedLead.departureCity || 'Origin pending'} to {selectedLead.destination || 'Destination pending'}</div>
+                        <div className={`mt-1 text-xs ${styles.muted}`}>{selectedLead.dates || 'Dates pending'}</div>
+                      </div>
+                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                        <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Department / Scope</div>
+                        <div className="mt-1 text-sm font-semibold">{selectedLead.requestedServices || 'Scope pending'}</div>
+                        <div className={`mt-1 text-xs ${styles.muted}`}>Company-owned movement</div>
+                      </div>
+                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                        <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Finance</div>
+                        <div className="mt-1 text-sm font-semibold">{selectedLead.budget || 'Budget / PO pending'}</div>
+                        <div className={`mt-1 text-xs ${styles.muted}`}>Invoice-aware release</div>
+                      </div>
+                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                        <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Bottleneck</div>
+                        <div className="mt-1 text-sm font-semibold">{leadPrimaryBlocker(selectedLead)}</div>
+                        <div className={`mt-1 text-xs ${styles.muted}`}>{selectedProcess?.primaryAction || 'Review request'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-semibold">Corporate value chain</div>
+                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadLifecycleLabel(selectedLead)}</span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+                      {lifecycleWorkflowSteps.map(([stage, label], index) => {
+                        const isDone = activeCorporateIndex >= 0 && index < activeCorporateIndex;
+                        const isCurrent = activeCorporateIndex === index;
+                        const isBlocked = isCurrent && (currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance');
+                        const StageIcon = isDone ? CheckSquare : isCurrent ? (isBlocked ? Bell : ClipboardCheck) : MoreHorizontal;
+                        return (
+                          <div key={stage} className="flex min-w-0 flex-col items-center text-center">
+                            <span
+                              className={`flex h-9 w-9 items-center justify-center rounded-full border ${
+                                isDone
+                                  ? 'border-emerald-400/60 bg-emerald-500/12 text-emerald-300'
+                                  : isCurrent
+                                    ? isBlocked
+                                      ? 'border-red-400/60 bg-red-500/12 text-red-300'
+                                      : 'border-sky-400/60 bg-sky-500/12 text-sky-300'
+                                    : 'border-white/10 bg-white/5 text-white/40'
+                              }`}
+                            >
+                              <StageIcon className="h-4 w-4" />
+                            </span>
+                            <div className={`mt-1 max-w-full text-[11px] leading-4 ${isCurrent ? styles.soft : styles.muted}`}>{label}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className={`mt-4 rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current control point</div>
+                      <div className="mt-1 text-sm font-semibold">{leadPrimaryBlocker(selectedLead)}</div>
+                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedProcess?.stageGate || 'Keep the current corporate checkpoint controlled before release.'}</p>
+                      <button
+                        type="button"
+                        onClick={() => advanceLeadLifecycle(selectedLead)}
+                        disabled={!nextStage}
+                        className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <CheckSquare className="h-4 w-4" />
+                        {lifecycleStageActionLabel(nextStage)}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-semibold">Corporate work area</div>
+                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{currentCorporateLabel}</span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-6">
+                      {corporateWorkbenchTabs.map(({ id, label, Icon }, index) => {
+                        const isDone = currentCorporateIndex > index;
+                        const isCurrent = currentCorporateIndex === index;
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => setDetailTab(id)}
+                            className={`rounded-xl border px-3 py-3 text-left transition ${
+                              isDone
+                                ? 'border-emerald-400/25 bg-emerald-500/10'
+                                : isCurrent
+                                  ? 'border-sky-400/25 bg-sky-500/10'
+                                  : `${styles.panelSoft}`
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`flex h-8 w-8 items-center justify-center rounded-full border ${
+                                  isDone
+                                    ? 'border-emerald-400/60 text-emerald-300'
+                                    : isCurrent
+                                      ? 'border-sky-400/60 text-sky-300'
+                                      : 'border-white/10 text-white/45'
+                                }`}
+                              >
+                                <Icon className="h-4 w-4" />
+                              </span>
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium">{label}</div>
+                                <div className={`mt-0.5 text-[11px] ${isCurrent ? styles.soft : styles.muted}`}>
+                                  {isDone ? 'Done' : isCurrent ? 'Live' : 'Upcoming'}
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">{currentCorporateLabel}</div>
+                        <div className={`mt-1 text-sm ${styles.muted}`}>{selectedProcess?.nextAction || 'Move the corporate request through the active checkpoint.'}</div>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedProcess?.primaryAction || 'Working stage'}</span>
+                    </div>
+
+                    {detailTab === 'itinerary' ? (
+                      <div className="grid gap-4">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          {bookings.map((booking) => (
+                            <div key={booking.reference} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="font-semibold">{booking.service}</div>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{booking.status}</span>
+                              </div>
+                              <div className={`mt-2 text-sm ${styles.muted}`}>{booking.supplier}</div>
+                              <div className="mt-3 text-xs font-semibold text-[#d9b46f]">{booking.reference}</div>
+                              <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{booking.note}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="font-semibold">Booking release rule</div>
+                          <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+                            Release booking only when traveler names, approver sign-off, finance posture, and document readiness are visible for the account owner.
+                          </p>
+                        </div>
+                      </div>
+                    ) : detailTab === 'history' ? (
+                      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+                        <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="font-semibold">Fulfilment timeline</div>
+                          <div className="mt-4 grid gap-4">
+                            {selectedHistory.map((item) => (
+                              <div key={`${item.label}-${item.meta}`} className="flex gap-3">
+                                <span
+                                  className={`mt-1 h-2.5 w-2.5 rounded-full ${
+                                    item.tone === 'done'
+                                      ? 'bg-emerald-400'
+                                      : item.tone === 'current'
+                                        ? 'bg-sky-400'
+                                        : item.tone === 'closed'
+                                          ? 'bg-red-400'
+                                          : 'bg-white/30'
+                                  }`}
+                                />
+                                <div>
+                                  <div className="font-medium">{item.label}</div>
+                                  <div className={`text-sm ${styles.muted}`}>{item.meta}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="font-semibold">Post-trip account intelligence</div>
+                          <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
+                            Capture route performance, traveler changes, invoice friction, preferred suppliers, and repeat patterns so the next CTM request starts cleaner.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid gap-4">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          {readinessCards.map((card) => (
+                            <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                              <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                              <div className="mt-2 font-semibold">{card.value}</div>
+                              {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-3">
+                          {mockWorkflowItems(selectedLead, detailTab).map((item) => (
+                            <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                              <div className="font-semibold">{item.title}</div>
+                              <div className="mt-2 text-sm font-medium">{item.value}</div>
+                              <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
+                            </div>
+                          ))}
+                        </div>
+                        {detailTab === 'documents' ? (
+                          <label className="block">
+                            <span className="font-semibold">Internal readiness notes</span>
+                            <textarea
+                              value={selectedLead.internalNotes || ''}
+                              onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
+                              className={`mt-3 min-h-28 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
+                              placeholder="Visa status, missing traveler data, invoice dependencies..."
+                            />
+                          </label>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })() : (
+              <div className="p-8 text-center">
+                <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
+                <div className="mt-4 text-lg font-semibold">Select a corporate request</div>
+                <p className={`mt-2 text-sm ${styles.muted}`}>Corporate operating context appears here.</p>
               </div>
             )
           ) : activeNav === 'leisureStudio' ? (
@@ -3059,6 +3468,7 @@ export function CrmPage() {
               const marginPercent = pricing.sell > 0 ? Math.round((margin / pricing.sell) * 100) : 0;
               const currentWorkbenchLabel =
                 leisureWorkbenchTabs.find((tab) => tab.id === detailTab)?.label ?? 'Brief';
+              const nextStage = nextLifecycleStage(selectedLead);
 
               return (
                 <div className="grid gap-4">
@@ -3071,7 +3481,7 @@ export function CrmPage() {
                             <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
                               {typeLabels[selectedLead.serviceKey]}
                             </span>
-                            <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadStatusLabel(selectedLead, selectedLead.status)}</span>
+                            <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadLifecycleLabel(selectedLead)}</span>
                           </div>
                           <div className={`mt-2 text-sm ${styles.muted}`}>
                             {selectedLead.name} · {selectedLead.tripType || selectedLead.service} · {selectedLead.dates || 'Dates pending'}
@@ -3079,6 +3489,15 @@ export function CrmPage() {
                           <div className={`mt-2 text-sm ${styles.soft}`}>
                             {selectedLead.serviceKey === 'luxury' ? 'High-touch leisure design with premium service framing.' : 'Balanced leisure design focused on clarity, fit, and smooth delivery.'}
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => advanceLeadLifecycle(selectedLead)}
+                            disabled={!nextStage}
+                            className="mt-4 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            <CheckSquare className="h-4 w-4" />
+                            {lifecycleStageActionLabel(nextStage)}
+                          </button>
                         </div>
 
                         <div className="grid grid-cols-3 gap-2 text-right">
@@ -3593,7 +4012,7 @@ export function CrmPage() {
                   <div>
                     <div className={`text-sm ${styles.muted}`}>Form</div>
                     <div className="mt-1 font-semibold">{selectedLead.service}</div>
-                    <div className={`mt-1 text-xs ${styles.muted}`}>{leadStatusLabel(selectedLead, selectedLead.status)}</div>
+                    <div className={`mt-1 text-xs ${styles.muted}`}>{leadLifecycleLabel(selectedLead)}</div>
                   </div>
                 </div>
 
@@ -3612,14 +4031,12 @@ export function CrmPage() {
                 <div className="grid grid-cols-3 gap-3">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (selectedProcess?.nextStatus) refreshLead(selectedLead.id, { status: selectedProcess.nextStatus });
-                    }}
-                    disabled={!selectedProcess?.nextStatus}
+                    onClick={() => advanceLeadLifecycle(selectedLead)}
+                    disabled={!nextLifecycleStage(selectedLead)}
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <Phone className="h-4 w-4" />
-                    {selectedProcess?.primaryAction ?? 'Update'}
+                    {lifecycleStageActionLabel(nextLifecycleStage(selectedLead))}
                   </button>
                   <a href={`mailto:${selectedLead.email || ''}`} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
                     <Mail className="h-4 w-4" />

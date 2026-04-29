@@ -34,6 +34,7 @@ class SampleLead:
     company_name: str = ""
     owner: str = ""
     service_level: str = ""
+    lifecycle_stage: str = ""
 
 
 LEISURE_SAMPLES: list[SampleLead] = [
@@ -61,6 +62,7 @@ LEISURE_SAMPLES: list[SampleLead] = [
         client_name="Helena Matola",
         owner="Nadia Cossa",
         service_level="classic",
+        lifecycle_stage=Lead.LifecycleStage.NEW_REQUEST,
     ),
     SampleLead(
         service="Luxury Anniversary Journey",
@@ -86,6 +88,7 @@ LEISURE_SAMPLES: list[SampleLead] = [
         client_name="Jorge & Tania",
         owner="Carlos Mavie",
         service_level="luxury",
+        lifecycle_stage=Lead.LifecycleStage.PENDING_INFORMATION,
     ),
     SampleLead(
         service="Family Safari Plan",
@@ -111,6 +114,7 @@ LEISURE_SAMPLES: list[SampleLead] = [
         client_name="Paulo Sitoe Family",
         owner="Nadia Cossa",
         service_level="classic",
+        lifecycle_stage=Lead.LifecycleStage.QUOTE_IN_PROGRESS,
     ),
     SampleLead(
         service="Romantic Island Proposal",
@@ -136,6 +140,7 @@ LEISURE_SAMPLES: list[SampleLead] = [
         client_name="Mila and David",
         owner="Marta Lopes",
         service_level="luxury",
+        lifecycle_stage=Lead.LifecycleStage.AWAITING_APPROVAL,
     ),
     SampleLead(
         service="Southern Europe Honeymoon",
@@ -161,6 +166,7 @@ LEISURE_SAMPLES: list[SampleLead] = [
         client_name="Celso & Marisa",
         owner="Carlos Mavie",
         service_level="luxury",
+        lifecycle_stage=Lead.LifecycleStage.AWAITING_PAYMENT_FINANCE,
     ),
     SampleLead(
         service="Classic Family Coastline",
@@ -186,6 +192,7 @@ LEISURE_SAMPLES: list[SampleLead] = [
         client_name="Mariana Cossa",
         owner="Nadia Cossa",
         service_level="classic",
+        lifecycle_stage=Lead.LifecycleStage.TRAVEL_PACK_SENT,
     ),
     SampleLead(
         service="Luxury Desert Escape",
@@ -211,6 +218,7 @@ LEISURE_SAMPLES: list[SampleLead] = [
         client_name="Beatriz Nhaca",
         owner="Marta Lopes",
         service_level="luxury",
+        lifecycle_stage=Lead.LifecycleStage.COMPLETED,
     ),
     SampleLead(
         service="Classic Weekend City Break",
@@ -236,6 +244,7 @@ LEISURE_SAMPLES: list[SampleLead] = [
         client_name="Tito Cuambe",
         owner="Nadia Cossa",
         service_level="classic",
+        lifecycle_stage=Lead.LifecycleStage.CLOSED,
     ),
     SampleLead(
         service="Luxury City and Coast",
@@ -261,6 +270,7 @@ LEISURE_SAMPLES: list[SampleLead] = [
         client_name="Sandra Mucavele",
         owner="Carlos Mavie",
         service_level="luxury",
+        lifecycle_stage=Lead.LifecycleStage.QUOTE_SENT,
     ),
     SampleLead(
         service="Classic Regional Explorer",
@@ -286,6 +296,7 @@ LEISURE_SAMPLES: list[SampleLead] = [
         client_name="Fernanda Uamusse",
         owner="Nadia Cossa",
         service_level="classic",
+        lifecycle_stage=Lead.LifecycleStage.VALIDATED,
     ),
 ]
 
@@ -316,6 +327,7 @@ CORPORATE_SAMPLES: list[SampleLead] = [
         company_name="Etios Holdings",
         owner="Marta Lopes",
         service_level="corporate",
+        lifecycle_stage=Lead.LifecycleStage.NEW_REQUEST,
     ),
     SampleLead(
         service="Corporate Travel Request",
@@ -342,6 +354,7 @@ CORPORATE_SAMPLES: list[SampleLead] = [
         company_name="MozBuild Projects",
         owner="Marta Lopes",
         service_level="corporate",
+        lifecycle_stage=Lead.LifecycleStage.PENDING_INFORMATION,
     ),
     SampleLead(
         service="Corporate Travel Request",
@@ -368,6 +381,7 @@ CORPORATE_SAMPLES: list[SampleLead] = [
         company_name="BlueWave Energy",
         owner="Marta Lopes",
         service_level="corporate",
+        lifecycle_stage=Lead.LifecycleStage.QUOTE_IN_PROGRESS,
     ),
     SampleLead(
         service="Corporate Travel Request",
@@ -394,6 +408,7 @@ CORPORATE_SAMPLES: list[SampleLead] = [
         company_name="Global Freight Africa",
         owner="Marta Lopes",
         service_level="corporate",
+        lifecycle_stage=Lead.LifecycleStage.AWAITING_APPROVAL,
     ),
     SampleLead(
         service="Corporate Travel Request",
@@ -420,6 +435,7 @@ CORPORATE_SAMPLES: list[SampleLead] = [
         company_name="TechBridge Consulting",
         owner="Marta Lopes",
         service_level="corporate",
+        lifecycle_stage=Lead.LifecycleStage.AWAITING_PAYMENT_FINANCE,
     ),
     SampleLead(
         service="Corporate Travel Request",
@@ -446,6 +462,7 @@ CORPORATE_SAMPLES: list[SampleLead] = [
         company_name="Prime Health Group",
         owner="Marta Lopes",
         service_level="corporate",
+        lifecycle_stage=Lead.LifecycleStage.BOOKING_IN_PROGRESS,
     ),
     SampleLead(
         service="Corporate Travel Request",
@@ -472,6 +489,7 @@ CORPORATE_SAMPLES: list[SampleLead] = [
         company_name="Nacala Mining Services",
         owner="Marta Lopes",
         service_level="corporate",
+        lifecycle_stage=Lead.LifecycleStage.COMPLETED,
     ),
     SampleLead(
         service="Corporate Travel Request",
@@ -498,6 +516,7 @@ CORPORATE_SAMPLES: list[SampleLead] = [
         company_name="Atlas Telecom",
         owner="Marta Lopes",
         service_level="corporate",
+        lifecycle_stage=Lead.LifecycleStage.CLOSED,
     ),
     SampleLead(
         service="Corporate Travel Request",
@@ -524,6 +543,7 @@ CORPORATE_SAMPLES: list[SampleLead] = [
         company_name="GreenGrid Utilities",
         owner="Marta Lopes",
         service_level="corporate",
+        lifecycle_stage=Lead.LifecycleStage.VALIDATED,
     ),
     SampleLead(
         service="Corporate Travel Request",
@@ -550,6 +570,7 @@ CORPORATE_SAMPLES: list[SampleLead] = [
         company_name="Indico Ports",
         owner="Marta Lopes",
         service_level="corporate",
+        lifecycle_stage=Lead.LifecycleStage.QUOTE_SENT,
     ),
 ]
 
@@ -609,6 +630,7 @@ class Command(BaseCommand):
                 "priority": sample.priority,
                 "notes": sample.notes,
                 "status": sample.status,
+                "lifecycle_stage": sample.lifecycle_stage or Lead.LifecycleStage.NEW_REQUEST,
                 "email_status": Lead.EmailStatus.PENDING,
                 "internal_notes": sample.internal_notes,
                 "client": client,
