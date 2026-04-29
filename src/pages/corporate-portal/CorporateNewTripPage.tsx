@@ -1,16 +1,18 @@
 import { Minus, PlusSquare } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { corporateCostBands, corporateDepartments, corporateServiceCatalog } from '../../data/corporatePortal';
-import type { CorporatePortalTheme, CorporateTripCreateInput } from '../../types/corporatePortal';
+import type { CorporatePortalTheme, CorporateTravelerProfile, CorporateTripCreateInput } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from './portalTheme';
 
-const initialTravelers = [{ name: '', email: '', department: corporateDepartments[0] }];
+const initialTravelers = [{ profileId: undefined as string | number | undefined, name: '', email: '', department: corporateDepartments[0] }];
 
 export function CorporateNewTripPage({
   onCreateTrip,
+  savedTravelers,
   theme,
 }: {
   onCreateTrip: (input: CorporateTripCreateInput) => Promise<void>;
+  savedTravelers: CorporateTravelerProfile[];
   theme: CorporatePortalTheme;
 }) {
   const [department, setDepartment] = useState(corporateDepartments[0]);
@@ -41,7 +43,7 @@ export function CorporateNewTripPage({
   };
 
   const addTraveler = () => {
-    setTravelers((current) => [...current, { name: '', email: '', department }]);
+    setTravelers((current) => [...current, { profileId: undefined, name: '', email: '', department }]);
   };
 
   const removeTraveler = (index: number) => {
@@ -73,6 +75,23 @@ export function CorporateNewTripPage({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const availableTravelerProfiles = useMemo(() => {
+    const selectedIds = new Set(travelers.map((traveler) => String(traveler.profileId ?? '')).filter(Boolean));
+    return savedTravelers.filter((traveler) => traveler.isActive && !selectedIds.has(String(traveler.id)));
+  }, [savedTravelers, travelers]);
+
+  const addTravelerFromProfile = (profile: CorporateTravelerProfile) => {
+    setTravelers((current) => [
+      ...current,
+      {
+        profileId: profile.id,
+        name: profile.name,
+        email: profile.email,
+        department: profile.department,
+      },
+    ]);
   };
 
   return (
@@ -159,7 +178,7 @@ export function CorporateNewTripPage({
           <div className="mb-3 flex items-center justify-between">
             <div>
               <div className="text-sm font-medium">Travelers</div>
-              <div className={`text-xs ${styles.muted}`}>Add one or more travelers for the request.</div>
+              <div className={`text-xs ${styles.muted}`}>Add one or more travelers for the request or reuse saved company profiles.</div>
             </div>
             <button type="button" onClick={addTraveler} className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${styles.buttonGhost}`}>
               <PlusSquare className="h-4 w-4" />
@@ -167,11 +186,40 @@ export function CorporateNewTripPage({
             </button>
           </div>
 
+          {availableTravelerProfiles.length > 0 ? (
+            <div className="mb-4 grid gap-2 md:grid-cols-2">
+              {availableTravelerProfiles.slice(0, 6).map((profile) => (
+                <button
+                  key={profile.id}
+                  type="button"
+                  onClick={() => addTravelerFromProfile(profile)}
+                  className={`rounded-xl border p-3 text-left transition ${theme === 'dark' ? 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08]' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{profile.name}</div>
+                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{profile.department} · {profile.email}</div>
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${profile.passportStatus === 'OK' ? 'bg-emerald-500/12 text-emerald-200' : 'bg-red-500/12 text-red-200'}`}>
+                      {profile.passportStatus}
+                    </span>
+                  </div>
+                  <div className={`mt-2 text-xs ${styles.muted}`}>
+                    {profile.nextTripId ? `Upcoming: ${profile.nextTripLabel ?? profile.nextTripId}` : 'Reusable profile ready'}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           <div className="space-y-3">
             {travelers.map((traveler, index) => (
               <div key={`traveler-${index}`} className={`rounded-xl border p-4 ${theme === 'dark' ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white'}`}>
                 <div className="mb-3 flex items-center justify-between">
-                  <div className="text-sm font-medium">Traveler {index + 1}</div>
+                  <div>
+                    <div className="text-sm font-medium">Traveler {index + 1}</div>
+                    {traveler.profileId ? <div className={`mt-1 text-xs ${styles.muted}`}>Prefilled from saved traveler profile</div> : null}
+                  </div>
                   <button
                     type="button"
                     onClick={() => removeTraveler(index)}

@@ -34,6 +34,40 @@ export type CorporateTraveler = {
   readiness: CorporateTravelerReadiness;
 };
 
+export type CorporateTravelerProfile = {
+  id: string | number;
+  name: string;
+  department: string;
+  email: string;
+  phone: string;
+  nationality: string;
+  passportNumber?: string;
+  passportExpiry?: string | null;
+  passportStatus: 'OK' | 'Missing' | 'Expired';
+  visaStatus: 'OK' | 'Required' | 'N/A' | 'Pending';
+  notes?: string;
+  isActive: boolean;
+  tripCount: number;
+  nextTripId?: string;
+  nextTripLabel?: string;
+  nextTripDate?: string;
+  readiness: CorporateTravelerReadiness;
+};
+
+export type CorporateTravelerProfileInput = {
+  name: string;
+  department: string;
+  email: string;
+  phone: string;
+  nationality: string;
+  passportNumber?: string;
+  passportExpiry?: string | null;
+  passportStatus: 'OK' | 'Missing' | 'Expired';
+  visaStatus: 'OK' | 'Required' | 'N/A' | 'Pending';
+  notes?: string;
+  isActive: boolean;
+};
+
 export type CorporateCostBand = {
   key: 'lt1k' | '1k_5k' | 'gt5k';
   label: string;

@@ -8,8 +8,9 @@ import { CorporateReportsPage } from './CorporateReportsPage';
 import { CorporateRequestDetailPage } from './CorporateRequestDetailPage';
 import { CorporateRequestsPage } from './CorporateRequestsPage';
 import { CorporateSectionPlaceholderPage } from './CorporateSectionPlaceholderPage';
+import { CorporateTravelersPage } from './CorporateTravelersPage';
 import { getCorporateCurrentTripCost } from '../../data/corporatePortal';
-import { approveCtmTripRequest, clearCtmSession, createCtmTripRequest, CTM_AUTH_EVENT, fetchCtmBillingInvoices, fetchCtmBillingPayments, fetchCtmBillingSummary, fetchCtmContext, fetchCtmCurrentSession, fetchCtmTripRequests, hasCtmApi, loginCtm, logoutCtm, readCtmSession, rejectCtmTripRequest, saveCtmSession } from '../../data/ctm';
+import { approveCtmTripRequest, clearCtmSession, createCtmTraveler, createCtmTripRequest, CTM_AUTH_EVENT, fetchCtmBillingInvoices, fetchCtmBillingPayments, fetchCtmBillingSummary, fetchCtmContext, fetchCtmCurrentSession, fetchCtmTravelers, fetchCtmTripRequests, hasCtmApi, loginCtm, logoutCtm, readCtmSession, rejectCtmTripRequest, saveCtmSession, updateCtmTraveler } from '../../data/ctm';
 import type {
   CorporateApprovalFilter,
   CorporateApprovalStage,
@@ -20,6 +21,8 @@ import type {
   CorporatePortalTheme,
   CorporateRequestFilter,
   CorporateTimelineEvent,
+  CorporateTravelerProfile,
+  CorporateTravelerProfileInput,
   CorporateTripCreateInput,
   CorporateTripInvoice,
   CorporateTripPayment,
@@ -82,6 +85,7 @@ export function CorporatePortalApp() {
   const [search, setSearch] = useState('');
   const [requests, setRequests] = useState<CorporateTripRequest[]>([]);
   const [company, setCompany] = useState<CorporatePortalCompany | null>(null);
+  const [travelers, setTravelers] = useState<CorporateTravelerProfile[]>([]);
   const [billingSummary, setBillingSummary] = useState<CorporateBillingSummary | null>(null);
   const [billingInvoices, setBillingInvoices] = useState<CorporateTripInvoice[]>([]);
   const [billingPayments, setBillingPayments] = useState<CorporateTripPayment[]>([]);
@@ -141,9 +145,10 @@ export function CorporatePortalApp() {
       setIsLoading(true);
       setError('');
       try {
-        const [context, nextRequests, nextBillingSummary, nextBillingInvoices, nextBillingPayments] = await Promise.all([
+        const [context, nextRequests, nextTravelers, nextBillingSummary, nextBillingInvoices, nextBillingPayments] = await Promise.all([
           fetchCtmContext(ctmSession),
           fetchCtmTripRequests(ctmSession),
+          fetchCtmTravelers(ctmSession),
           fetchCtmBillingSummary(ctmSession),
           fetchCtmBillingInvoices(ctmSession),
           fetchCtmBillingPayments(ctmSession),
@@ -151,6 +156,7 @@ export function CorporatePortalApp() {
         if (!active) return;
         setCompany(context.company);
         setRequests(nextRequests);
+        setTravelers(nextTravelers);
         setBillingSummary(nextBillingSummary);
         setBillingInvoices(nextBillingInvoices);
         setBillingPayments(nextBillingPayments);
@@ -255,6 +261,7 @@ export function CorporatePortalApp() {
     setCtmSession(null);
     setCompany(null);
     setRequests([]);
+    setTravelers([]);
     setBillingSummary(null);
     setBillingInvoices([]);
     setBillingPayments([]);
@@ -283,6 +290,28 @@ export function CorporatePortalApp() {
       navigate(`/corporate-portal/requests/${newTrip.id}`);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Could not create trip request.');
+    }
+  };
+
+  const createTraveler = async (input: CorporateTravelerProfileInput) => {
+    try {
+      const traveler = await createCtmTraveler(input, ctmSession);
+      setTravelers((current) => [traveler, ...current]);
+      setError('');
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Could not create traveler profile.');
+      throw createError;
+    }
+  };
+
+  const saveTraveler = async (id: string | number, input: Partial<CorporateTravelerProfileInput>) => {
+    try {
+      const traveler = await updateCtmTraveler(id, input, ctmSession);
+      setTravelers((current) => current.map((item) => (String(item.id) === String(id) ? traveler : item)));
+      setError('');
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : 'Could not update traveler profile.');
+      throw updateError;
     }
   };
 
@@ -367,13 +396,13 @@ export function CorporatePortalApp() {
     : pathname.startsWith('/corporate-portal/requests')
       ? <CorporateRequestsPage allRequests={searchedRequests} requests={filteredRequests} selectedRequestId={selectedRequestId} onOpenRequest={openRequest} theme={theme} activeFilter={requestFilter} onFilterChange={activateRequestFilter} onOpenApprovals={openApprovals} />
       : pathname.startsWith('/corporate-portal/new-trip')
-        ? <CorporateNewTripPage onCreateTrip={createTrip} theme={theme} />
+        ? <CorporateNewTripPage onCreateTrip={createTrip} savedTravelers={travelers} theme={theme} />
       : pathname.startsWith('/corporate-portal/approvals')
           ? <CorporateApprovalsPage requests={filteredApprovalRequests} allRequests={searchedRequests} onOpenRequest={openRequest} onApprove={(tripId, stage) => updateApprovalDecision(tripId, stage, 'Approved')} onReject={(tripId, stage) => updateApprovalDecision(tripId, stage, 'Rejected')} theme={theme} activeFilter={approvalFilter} onFilterChange={activateApprovalFilter} onOpenRequests={openRequests} />
         : pathname.startsWith('/corporate-portal/itineraries')
           ? <CorporateSectionPlaceholderPage title="Itineraries" description="Confirmed trips, service breakdowns, and downloadable travel packs will live in this view once the booking side of CTM is connected." bullets={['Upcoming trips with hotel, transfer, and flight breakdowns', 'Live trip status for active company travelers', 'Downloadable itinerary packs and support notes']} actionLabel="Review booked request" onAction={() => openRequest('DPM-2419')} theme={theme} />
           : pathname.startsWith('/corporate-portal/travelers')
-            ? <CorporateSectionPlaceholderPage title="Travelers" description="The traveler directory is the next structural layer after approvals. It will hold reusable profiles and document readiness for repeat corporate travel." bullets={['Company traveler records with department ownership', 'Passport and visa readiness across upcoming travel', 'Faster request creation with reusable traveler selection']} actionLabel="Create new trip" onAction={openNewTrip} theme={theme} />
+            ? <CorporateTravelersPage travelers={travelers} search={search} theme={theme} onCreateTraveler={createTraveler} onUpdateTraveler={saveTraveler} onOpenRequest={openRequest} />
           : pathname.startsWith('/corporate-portal/reports')
               ? <CorporateReportsPage summary={billingSummary} invoices={billingInvoices} payments={billingPayments} theme={theme} onOpenRequest={openRequest} />
           : <CorporateDashboardPage requests={requests} stats={portalStats} activityTimeline={portalTimeline} onOpenRequest={openRequest} onOpenApprovals={openApprovals} onOpenNewTrip={openNewTrip} onStatClick={handleDashboardStatClick} theme={theme} />;

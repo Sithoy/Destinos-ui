@@ -3,6 +3,8 @@ import type {
   CorporateBillingSummary,
   CorporatePortalCompany,
   CorporatePortalSession,
+  CorporateTravelerProfile,
+  CorporateTravelerProfileInput,
   CorporatePortalUser,
   CorporateTripCreateInput,
   CorporateTripInvoice,
@@ -49,6 +51,46 @@ function notifyCtmAuthUpdated() {
 
 function authHeaders(session?: CorporatePortalSession | null): Record<string, string> {
   return session?.token ? { Authorization: `Token ${session.token}` } : {};
+}
+
+function readValue<T = unknown>(record: Record<string, unknown>, ...keys: string[]): T | undefined {
+  for (const key of keys) {
+    if (key in record) return record[key] as T;
+  }
+  return undefined;
+}
+
+function normalizeReadiness(passportStatus: unknown, visaStatus: unknown): CorporateTravelerProfile['readiness'] {
+  const passport = passportStatus === 'OK' ? 'OK' : 'Missing';
+  const visa = visaStatus === 'Required' || visaStatus === 'Pending' ? 'Required' : visaStatus === 'OK' ? 'OK' : 'N/A';
+  return { passport, visa };
+}
+
+function normalizeTravelerProfile(raw: unknown): CorporateTravelerProfile {
+  const record = (raw ?? {}) as Record<string, unknown>;
+  const passportStatus = readValue<string>(record, 'passportStatus', 'passport_status') ?? 'Missing';
+  const visaStatus = readValue<string>(record, 'visaStatus', 'visa_status') ?? 'N/A';
+  const nextTrip = readValue<Record<string, unknown>>(record, 'nextTrip', 'next_trip') ?? {};
+
+  return {
+    id: String(readValue(record, 'id') ?? ''),
+    name: String(readValue(record, 'name', 'fullName', 'full_name') ?? ''),
+    department: String(readValue(record, 'department') ?? ''),
+    email: String(readValue(record, 'email') ?? ''),
+    phone: String(readValue(record, 'phone') ?? ''),
+    nationality: String(readValue(record, 'nationality') ?? ''),
+    passportNumber: readValue<string>(record, 'passportNumber', 'passport_number') ?? '',
+    passportExpiry: (readValue<string>(record, 'passportExpiry', 'passport_expiry') ?? null),
+    passportStatus: passportStatus === 'Expired' ? 'Expired' : passportStatus === 'OK' ? 'OK' : 'Missing',
+    visaStatus: visaStatus === 'Pending' ? 'Pending' : visaStatus === 'Required' ? 'Required' : visaStatus === 'OK' ? 'OK' : 'N/A',
+    notes: readValue<string>(record, 'notes') ?? '',
+    isActive: Boolean(readValue(record, 'isActive', 'is_active') ?? true),
+    tripCount: Number(readValue(record, 'tripCount', 'trip_count') ?? 0),
+    nextTripId: readValue<string>(nextTrip, 'id', 'referenceCode', 'reference_code'),
+    nextTripLabel: readValue<string>(nextTrip, 'label', 'route', 'destination'),
+    nextTripDate: readValue<string>(nextTrip, 'travelDate', 'travel_date'),
+    readiness: normalizeReadiness(passportStatus, visaStatus),
+  };
 }
 
 export function readCtmSession(): CorporatePortalSession | null {
@@ -137,6 +179,76 @@ export async function fetchCtmTripRequests(session?: CorporatePortalSession | nu
       headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
     }),
   );
+}
+
+export async function fetchCtmTravelers(session?: CorporatePortalSession | null): Promise<CorporateTravelerProfile[]> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  const travelers = await parseApiResponse<unknown[]>(
+    await fetch(`${base}/api/ctm/travelers/`, {
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+    }),
+  );
+
+  return travelers.map(normalizeTravelerProfile);
+}
+
+export async function createCtmTraveler(input: CorporateTravelerProfileInput, session?: CorporatePortalSession | null): Promise<CorporateTravelerProfile> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  const traveler = await parseApiResponse<unknown>(
+    await fetch(`${base}/api/ctm/travelers/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify({
+        full_name: input.name,
+        department: input.department,
+        email: input.email,
+        phone: input.phone,
+        nationality: input.nationality,
+        passport_number: input.passportNumber,
+        passport_expiry: input.passportExpiry,
+        passport_status: input.passportStatus,
+        visa_status: input.visaStatus,
+        notes: input.notes,
+        is_active: input.isActive,
+      }),
+    }),
+  );
+
+  return normalizeTravelerProfile(traveler);
+}
+
+export async function updateCtmTraveler(id: string | number, input: Partial<CorporateTravelerProfileInput>, session?: CorporatePortalSession | null): Promise<CorporateTravelerProfile> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  const traveler = await parseApiResponse<unknown>(
+    await fetch(`${base}/api/ctm/travelers/${id}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify({
+        ...(input.name !== undefined ? { full_name: input.name } : {}),
+        ...(input.department !== undefined ? { department: input.department } : {}),
+        ...(input.email !== undefined ? { email: input.email } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone } : {}),
+        ...(input.nationality !== undefined ? { nationality: input.nationality } : {}),
+        ...(input.passportNumber !== undefined ? { passport_number: input.passportNumber } : {}),
+        ...(input.passportExpiry !== undefined ? { passport_expiry: input.passportExpiry } : {}),
+        ...(input.passportStatus !== undefined ? { passport_status: input.passportStatus } : {}),
+        ...(input.visaStatus !== undefined ? { visa_status: input.visaStatus } : {}),
+        ...(input.notes !== undefined ? { notes: input.notes } : {}),
+        ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
+      }),
+    }),
+  );
+
+  return normalizeTravelerProfile(traveler);
 }
 
 export async function fetchCtmBillingSummary(session?: CorporatePortalSession | null): Promise<CorporateBillingSummary> {

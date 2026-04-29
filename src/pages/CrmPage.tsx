@@ -62,8 +62,27 @@ type LeadTypeFilter = 'all' | InquiryKind;
 type StatusFilter = 'all' | LeadStatus | 'confirmedGroup' | 'workflowGroup';
 type PriorityFilter = 'all' | LeadPriority | 'attention';
 type CrmTheme = 'dark' | 'light';
-type DetailTab = 'overview' | 'tasks' | 'notes' | 'history';
-type CrmNavId = 'command' | 'workflow' | 'tasks' | 'calendar' | 'clients' | 'trips' | 'reports' | 'settings';
+type DetailTab =
+  | 'overview'
+  | 'proposal'
+  | 'payments'
+  | 'travelPack'
+  | 'notes'
+  | 'history'
+  | 'travelers'
+  | 'approvals'
+  | 'finance'
+  | 'documents'
+  | 'itinerary'
+  | 'brief'
+  | 'research'
+  | 'costing'
+  | 'package'
+  | 'clientReview'
+  | 'payment';
+type DeskView = 'all' | 'leisure' | 'corporate';
+type CommandLens = 'all' | 'corporate' | 'leisure' | 'attention' | 'blocked' | 'ready';
+type CrmNavId = 'command' | 'leisureStudio' | 'corporateDesk' | 'tasks' | 'calendar' | 'clients' | 'reports' | 'settings';
 type ProcessTaskTone = 'urgent' | 'normal' | 'upcoming';
 type UserFormState = {
   username: string;
@@ -81,10 +100,72 @@ type ProcessTask = {
   tone: ProcessTaskTone;
 };
 
+type FlowProcessMap = Record<
+  LeadStatus,
+  {
+    primaryAction: string;
+    nextAction: string;
+    nextStatus: LeadStatus | null;
+    stageGate: string;
+    taskTitles: [string, string, string];
+  }
+>;
+
 type ProcessHistoryItem = {
   label: string;
   meta: string;
   tone: 'done' | 'current' | 'upcoming' | 'closed';
+};
+
+type InfoCard = {
+  label: string;
+  value: string;
+  meta?: string;
+};
+
+type MockWorkflowItem = {
+  title: string;
+  value: string;
+  meta: string;
+};
+
+type MockBookingRecord = {
+  service: string;
+  supplier: string;
+  status: string;
+  reference: string;
+  note: string;
+};
+
+type ItineraryStop = {
+  city: string;
+  nights: string;
+  stay: string;
+  room: string;
+  focus: string;
+  note: string;
+};
+
+type ItineraryExperience = {
+  title: string;
+  category: string;
+  timing: string;
+  note: string;
+};
+
+type LeisureWorkbenchRow = {
+  service: string;
+  supplier: string;
+  status: string;
+  cost: number;
+  sell: number;
+};
+
+type LeisurePackageOption = {
+  name: string;
+  price: number;
+  fit: string;
+  recommendation: string;
 };
 
 type MetricCard = {
@@ -126,13 +207,23 @@ const typeLabels: Record<LeadTypeFilter, string> = {
 const statusOrder: LeadStatus[] = ['new', 'contacted', 'planning', 'proposal', 'won', 'execution', 'completed', 'lost'];
 const typeFilters = ['all', 'luxury', 'corporate', 'classic'] as LeadTypeFilter[];
 
-const workflowSteps = [
+const traditionalWorkflowSteps = [
   ['new', 'New'],
-  ['contacted', 'Qualification'],
+  ['contacted', 'Discovery'],
   ['planning', 'Trip Design'],
   ['proposal', 'Proposal'],
   ['won', 'Confirmed'],
-  ['execution', 'Execution'],
+  ['execution', 'Delivery'],
+  ['completed', 'Completed'],
+] as const;
+
+const corporateWorkflowSteps = [
+  ['new', 'New'],
+  ['contacted', 'Qualification'],
+  ['planning', 'Travel Plan'],
+  ['proposal', 'Proposal'],
+  ['won', 'Approval Secured'],
+  ['execution', 'Fulfilment'],
   ['completed', 'Completed'],
 ] as const;
 
@@ -148,16 +239,7 @@ const serviceProcessFocus: Record<InquiryKind, string> = {
   corporate: 'traveler list, approval flow, policy fit, and invoice structure',
 };
 
-const statusProcess: Record<
-  LeadStatus,
-  {
-    primaryAction: string;
-    nextAction: string;
-    nextStatus: LeadStatus | null;
-    stageGate: string;
-    taskTitles: [string, string, string];
-  }
-> = {
+const traditionalStatusProcess: FlowProcessMap = {
   new: {
     primaryAction: 'Qualify request',
     nextAction: 'Confirm client intent, dates, budget, and service expectations.',
@@ -216,15 +298,84 @@ const statusProcess: Record<
   },
 };
 
+const corporateStatusProcess: FlowProcessMap = {
+  new: {
+    primaryAction: 'Qualify account need',
+    nextAction: 'Confirm traveler count, route, timing, and whether policy or invoice constraints already exist.',
+    nextStatus: 'contacted',
+    stageGate: 'Move to Qualification when the company need is real and the coordinating contact is confirmed.',
+    taskTitles: ['Confirm company requester', 'Capture traveler scope', 'Check policy or billing requirements'],
+  },
+  contacted: {
+    primaryAction: 'Build travel brief',
+    nextAction: 'Capture traveler list shape, approval owner, flexibility, and the operational constraints that affect quoting.',
+    nextStatus: 'planning',
+    stageGate: 'Move to Travel Plan when DPM can prepare options against a stable company brief.',
+    taskTitles: ['Confirm traveler matrix', 'Validate approval owner', 'Clarify fare and hotel policy'],
+  },
+  planning: {
+    primaryAction: 'Prepare proposal',
+    nextAction: 'Turn the movement brief into pricing, routing logic, service scope, and approval-ready commercial notes.',
+    nextStatus: 'proposal',
+    stageGate: 'Move to Proposal when pricing, policy fit, and operational assumptions are clear enough for company review.',
+    taskTitles: ['Build traveler option set', 'Draft approval-ready proposal', 'Check invoicing structure'],
+  },
+  proposal: {
+    primaryAction: 'Follow up approval',
+    nextAction: 'Track company approval, traveler changes, expiring fares, and internal finance dependencies before locking travel.',
+    nextStatus: 'won',
+    stageGate: 'Move to Approval Secured when the company signs off the proposal and commercial conditions are controlled.',
+    taskTitles: ['Follow up approver', 'Track traveler changes', 'Protect time-sensitive holds'],
+  },
+  won: {
+    primaryAction: 'Launch fulfilment',
+    nextAction: 'Convert approval into bookings, traveler documentation, invoicing, and coordinated operational ownership.',
+    nextStatus: 'execution',
+    stageGate: 'Move to Fulfilment when travel is approved and the operating team can execute confidently.',
+    taskTitles: ['Confirm booking path', 'Prepare invoice record', 'Lock traveler support checklist'],
+  },
+  execution: {
+    primaryAction: 'Close operating loop',
+    nextAction: 'Deliver travel packs, support active movement, and keep the company informed across traveler changes.',
+    nextStatus: 'completed',
+    stageGate: 'Move to Completed when the movement is delivered and the account notes are updated for future travel.',
+    taskTitles: ['Deliver final movement pack', 'Support active travelers', 'Capture post-trip account notes'],
+  },
+  completed: {
+    primaryAction: 'Review account delivery',
+    nextAction: 'Capture service feedback, repeat routes, and policy learnings for the next corporate movement.',
+    nextStatus: null,
+    stageGate: 'Keep completed corporate trips as account intelligence for future requests.',
+    taskTitles: ['Request account feedback', 'Log repeat route patterns', 'Prepare next-travel follow-up'],
+  },
+  lost: {
+    primaryAction: 'Reopen request',
+    nextAction: 'Record why the company movement stopped and whether the account should be nurtured later.',
+    nextStatus: 'new',
+    stageGate: 'Closed corporate requests should explain whether budget, timing, policy, or traveler readiness stopped the work.',
+    taskTitles: ['Record loss reason', 'Tag account risk', 'Schedule follow-up if relevant'],
+  },
+};
+
 const navItems: Array<{ id: CrmNavId; label: string; Icon: LucideIcon }> = [
   { id: 'command', label: 'Command Center', Icon: LayoutDashboard },
-  { id: 'workflow', label: 'Workflow', Icon: ClipboardCheck },
+  { id: 'leisureStudio', label: 'Leisure Studio', Icon: Sparkles },
+  { id: 'corporateDesk', label: 'Corporate Desk', Icon: Briefcase },
   { id: 'tasks', label: 'Tasks', Icon: CheckSquare },
   { id: 'calendar', label: 'Calendar', Icon: CalendarDays },
   { id: 'clients', label: 'Clients', Icon: Users },
-  { id: 'trips', label: 'Trips', Icon: Sparkles },
   { id: 'reports', label: 'Reports', Icon: FileText },
   { id: 'settings', label: 'Settings', Icon: Settings },
+];
+
+const leisureWorkbenchTabs: Array<{ id: DetailTab; label: string; Icon: LucideIcon }> = [
+  { id: 'brief', label: 'Brief', Icon: ClipboardCheck },
+  { id: 'research', label: 'Research', Icon: Search },
+  { id: 'costing', label: 'Costing', Icon: FileText },
+  { id: 'package', label: 'Package', Icon: Sparkles },
+  { id: 'clientReview', label: 'Client Review', Icon: Mail },
+  { id: 'payment', label: 'Payment', Icon: Phone },
+  { id: 'travelPack', label: 'Travel Pack', Icon: Download },
 ];
 
 const crmRoleLabels: Record<Extract<CrmRole, 'admin' | 'manager' | 'agent' | 'viewer'>, string> = {
@@ -365,6 +516,483 @@ function leadSegment(lead: CrmLead) {
   return 'Private Client';
 }
 
+function isCorporateLead(lead: CrmLead) {
+  return lead.serviceKey === 'corporate';
+}
+
+function isLeisureLead(lead: CrmLead) {
+  return lead.serviceKey === 'classic' || lead.serviceKey === 'luxury';
+}
+
+function workflowStepsForLead(lead: CrmLead) {
+  return isCorporateLead(lead) ? corporateWorkflowSteps : traditionalWorkflowSteps;
+}
+
+function leadStatusLabel(lead: CrmLead, status: LeadStatus) {
+  const steps = workflowStepsForLead(lead);
+  return steps.find(([step]) => step === status)?.[1] ?? statusLabels[status];
+}
+
+function leadFlowTitle(lead: CrmLead) {
+  return isCorporateLead(lead) ? 'Corporate travel operations flow' : 'Traditional trip design flow';
+}
+
+function leadFlowDescription(lead: CrmLead) {
+  return isCorporateLead(lead)
+    ? 'Company travel follows approvals, traveler readiness, policy fit, and invoice-aware fulfilment.'
+    : 'Classic and luxury trips move through discovery, trip design, proposal, confirmation, and delivery.';
+}
+
+function detailTabsForLead(lead: CrmLead): DetailTab[] {
+  return isCorporateLead(lead)
+    ? ['overview', 'travelers', 'approvals', 'finance', 'documents', 'itinerary', 'history']
+    : ['overview', 'proposal', 'payments', 'travelPack', 'itinerary', 'notes', 'history'];
+}
+
+function detailTabLabel(tab: DetailTab) {
+  switch (tab) {
+    case 'brief':
+      return 'Brief';
+    case 'research':
+      return 'Research';
+    case 'costing':
+      return 'Costing';
+    case 'package':
+      return 'Package';
+    case 'clientReview':
+      return 'Client Review';
+    case 'payment':
+      return 'Payment';
+    case 'itinerary':
+      return 'Itinerary';
+    case 'travelPack':
+      return 'Travel Pack';
+    default:
+      return tab.charAt(0).toUpperCase() + tab.slice(1);
+  }
+}
+
+function travelerCountValue(lead: CrmLead) {
+  const match = lead.travelers.match(/\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+function leisureProposalCards(lead: CrmLead): InfoCard[] {
+  return [
+    {
+      label: 'Offer shape',
+      value: lead.serviceKey === 'luxury' ? 'Premium curated proposal' : 'Balanced package proposal',
+      meta: lead.serviceKey === 'luxury' ? 'High-touch itinerary with elevated service framing' : 'Practical options with clear inclusions and budget fit',
+    },
+    {
+      label: 'Supplier posture',
+      value: lead.status === 'proposal' ? 'Quote already with client' : 'Option set still being refined',
+      meta: lead.serviceKey === 'luxury' ? 'Protect premium room and experience availability' : 'Compare rate/value before final send',
+    },
+    {
+      label: 'Decision pressure',
+      value: fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high' ? 'Follow up within 24h' : 'Gentle follow-up cadence',
+      meta: `Preferred contact: ${lead.preferredContact || 'Not captured yet'}`,
+    },
+  ];
+}
+
+function leisurePaymentCards(lead: CrmLead): InfoCard[] {
+  return [
+    {
+      label: 'Payment model',
+      value: lead.serviceKey === 'luxury' ? 'Deposit before premium holds' : 'Payment before booking release',
+      meta: 'Keep expectations clear before supplier confirmation.',
+    },
+    {
+      label: 'Commercial status',
+      value: lead.status === 'won' || lead.status === 'execution' || lead.status === 'completed' ? 'Approved to progress' : 'Awaiting client decision',
+      meta: `Budget: ${lead.budget || 'Budget pending'}`,
+    },
+    {
+      label: 'Risk note',
+      value: lead.serviceKey === 'luxury' ? 'Premium inventory can move quickly' : 'Fare and hotel changes may affect package fit',
+      meta: 'Use this to steer the next conversation.',
+    },
+  ];
+}
+
+function leisureTravelPackCards(lead: CrmLead): InfoCard[] {
+  return [
+    {
+      label: 'Pack focus',
+      value: lead.serviceKey === 'luxury' ? 'Concierge-ready itinerary pack' : 'Clear and practical travel pack',
+      meta: 'Final communication should match the client experience level.',
+    },
+    {
+      label: 'Support posture',
+      value: lead.serviceKey === 'luxury' ? 'High-touch support and special-request awareness' : 'Simple support with crisp movement instructions',
+      meta: `Travel window: ${lead.dates || 'Dates pending'}`,
+    },
+    {
+      label: 'Final handoff',
+      value: lead.status === 'execution' || lead.status === 'completed' ? 'In delivery / post-delivery' : 'Prepare once payment and bookings are locked',
+      meta: `Destination: ${lead.destination || 'Pending destination'}`,
+    },
+  ];
+}
+
+function corporateTravelerCards(lead: CrmLead): InfoCard[] {
+  const count = travelerCountValue(lead);
+  return [
+    {
+      label: 'Traveler scope',
+      value: lead.travelers || 'Traveler list pending',
+      meta: count > 1 ? 'Group movement requires traveler coordination.' : 'Single-traveler movement, still keep readiness visible.',
+    },
+    {
+      label: 'Ownership',
+      value: lead.tripType || 'Business movement',
+      meta: `Departure: ${lead.departureCity || 'Pending'} · Destination: ${lead.destination || 'Pending'}`,
+    },
+    {
+      label: 'Readiness posture',
+      value: lead.requestedServices.toLowerCase().includes('visa') ? 'Visa-sensitive movement' : 'Document check still required',
+      meta: 'Traveler names and document status should be aligned before fulfilment.',
+    },
+  ];
+}
+
+function corporateApprovalCards(lead: CrmLead): InfoCard[] {
+  return [
+    {
+      label: 'Current approval lane',
+      value: lead.status === 'won' ? 'Approval secured' : lead.status === 'proposal' ? 'Client approval pending' : 'Internal qualification / planning',
+      meta: 'Corporate travel should not progress without clear owner sign-off.',
+    },
+    {
+      label: 'Decision owner',
+      value: leadOwner(lead),
+      meta: 'Use the account owner to chase blockers and keep the company side aligned.',
+    },
+    {
+      label: 'Commercial pressure',
+      value: fallbackPriority(lead) === 'urgent' ? 'Approvals need immediate follow-up' : 'Approvals can move on standard cadence',
+      meta: `Urgency signal: ${lead.urgency || 'Not captured'}`,
+    },
+  ];
+}
+
+function corporateFinanceCards(lead: CrmLead): InfoCard[] {
+  return [
+    {
+      label: 'Finance model',
+      value: 'PO / invoice / account clearance',
+      meta: 'Corporate work should make finance clearance explicit before booking release.',
+    },
+    {
+      label: 'Commercial shape',
+      value: lead.budget || 'Policy-based / budget pending',
+      meta: lead.requestedServices || 'Service scope pending',
+    },
+    {
+      label: 'Release condition',
+      value: lead.status === 'won' || lead.status === 'execution' || lead.status === 'completed' ? 'Commercially cleared to fulfil' : 'Keep booking blocked until commercial sign-off',
+      meta: 'Use this lane to coordinate invoice-sensitive work.',
+    },
+  ];
+}
+
+function corporateDocumentCards(lead: CrmLead): InfoCard[] {
+  return [
+    {
+      label: 'Document posture',
+      value: lead.requestedServices.toLowerCase().includes('visa') ? 'Visa support in scope' : 'Standard traveler document check',
+      meta: 'Keep passport, visa, and traveler data visible before fulfilment.',
+    },
+    {
+      label: 'Operational risk',
+      value: travelerCountValue(lead) > 3 ? 'Multi-traveler coordination risk' : 'Low traveler-count coordination risk',
+      meta: `Traveler count: ${lead.travelers || 'Pending'}`,
+    },
+    {
+      label: 'Next control point',
+      value: lead.status === 'execution' ? 'Final travel documents and active support' : 'Readiness check before booking release',
+      meta: `Status: ${leadStatusLabel(lead, lead.status)}`,
+    },
+  ];
+}
+
+function mockWorkflowItems(lead: CrmLead, tab: DetailTab): MockWorkflowItem[] {
+  if (lead.serviceKey === 'corporate') {
+    if (tab === 'travelers') {
+      return [
+        { title: 'Traveler file owner', value: 'Company coordinator', meta: 'Keeps traveler names, changes, and department ownership aligned before booking.' },
+        { title: 'Upcoming traveler risk', value: lead.requestedServices.toLowerCase().includes('visa') ? 'Visa-sensitive traveler mix' : 'Traveler list still needs readiness check', meta: `${lead.travelers || 'Traveler list pending'} · route ${lead.departureCity || 'Origin pending'} -> ${lead.destination || 'Destination pending'}` },
+        { title: 'Reusable account pattern', value: 'Repeat corporate movement expected', meta: 'Use saved traveler records and account preferences to speed up the next request.' },
+      ];
+    }
+    if (tab === 'approvals') {
+      return [
+        { title: 'Internal approval owner', value: 'Coordinator / Manager', meta: 'Travel need should clear before quote lock and supplier commitment.' },
+        { title: 'Quote sign-off lane', value: lead.status === 'proposal' ? 'Client approval in progress' : lead.status === 'won' ? 'Approval secured' : 'Still preparing internal decision support', meta: 'Keep approval owner and DPM account owner aligned.' },
+        { title: 'Mock blocker', value: fallbackPriority(lead) === 'urgent' ? 'Traveler list changing under short lead time' : 'Commercial sign-off still pending', meta: 'This is the kind of friction the approvals tab should make obvious.' },
+      ];
+    }
+    if (tab === 'finance') {
+      return [
+        { title: 'Finance path', value: 'PO / invoice / account clearance', meta: 'Corporate movement should not release to booking without commercial clearance.' },
+        { title: 'Mock invoice note', value: 'Split billing by department', meta: 'Useful for accounts that need cost allocation or multiple approvers.' },
+        { title: 'Release condition', value: lead.status === 'won' || lead.status === 'execution' ? 'Ready for controlled fulfilment' : 'Booking should remain blocked', meta: 'Finance posture now reads differently from leisure payment collection.' },
+      ];
+    }
+    if (tab === 'documents') {
+      return [
+        { title: 'Passport control', value: 'Collect traveler document set before fulfilment', meta: 'Especially important when traveler count is changing.' },
+        { title: 'Visa control', value: lead.requestedServices.toLowerCase().includes('visa') ? 'Visa support in scope' : 'No dedicated visa scope yet', meta: 'Use this lane for real readiness tracking later.' },
+        { title: 'Mock document blocker', value: 'One traveler still missing complete profile', meta: 'This should be visible before quote turns into booking.' },
+      ];
+    }
+  } else {
+    if (tab === 'proposal') {
+      return [
+        { title: 'Option set', value: lead.serviceKey === 'luxury' ? 'Premium curation with elevated experiences' : 'Clear package options with practical inclusions', meta: 'Proposal tone should match the traveler profile and budget confidence.' },
+        { title: 'Supplier hold posture', value: lead.status === 'proposal' ? 'Best options should be protected now' : 'Shortlist still being shaped', meta: 'Especially visible for luxury inventory and seasonal hotel pressure.' },
+        { title: 'Mock next move', value: 'Follow up client decision within 24h', meta: 'This is the kind of sales pressure the leisure workflow should surface.' },
+      ];
+    }
+    if (tab === 'payments') {
+      return [
+        { title: 'Deposit expectation', value: lead.serviceKey === 'luxury' ? 'Deposit before premium confirmations' : 'Payment before package release', meta: 'Leisure should keep payment logic simple and client-facing.' },
+        { title: 'Mock payment checkpoint', value: lead.status === 'won' || lead.status === 'execution' ? 'Approved to collect and confirm' : 'Still pre-payment / pre-confirmation', meta: `Budget anchor: ${lead.budget || 'Budget pending'}` },
+        { title: 'Commercial sensitivity', value: 'Fare / hotel movement risk', meta: 'Use this to explain why payment timing matters to the traveler.' },
+      ];
+    }
+    if (tab === 'travelPack') {
+      return [
+        { title: 'Itinerary polish', value: lead.serviceKey === 'luxury' ? 'Concierge-ready handoff' : 'Simple trip pack handoff', meta: 'This is where final service confidence becomes client trust.' },
+        { title: 'Support posture', value: lead.serviceKey === 'luxury' ? 'High-touch support expectation' : 'Practical and responsive support', meta: 'Visible difference between classic and luxury but same leisure lane.' },
+        { title: 'Mock final check', value: 'All confirmations and notes ready to send', meta: 'This gives the leisure workflow a real delivery endpoint.' },
+      ];
+    }
+  }
+
+  return [];
+}
+
+function mockBookingRecords(lead: CrmLead): MockBookingRecord[] {
+  if (lead.serviceKey === 'corporate') {
+    return [
+      {
+        service: 'Flight movement',
+        supplier: 'Corporate fare desk',
+        status: lead.status === 'execution' || lead.status === 'completed' ? 'Ticketed' : lead.status === 'won' ? 'Ready for release' : 'Pending clearance',
+        reference: `CORP-FLT-${lead.id.slice(-4).toUpperCase()}`,
+        note: 'Route and traveler list should remain aligned before final ticket issue.',
+      },
+      {
+        service: 'Hotel block',
+        supplier: 'Preferred corporate hotel partner',
+        status: lead.status === 'execution' || lead.status === 'completed' ? 'Confirmed' : 'Option held',
+        reference: `CORP-HTL-${lead.id.slice(-4).toUpperCase()}`,
+        note: 'Useful when departments share one movement but need rooming control.',
+      },
+      {
+        service: lead.requestedServices.toLowerCase().includes('visa') ? 'Visa support' : 'Ground support',
+        supplier: lead.requestedServices.toLowerCase().includes('visa') ? 'Immigration support partner' : 'Airport transfer partner',
+        status: lead.requestedServices.toLowerCase().includes('visa') ? 'Document check open' : 'Awaiting final travel release',
+        reference: `CORP-SVC-${lead.id.slice(-4).toUpperCase()}`,
+        note: 'Corporate fulfilment often depends on one non-flight blocker staying visible.',
+      },
+    ];
+  }
+
+  return [
+    {
+      service: 'Flight',
+      supplier: lead.serviceKey === 'luxury' ? 'Business class / premium fare hold' : 'Best-fit carrier option',
+      status: lead.status === 'execution' || lead.status === 'completed' ? 'Confirmed' : lead.status === 'won' ? 'Ready to issue' : 'Quoted / held',
+      reference: `LEI-FLT-${lead.id.slice(-4).toUpperCase()}`,
+      note: 'Use this to show the client what is already protected versus still being priced.',
+    },
+    {
+      service: 'Hotel',
+      supplier: lead.serviceKey === 'luxury' ? 'Preferred luxury property' : 'Selected package hotel',
+      status: lead.status === 'execution' || lead.status === 'completed' ? 'Confirmed' : 'Option shortlisted',
+      reference: `LEI-HTL-${lead.id.slice(-4).toUpperCase()}`,
+      note: lead.serviceKey === 'luxury' ? 'Suite / villa inventory may move quickly.' : 'Hotel choice should stay tied to budget and location fit.',
+    },
+    {
+      service: lead.requestedServices.toLowerCase().includes('transfer') ? 'Transfers' : 'Experience / support',
+      supplier: lead.requestedServices.toLowerCase().includes('transfer') ? 'Ground transport partner' : 'Destination services partner',
+      status: lead.status === 'execution' || lead.status === 'completed' ? 'Arranged' : 'Prepare after payment',
+      reference: `LEI-SVC-${lead.id.slice(-4).toUpperCase()}`,
+      note: 'This helps the travel-pack stage feel like real fulfillment rather than just notes.',
+    },
+  ];
+}
+
+function leadPrimaryBlocker(lead: CrmLead) {
+  if (lead.serviceKey === 'corporate') {
+    if (lead.status === 'proposal') return 'Client approval still pending';
+    if (lead.status === 'won') return 'Finance clearance before booking release';
+    if (lead.requestedServices.toLowerCase().includes('visa')) return 'Traveler visa readiness still open';
+    return 'Traveler coordination still needs control';
+  }
+
+  if (lead.status === 'proposal') return 'Client decision still pending';
+  if (lead.status === 'won') return 'Payment confirmation before release';
+  if (lead.serviceKey === 'luxury') return 'Premium inventory timing still sensitive';
+  return 'Trip details still need final confirmation';
+}
+
+function extractManagerBoardMeta(notes: string | undefined) {
+  const match = (notes || '').match(/\[Manager board\] Owner: (.+?) \| Task: (.+?)(?:\r?\n|$)/);
+  if (!match) return null;
+  return { owner: match[1], task: match[2] };
+}
+
+function leftRailStatusCards(lead: CrmLead): InfoCard[] {
+  return [
+    {
+      label: 'Current stage',
+      value: leadStatusLabel(lead, lead.status),
+      meta: leadFlowTitle(lead),
+    },
+    {
+      label: 'Primary blocker',
+      value: leadPrimaryBlocker(lead),
+      meta: processForLead(lead).stageGate,
+    },
+    {
+      label: 'Next owner',
+      value: leadOwner(lead),
+      meta: processForLead(lead).primaryAction,
+    },
+  ];
+}
+
+function itinerarySummaryCards(lead: CrmLead): InfoCard[] {
+  const travelerCount = travelerCountValue(lead) || 2;
+  return isCorporateLead(lead)
+    ? [
+        { label: 'Movement shape', value: 'Multi-stop corporate movement', meta: `${travelerCount} travelers across one controlled operating brief.` },
+        { label: 'Stay plan', value: travelerCount > 4 ? 'Two hotels with rooming list control' : 'One primary hotel plus overflow support', meta: 'Corporate stays should keep billing and room ownership visible.' },
+        { label: 'Room posture', value: 'Executive rooms + flexible twin allocation', meta: 'Use room blocks that can absorb late traveler changes.' },
+        { label: 'Experience layer', value: 'Meetings, transfers, and controlled downtime', meta: 'Activities should support the trip objective, not compete with it.' },
+      ]
+    : [
+        { label: 'Journey shape', value: lead.serviceKey === 'luxury' ? 'Curated multi-stop leisure journey' : 'Balanced leisure itinerary with clear flow', meta: `${travelerCount} travelers with room for paced experiences.` },
+        { label: 'Stay plan', value: lead.serviceKey === 'luxury' ? 'Premium lodge + signature city stay' : 'Comfort hotel circuit with practical movement', meta: 'Show hotel count clearly before final quotation.' },
+        { label: 'Room posture', value: lead.serviceKey === 'luxury' ? 'Suite / villa preference' : 'Double or twin rooms with clear child policy', meta: 'Room choice should stay explicit in the itinerary.' },
+        { label: 'Experience layer', value: lead.serviceKey === 'luxury' ? 'High-touch experiences and private moments' : 'Anchored sightseeing and easy activities', meta: 'This is where the trip becomes tangible for the client.' },
+      ];
+}
+
+function itineraryStops(lead: CrmLead): ItineraryStop[] {
+  const origin = lead.departureCity || 'Maputo';
+  const destination = lead.destination || (lead.serviceKey === 'corporate' ? 'Johannesburg' : 'Cape Town');
+
+  if (isCorporateLead(lead)) {
+    return [
+      {
+        city: origin,
+        nights: '1 night',
+        stay: 'Pre-departure holding hotel',
+        room: 'Executive double + late arrival buffer',
+        focus: 'Arrival control and traveler alignment',
+        note: 'Use this stop to absorb staggered arrivals and final traveler list adjustments.',
+      },
+      {
+        city: destination,
+        nights: '2 nights',
+        stay: 'Primary corporate hotel block',
+        room: 'Executive rooms with twin fallback',
+        focus: 'Meetings, approvals, and core travel objective',
+        note: 'This is the main operational hub where rooming, billing, and transfer timing must stay tight.',
+      },
+      {
+        city: `${destination} Extension`,
+        nights: '1 night',
+        stay: 'Overflow / recovery stay',
+        room: 'Short-stay business rooms',
+        focus: 'Post-meeting buffer and return control',
+        note: 'Useful for split departures, late meetings, or controlled downtime before return.',
+      },
+    ];
+  }
+
+  return [
+    {
+      city: origin,
+      nights: '1 night',
+      stay: 'Arrival city staging',
+      room: lead.serviceKey === 'luxury' ? 'Premium suite arrival stay' : 'Comfort room close to airport',
+      focus: 'Smooth arrival and first-night reset',
+      note: 'This leg helps the itinerary feel paced rather than rushed.',
+    },
+    {
+      city: destination,
+      nights: lead.serviceKey === 'luxury' ? '3 nights' : '2 nights',
+      stay: lead.serviceKey === 'luxury' ? 'Signature property' : 'Main trip hotel',
+      room: lead.serviceKey === 'luxury' ? 'Suite / villa request' : 'Double room with breakfast',
+      focus: 'Core destination stay',
+      note: 'This is where the main hotel decision, room type, and service posture should be locked.',
+    },
+    {
+      city: `${destination} Experience Stay`,
+      nights: '2 nights',
+      stay: lead.serviceKey === 'luxury' ? 'Experience lodge or beach retreat' : 'Extension hotel or resort',
+      room: lead.serviceKey === 'luxury' ? 'View-facing suite' : 'Resort double or family room',
+      focus: 'Activities, pacing, and final memory layer',
+      note: 'Use the last stop to bundle experiences and create a clear close to the trip.',
+    },
+  ];
+}
+
+function itineraryExperiences(lead: CrmLead): ItineraryExperience[] {
+  return isCorporateLead(lead)
+    ? [
+        { title: 'Airport meet-and-greet', category: 'Ground support', timing: 'Arrival day', note: 'Keep traveler movement controlled from touchdown through hotel check-in.' },
+        { title: 'Meeting transfers', category: 'Operational service', timing: 'Working days', note: 'Dedicated transport windows reduce disruption to the company schedule.' },
+        { title: 'Hosted dinner or client event', category: 'Experience layer', timing: 'Evening window', note: 'Useful when the movement includes relationship-building or executive hosting.' },
+      ]
+    : [
+        { title: lead.serviceKey === 'luxury' ? 'Private guided signature experience' : 'Half-day city or destination tour', category: 'Activity', timing: 'Main stay', note: 'This should be one of the emotional anchors of the trip.' },
+        { title: lead.serviceKey === 'luxury' ? 'Wellness / sunset / curated dining moment' : 'Easy leisure excursion', category: 'Experience', timing: 'Second day', note: 'Use this block to make the proposal feel lived-in, not generic.' },
+        { title: 'Departure-day support', category: 'Service', timing: 'Final day', note: 'Transfers, check-out timing, and baggage flow should be visible in the itinerary.' },
+      ];
+}
+
+function leisureWorkbenchRows(lead: CrmLead): LeisureWorkbenchRow[] {
+  if (lead.serviceKey === 'luxury') {
+    return [
+      { service: 'Flights', supplier: 'Premium long-haul partners', status: lead.status === 'proposal' ? 'Held' : 'Researching', cost: 5400, sell: 6100 },
+      { service: 'Hotel', supplier: 'Preferred luxury property', status: lead.status === 'won' || lead.status === 'execution' ? 'Selected' : 'Shortlisted', cost: 11600, sell: 13850 },
+      { service: 'Transfers', supplier: 'Private ground desk', status: 'Draft', cost: 780, sell: 1200 },
+      { service: 'Experiences', supplier: 'Concierge partners', status: 'Curating', cost: 980, sell: 1680 },
+    ];
+  }
+
+  return [
+    { service: 'Flights', supplier: 'Regional fare partners', status: lead.status === 'proposal' ? 'Quoted' : 'Researching', cost: 1450, sell: 1760 },
+    { service: 'Hotel', supplier: 'Selected leisure hotel mix', status: lead.status === 'won' || lead.status === 'execution' ? 'Selected' : 'Shortlisted', cost: 2150, sell: 2670 },
+    { service: 'Transfers', supplier: 'Ground transport partner', status: 'Draft', cost: 240, sell: 420 },
+    { service: 'Activities', supplier: 'Destination operators', status: 'Curating', cost: 320, sell: 620 },
+  ];
+}
+
+function leisurePackageOptions(lead: CrmLead): LeisurePackageOption[] {
+  if (lead.serviceKey === 'luxury') {
+    return [
+      { name: 'Signature Escape', price: 19850, fit: 'High privacy + premium pacing', recommendation: 'Best fit for emotional impact and service level.' },
+      { name: 'Prestige Journey', price: 22800, fit: 'VIP handling + stronger experience layer', recommendation: 'Good when the client wants a more elevated service frame.' },
+      { name: 'Ultra Private', price: 26400, fit: 'Maximum exclusivity + concierge handling', recommendation: 'Use only if budget flexibility is confirmed.' },
+    ];
+  }
+
+  return [
+    { name: 'Comfort Explorer', price: 4380, fit: 'Balanced comfort and practical routing', recommendation: 'Good base option for value-sensitive travelers.' },
+    { name: 'Signature Balance', price: 5240, fit: 'Stronger hotel fit + smoother logistics', recommendation: 'Recommended package for best value and experience fit.' },
+    { name: 'Premium Leisure', price: 6180, fit: 'Elevated stay + extra experiences', recommendation: 'Offer as an upsell when the traveler is flexible.' },
+  ];
+}
+
 function leadOwner(lead: CrmLead) {
   return ownerByService[lead.serviceKey];
 }
@@ -408,7 +1036,7 @@ function canEditManagedUser(actor: CrmSession['user'] | null | undefined, target
 }
 
 function processForLead(lead: CrmLead) {
-  const process = statusProcess[lead.status];
+  const process = (isCorporateLead(lead) ? corporateStatusProcess : traditionalStatusProcess)[lead.status];
   return {
     ...process,
     nextAction: `${process.nextAction} Focus on ${serviceProcessFocus[lead.serviceKey]}.`,
@@ -427,11 +1055,12 @@ function leadTasks(lead: CrmLead): ProcessTask[] {
 }
 
 function workflowHistory(lead: CrmLead): ProcessHistoryItem[] {
-  const activeIndex = workflowSteps.findIndex(([status]) => status === lead.status);
+  const flowSteps = workflowStepsForLead(lead);
+  const activeIndex = flowSteps.findIndex(([status]) => status === lead.status);
   const visibleSteps =
     lead.status === 'lost'
-      ? workflowSteps.slice(0, 3)
-      : workflowSteps.slice(0, Math.max(1, activeIndex + 1));
+      ? flowSteps.slice(0, 3)
+      : flowSteps.slice(0, Math.max(1, activeIndex + 1));
 
   const history: ProcessHistoryItem[] = [
     {
@@ -441,11 +1070,11 @@ function workflowHistory(lead: CrmLead): ProcessHistoryItem[] {
     },
     {
       label: `Assigned to ${leadOwner(lead)}`,
-      meta: typeLabels[lead.serviceKey],
+      meta: `${typeLabels[lead.serviceKey]} · ${leadFlowTitle(lead)}`,
       tone: 'done',
     },
     ...visibleSteps.slice(1).map(([status], index) => ({
-      label: statusLabels[status],
+      label: leadStatusLabel(lead, status),
       meta: lead.status !== 'lost' && index === visibleSteps.length - 2 ? 'Current operating stage' : 'Completed stage gate',
       tone: lead.status !== 'lost' && index === visibleSteps.length - 2 ? ('current' as const) : ('done' as const),
     })),
@@ -599,6 +1228,8 @@ export function CrmPage() {
   const [loginPassword, setLoginPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [query, setQuery] = useState('');
+  const [deskView, setDeskView] = useState<DeskView>('all');
+  const [commandLens, setCommandLens] = useState<CommandLens>('all');
   const [typeFilter, setTypeFilter] = useState<LeadTypeFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
@@ -673,6 +1304,13 @@ export function CrmPage() {
   const filteredLeads = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return leads.filter((lead) => {
+      const matchesDesk = deskView === 'all' || (deskView === 'corporate' ? isCorporateLead(lead) : isLeisureLead(lead));
+      const matchesWorkspace =
+        activeNav === 'leisureStudio'
+          ? isLeisureLead(lead)
+          : activeNav === 'corporateDesk'
+            ? isCorporateLead(lead)
+            : true;
       const matchesType = typeFilter === 'all' || lead.serviceKey === typeFilter;
       const matchesStatus =
         statusFilter === 'all' ||
@@ -706,13 +1344,14 @@ export function CrmPage() {
           .join(' ')
           .toLowerCase()
           .includes(needle);
-      return matchesType && matchesStatus && matchesPriority && matchesNav && matchesQuery;
+      return matchesDesk && matchesWorkspace && matchesType && matchesStatus && matchesPriority && matchesNav && matchesQuery;
     });
-  }, [activeNav, leads, priorityFilter, query, statusFilter, typeFilter]);
+  }, [activeNav, deskView, leads, priorityFilter, query, statusFilter, typeFilter]);
 
   const filteredClients = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return clients.filter((client) => {
+      const matchesDesk = deskView === 'all' || (deskView === 'corporate' ? client.clientType === 'corporate' : client.clientType === 'private');
       const matchesType = typeFilter === 'all' || client.serviceLevel === typeFilter;
       const matchesPriority = priorityFilter === 'all';
       const matchesQuery =
@@ -730,9 +1369,9 @@ export function CrmPage() {
           .toLowerCase()
           .includes(needle);
 
-      return matchesType && matchesPriority && matchesQuery;
+      return matchesDesk && matchesType && matchesPriority && matchesQuery;
     });
-  }, [clients, priorityFilter, query, typeFilter]);
+  }, [clients, deskView, priorityFilter, query, typeFilter]);
 
   const filteredUsers = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -753,35 +1392,110 @@ export function CrmPage() {
     });
   }, [crmUsers, query]);
 
+  const visibleTypeFilters = deskView === 'corporate' ? (['all', 'corporate'] as LeadTypeFilter[]) : deskView === 'leisure' ? (['all', 'luxury', 'classic'] as LeadTypeFilter[]) : typeFilters;
+
   const typeCounts = useMemo(() => {
-    const source = activeNav === 'clients' ? filteredClients : leads;
+    const clientSource = clients.filter((client) => (deskView === 'all' ? true : deskView === 'corporate' ? client.clientType === 'corporate' : client.clientType === 'private'));
+    const leadSource = leads.filter((lead) => (deskView === 'all' ? true : deskView === 'corporate' ? isCorporateLead(lead) : isLeisureLead(lead)));
     return typeFilters.reduce(
       (counts, filter) => ({
         ...counts,
         [filter]:
           filter === 'all'
-            ? source.length
+            ? activeNav === 'clients'
+              ? clientSource.length
+              : leadSource.length
             : activeNav === 'clients'
-              ? filteredClients.filter((client) => client.serviceLevel === filter).length
-              : leads.filter((lead) => lead.serviceKey === filter).length,
+              ? clientSource.filter((client) => client.serviceLevel === filter).length
+              : leadSource.filter((lead) => lead.serviceKey === filter).length,
       }),
       {} as Record<LeadTypeFilter, number>,
     );
-  }, [activeNav, filteredClients, leads]);
+  }, [activeNav, clients, deskView, leads]);
 
-  const activeItems = activeNav === 'clients' ? filteredClients : activeNav === 'settings' ? filteredUsers : filteredLeads;
+  const commandLeads = useMemo(() => {
+    const ranked = [...filteredLeads].filter((lead) => lead.status !== 'completed' && lead.status !== 'lost');
+    const lensFiltered = ranked.filter((lead) => {
+      if (commandLens === 'corporate') return isCorporateLead(lead);
+      if (commandLens === 'leisure') return isLeisureLead(lead);
+      if (commandLens === 'attention') return fallbackPriority(lead) === 'high' || fallbackPriority(lead) === 'urgent';
+      if (commandLens === 'blocked') return lead.status === 'proposal' || lead.status === 'won';
+      if (commandLens === 'ready') return lead.status === 'execution';
+      return true;
+    });
+
+    return lensFiltered.sort((a, b) => {
+      const priorityScore = { urgent: 4, high: 3, normal: 2, low: 1 } as const;
+      const delta = priorityScore[fallbackPriority(b)] - priorityScore[fallbackPriority(a)];
+      if (delta !== 0) return delta;
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+  }, [commandLens, filteredLeads]);
+  const leadSource = activeNav === 'command' ? commandLeads : filteredLeads;
+  const activeItems = activeNav === 'clients' ? filteredClients : activeNav === 'settings' ? filteredUsers : leadSource;
   const totalPages = Math.max(1, Math.ceil(activeItems.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
-  const pageLeads = filteredLeads.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageLeads = leadSource.slice(pageStart, pageStart + PAGE_SIZE);
   const pageClients = filteredClients.slice(pageStart, pageStart + PAGE_SIZE);
   const pageUsers = filteredUsers.slice(pageStart, pageStart + PAGE_SIZE);
-  const selectedLead = filteredLeads.find((lead) => lead.id === selectedLeadId) ?? pageLeads[0] ?? filteredLeads[0] ?? null;
+  const selectedLead = leadSource.find((lead) => lead.id === selectedLeadId) ?? pageLeads[0] ?? leadSource[0] ?? null;
   const selectedClient = filteredClients.find((client) => client.id === selectedClientId) ?? pageClients[0] ?? filteredClients[0] ?? null;
   const selectedProcess = selectedLead ? processForLead(selectedLead) : null;
+  const selectedDetailTabs = useMemo(() => {
+    if (!selectedLead) return [];
+    return activeNav === 'leisureStudio' ? leisureWorkbenchTabs.map((tab) => tab.id) : detailTabsForLead(selectedLead);
+  }, [activeNav, selectedLead]);
   const selectedTasks = selectedLead ? leadTasks(selectedLead) : [];
   const selectedHistory = selectedLead ? workflowHistory(selectedLead) : [];
+  const selectedStatusCards = selectedLead ? leftRailStatusCards(selectedLead) : [];
+  const selectedItinerarySummary = selectedLead ? itinerarySummaryCards(selectedLead) : [];
+  const selectedItineraryStops = selectedLead ? itineraryStops(selectedLead) : [];
+  const selectedItineraryExperiences = selectedLead ? itineraryExperiences(selectedLead) : [];
+  const selectedLeisureRows = selectedLead ? leisureWorkbenchRows(selectedLead) : [];
+  const selectedLeisurePackages = selectedLead ? leisurePackageOptions(selectedLead) : [];
+  const managerMeta = selectedLead ? extractManagerBoardMeta(selectedLead.internalNotes) : null;
+  const traditionalPageLeads = pageLeads.filter((lead) => !isCorporateLead(lead));
+  const corporatePageLeads = pageLeads.filter((lead) => isCorporateLead(lead));
+  const leadSections =
+    activeNav === 'leisureStudio'
+      ? [
+          {
+            key: 'leisure-studio',
+            title: 'Leisure Studio Queue',
+            subtitle: 'Classic and luxury requests moving through discovery, trip design, proposal, payment, and delivery.',
+            leads: traditionalPageLeads,
+          },
+        ].filter((section) => section.leads.length > 0)
+      : activeNav === 'corporateDesk'
+        ? [
+            {
+              key: 'corporate-desk',
+              title: 'Corporate Desk Queue',
+              subtitle: 'Company travel work driven by traveler readiness, approvals, policy fit, finance, and fulfilment.',
+              leads: corporatePageLeads,
+            },
+          ].filter((section) => section.leads.length > 0)
+        : [
+            {
+              key: 'traditional',
+              title: 'Traditional trips',
+              subtitle: 'Classic and luxury requests moving through discovery, trip design, proposal, and delivery.',
+              leads: traditionalPageLeads,
+            },
+            {
+              key: 'corporate',
+              title: 'Corporate accounts',
+              subtitle: 'Company travel work driven by traveler readiness, approvals, policy fit, and invoice-aware fulfilment.',
+              leads: corporatePageLeads,
+            },
+          ].filter((section) => section.leads.length > 0);
   const selectedClientLeads = selectedClient ? leads.filter((lead) => lead.clientId === selectedClient.id) : [];
+  useEffect(() => {
+    if (selectedLead && !selectedDetailTabs.includes(detailTab)) {
+      setDetailTab(selectedDetailTabs[0] ?? 'overview');
+    }
+  }, [detailTab, selectedDetailTabs, selectedLead]);
   const potentialClientMatch = useMemo(() => findMatchingClientRecord(clients, clientForm), [clients, clientForm]);
   const manageableRoleOptions = useMemo<Array<keyof typeof crmRoleLabels>>(() => {
     if (crmSession?.user.role === 'admin') return ['admin', 'manager', 'agent', 'viewer'];
@@ -793,8 +1507,17 @@ export function CrmPage() {
   const qualificationCount = leads.filter((lead) => lead.status === 'contacted').length;
   const proposalsCount = leads.filter((lead) => lead.status === 'proposal').length;
   const confirmedCount = leads.filter((lead) => lead.status === 'won' || lead.status === 'execution' || lead.status === 'completed').length;
+  const leisureLeads = leads.filter(isLeisureLead);
+  const corporateLeads = leads.filter(isCorporateLead);
+  const leisureNewCount = leisureLeads.filter((lead) => lead.status === 'new').length;
+  const leisureProposalCount = leisureLeads.filter((lead) => lead.status === 'proposal').length;
+  const leisurePaymentCount = leisureLeads.filter((lead) => lead.status === 'won').length;
+  const leisureTravelPackCount = leisureLeads.filter((lead) => lead.status === 'execution' || lead.status === 'completed').length;
+  const corporateIntakeCount = corporateLeads.filter((lead) => lead.status === 'new' || lead.status === 'contacted').length;
+  const corporatePlanningCount = corporateLeads.filter((lead) => lead.status === 'planning' || lead.status === 'proposal').length;
+  const corporateFinanceCount = corporateLeads.filter((lead) => lead.status === 'won').length;
+  const corporateFulfilmentCount = corporateLeads.filter((lead) => lead.status === 'execution' || lead.status === 'completed').length;
   const urgentNewCount = leads.filter((lead) => lead.status === 'new' && (fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high')).length;
-  const workflowCount = leads.filter((lead) => lead.status === 'contacted' || lead.status === 'planning' || lead.status === 'proposal' || lead.status === 'execution').length;
   const taskCount = leads.filter((lead) => fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high').length;
   const calendarCount = leads.filter((lead) => Boolean(lead.dates) && lead.status !== 'lost' && lead.status !== 'completed').length;
   const clientCount = clients.length;
@@ -804,30 +1527,85 @@ export function CrmPage() {
   const inactiveUserCount = crmUsers.filter((user) => !user.isActive).length;
   const navCounts: Partial<Record<CrmNavId, number>> = {
     command: newCount,
-    workflow: workflowCount,
+    leisureStudio: leisureLeads.filter((lead) => lead.status !== 'lost').length,
+    corporateDesk: corporateLeads.filter((lead) => lead.status !== 'lost').length,
     tasks: taskCount,
     calendar: calendarCount,
     clients: clientCount,
-    trips: confirmedCount,
     reports: filteredLeads.length,
     settings: crmUsers.length,
   };
   const navCopy: Record<CrmNavId, { title: string; subtitle: string }> = {
     command: { title: 'Command Center', subtitle: 'Incoming requests from website forms and phone intake' },
-    workflow: { title: 'Workflow', subtitle: 'Active requests moving through qualification, design, proposal, and execution' },
+    leisureStudio: { title: 'Leisure Studio', subtitle: 'Classic and luxury trip workspaces for proposal, payment, itinerary, and travel-pack delivery' },
+    corporateDesk: { title: 'Corporate Desk', subtitle: 'Corporate request workspace for travelers, approvals, finance, documents, and fulfilment' },
     tasks: { title: 'Priority Tasks', subtitle: 'High-attention requests that need action from the team' },
     calendar: { title: 'Travel Calendar', subtitle: 'Requests with travel dates, useful for upcoming movement planning' },
     clients: { title: 'Clients', subtitle: 'Client and company requests captured in the CRM pipeline' },
-    trips: { title: 'Trips', subtitle: 'Confirmed, executing, and completed travel work' },
     reports: { title: 'Reports', subtitle: 'Filtered CRM data ready for export and review' },
     settings: { title: 'Settings', subtitle: 'CRM access, user roles, and operating preferences' },
   };
-  const metricCards: MetricCard[] = [
-    { label: 'New Requests', value: newCount, meta: `${urgentNewCount} priority`, Icon: Inbox, filter: 'new' },
-    { label: 'In Qualification', value: qualificationCount, meta: 'View all', Icon: Mail, filter: 'contacted' },
-    { label: 'Proposals Sent', value: proposalsCount, meta: 'View all', Icon: FileText, filter: 'proposal' },
-    { label: 'Confirmed Trips', value: confirmedCount, meta: 'View all', Icon: CheckSquare, filter: 'confirmedGroup' },
+  const requestCentricNav = activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'command';
+  const commandMetricCards: MetricCard[] = [
+    {
+      label: 'At Risk',
+      value: leads.filter((lead) => fallbackPriority(lead) === 'high' || fallbackPriority(lead) === 'urgent').length,
+      meta: 'Highest manager attention',
+      Icon: Inbox,
+      filter: 'all',
+    },
+    {
+      label: 'Blocked',
+      value: leads.filter((lead) => lead.status === 'proposal' || lead.status === 'won').length,
+      meta: 'Waiting on decision, payment, or finance',
+      Icon: Briefcase,
+      filter: 'proposal',
+    },
+    {
+      label: 'Ready to Advance',
+      value: leads.filter((lead) => lead.status === 'execution').length,
+      meta: 'Operationally aligned to move',
+      Icon: Bell,
+      filter: 'confirmedGroup',
+    },
+    {
+      label: 'Leisure',
+      value: leads.filter((lead) => isLeisureLead(lead)).length,
+      meta: 'Classic and luxury requests',
+      Icon: CheckSquare,
+      filter: 'all',
+    },
+    {
+      label: 'Corporate',
+      value: leads.filter((lead) => isCorporateLead(lead)).length,
+      meta: 'Approval and finance flow',
+      Icon: Briefcase,
+      filter: 'all',
+    },
   ];
+  const metricCards: MetricCard[] =
+    activeNav === 'command'
+      ? commandMetricCards
+      : deskView === 'leisure'
+      ? [
+          { label: 'New Leisure Requests', value: leisureNewCount, meta: `${leisureLeads.filter((lead) => fallbackPriority(lead) === 'high' || fallbackPriority(lead) === 'urgent').length} priority`, Icon: Inbox, filter: 'new' },
+          { label: 'Trip Design', value: leisureLeads.filter((lead) => lead.status === 'contacted' || lead.status === 'planning').length, meta: 'Clarification and design work', Icon: Sparkles, filter: 'workflowGroup' },
+          { label: 'Client Decision', value: leisureProposalCount, meta: 'Quotes awaiting answer', Icon: FileText, filter: 'proposal' },
+          { label: 'Payment / Travel Pack', value: leisurePaymentCount + leisureTravelPackCount, meta: 'Confirmed and delivering', Icon: CheckSquare, filter: 'confirmedGroup' },
+        ]
+      : deskView === 'corporate'
+        ? [
+            { label: 'Corporate Intake', value: corporateIntakeCount, meta: 'Qualification and account setup', Icon: Inbox, filter: 'new' },
+            { label: 'Planning + Quote', value: corporatePlanningCount, meta: 'Travel brief and proposal work', Icon: Briefcase, filter: 'workflowGroup' },
+            { label: 'Finance Clearance', value: corporateFinanceCount, meta: 'Approved movement before booking', Icon: FileText, filter: 'won' },
+            { label: 'Fulfilment', value: corporateFulfilmentCount, meta: 'Booked and executing', Icon: CheckSquare, filter: 'confirmedGroup' },
+          ]
+        : [
+            { label: 'New Requests', value: newCount, meta: `${urgentNewCount} priority`, Icon: Inbox, filter: 'new' },
+            { label: 'In Qualification', value: qualificationCount, meta: 'View all', Icon: Mail, filter: 'contacted' },
+            { label: 'Proposals Sent', value: proposalsCount, meta: 'View all', Icon: FileText, filter: 'proposal' },
+            { label: 'Confirmed Trips', value: confirmedCount, meta: 'View all', Icon: CheckSquare, filter: 'confirmedGroup' },
+          ];
   const settingsMetricCards: MetricCard[] = [
     { label: 'CRM Users', value: crmUsers.length, meta: `${activeUserCount} active`, Icon: Users },
     { label: 'Managers + Admins', value: managerAdminCount, meta: 'Access control roles', Icon: Shield },
@@ -898,6 +1676,13 @@ export function CrmPage() {
     setPage(1);
   }
 
+  function changeDeskView(nextDesk: DeskView) {
+    setDeskView(nextDesk);
+    setTypeFilter(nextDesk === 'corporate' ? 'corporate' : 'all');
+    setPage(1);
+    setDetailTab('overview');
+  }
+
   function changeStatusFilter(nextFilter: StatusFilter) {
     setStatusFilter(nextFilter);
     setPage(1);
@@ -920,8 +1705,10 @@ export function CrmPage() {
     setActiveNav(nextNav);
     setPage(1);
     setDetailTab('overview');
+    if (nextNav === 'command') setCommandLens('all');
 
     if (nextNav === 'command') {
+      setDeskView('all');
       clearFilters();
       setShowFilters(false);
       return;
@@ -931,13 +1718,25 @@ export function CrmPage() {
     setPriorityFilter('all');
     setQuery('');
 
-    if (nextNav === 'workflow') {
-      setStatusFilter('workflowGroup');
+    if (nextNav === 'leisureStudio') {
+      setDeskView('leisure');
+      setTypeFilter('all');
+      setStatusFilter('all');
+      setDetailTab('brief');
+      setShowFilters(true);
+      return;
+    }
+
+    if (nextNav === 'corporateDesk') {
+      setDeskView('corporate');
+      setTypeFilter('corporate');
+      setStatusFilter('all');
       setShowFilters(false);
       return;
     }
 
     if (nextNav === 'tasks') {
+      setDeskView('all');
       setStatusFilter('all');
       setPriorityFilter('attention');
       setShowFilters(true);
@@ -945,23 +1744,20 @@ export function CrmPage() {
     }
 
     if (nextNav === 'calendar') {
+      setDeskView('all');
       setStatusFilter('all');
-      setShowFilters(false);
-      return;
-    }
-
-    if (nextNav === 'trips') {
-      setStatusFilter('confirmedGroup');
       setShowFilters(false);
       return;
     }
 
     if (nextNav === 'reports' || nextNav === 'settings') {
+      setDeskView('all');
       setStatusFilter('all');
       setShowFilters(true);
       return;
     }
 
+    setDeskView('all');
     setStatusFilter('all');
     setShowFilters(false);
   }
@@ -1013,6 +1809,10 @@ export function CrmPage() {
   async function submitManualRequest(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const serviceKey = manualRequest.serviceKey as InquiryKind;
+    if (serviceKey === 'corporate') {
+      setCrmError('Corporate requests must come from CTM. Use phone intake here for Classic or Luxury only.');
+      return;
+    }
     const dates = [manualRequest.startDate, manualRequest.endDate].filter(Boolean).join(' - ');
     try {
       const lead = await createCrmLeadRecord(
@@ -1024,8 +1824,8 @@ export function CrmPage() {
           email: manualRequest.email,
           whatsapp: manualRequest.phone,
           preferredContact: manualRequest.phone ? 'Phone / WhatsApp' : 'Email',
-          requestedServices: serviceKey === 'corporate' ? 'Corporate coordination' : serviceKey === 'luxury' ? 'Concierge support' : 'Travel planning',
-          tripType: serviceKey === 'corporate' ? 'Corporate travel' : serviceKey === 'luxury' ? 'Luxury / Prestige travel' : 'Leisure trip',
+          requestedServices: serviceKey === 'luxury' ? 'Concierge support' : 'Travel planning',
+          tripType: serviceKey === 'luxury' ? 'Luxury / Prestige travel' : 'Leisure trip',
           departureCity: manualRequest.departureCity,
           destination: manualRequest.destination,
           dates,
@@ -1318,7 +2118,7 @@ export function CrmPage() {
                   className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#12305a] px-4 text-sm font-medium text-white transition hover:bg-[#173d72] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Plus className="h-4 w-4" />
-                  {activeNav === 'clients' ? 'Register Client' : activeNav === 'settings' ? 'Add User' : 'New Request'}
+                  {activeNav === 'clients' ? 'Register Client' : activeNav === 'settings' ? 'Add User' : 'New Leisure Request'}
                 </button>
                 <button
                   type="button"
@@ -1357,37 +2157,129 @@ export function CrmPage() {
             </div>
           </header>
 
-          <div className="grid xl:grid-cols-[minmax(720px,1fr)_430px]">
+          <div className={activeNav === 'leisureStudio' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid xl:grid-cols-[minmax(720px,1fr)_430px]'}>
             <div className={`min-w-0 border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}>
           <div className="p-5">
             {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
             {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading CRM requests...</div> : null}
-            <div className="grid gap-4 lg:grid-cols-4">
-              {(activeNav === 'settings' ? settingsMetricCards : metricCards).map((card) => (
-                <button
-                  key={card.label}
-                  type="button"
-                  onClick={() => {
-                    if (card.filter) changeStatusFilter(card.filter);
-                  }}
-                  className={`rounded-xl border p-4 text-left transition ${
-                    activeNav !== 'settings' && card.filter && statusFilter === card.filter ? `${styles.panelSoft} ring-1 ring-[#d4af37]/45` : styles.panel
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className={`text-sm ${styles.soft}`}>{card.label}</span>
-                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#12305a] text-white">
-                      <card.Icon className="h-4 w-4" />
-                    </span>
-                  </div>
-                  <div className="mt-3 text-3xl font-semibold">{card.value}</div>
-                  <div className={`mt-3 text-sm ${card.label === 'New Requests' ? 'text-emerald-400' : styles.muted}`}>{card.meta}</div>
-                </button>
-              ))}
-            </div>
+            {activeNav !== 'leisureStudio' ? (
+              <div className={`grid gap-4 ${activeNav === 'command' ? 'md:grid-cols-2 xl:grid-cols-5' : 'lg:grid-cols-4'}`}>
+                {(activeNav === 'settings' ? settingsMetricCards : metricCards).map((card) => (
+                  <button
+                    key={card.label}
+                    type="button"
+                    onClick={() => {
+                      if (activeNav === 'command') {
+                        if (card.label === 'Corporate') setCommandLens('corporate');
+                        else if (card.label === 'Leisure') setCommandLens('leisure');
+                        else if (card.label === 'Blocked') setCommandLens('blocked');
+                        else if (card.label === 'Ready to Advance') setCommandLens('ready');
+                        else setCommandLens('attention');
+                      } else if (card.filter) changeStatusFilter(card.filter);
+                    }}
+                    className={`rounded-xl border p-4 text-left transition ${
+                      activeNav === 'command'
+                        ? ((card.label === 'Corporate' && commandLens === 'corporate') ||
+                            (card.label === 'Leisure' && commandLens === 'leisure') ||
+                            (card.label === 'Blocked' && commandLens === 'blocked') ||
+                            (card.label === 'Ready to Advance' && commandLens === 'ready') ||
+                            (card.label === 'At Risk' && commandLens === 'attention')
+                            ? `${styles.panelSoft} ring-1 ring-[#d4af37]/45`
+                            : styles.panel)
+                        : activeNav !== 'settings' && card.filter && statusFilter === card.filter
+                          ? `${styles.panelSoft} ring-1 ring-[#d4af37]/45`
+                          : styles.panel
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className={`text-sm ${styles.soft}`}>{card.label}</span>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#12305a] text-white">
+                        <card.Icon className="h-4 w-4" />
+                      </span>
+                    </div>
+                    <div className="mt-3 text-3xl font-semibold">{card.value}</div>
+                    <div className={`mt-3 text-sm ${card.label === 'New Requests' ? 'text-emerald-400' : styles.muted}`}>{card.meta}</div>
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
+            {activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'command' && activeNav !== 'leisureStudio' && selectedLead ? (
+              <div className={`mt-5 rounded-xl border p-4 ${styles.panel}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Status report</div>
+                    <div className="mt-2 text-base font-semibold">{selectedLead.name}</div>
+                    <div className={`mt-1 text-sm ${styles.muted}`}>{leadSegment(selectedLead)} · {selectedLead.destination || 'Destination pending'}</div>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
+                    {leadStatusLabel(selectedLead, selectedLead.status)}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  {selectedStatusCards.map((card) => (
+                    <div key={card.label} className={`rounded-lg border p-3 ${styles.panelSoft}`}>
+                      <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>{card.label}</div>
+                      <div className="mt-2 text-sm font-semibold">{card.value}</div>
+                      {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {activeNav !== 'settings' && activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
             <div className="mt-5 flex flex-wrap items-center gap-3">
-              {typeFilters.map((filter) => (
+                {([
+                  { key: 'all', label: 'All desks', meta: 'Unified CRM view' },
+                  { key: 'leisure', label: 'Leisure Desk', meta: 'Classic + Luxury' },
+                  { key: 'corporate', label: 'Corporate Desk', meta: 'Approvals + finance flow' },
+                ] as Array<{ key: DeskView; label: string; meta: string }>).map((desk) => (
+                  <button
+                    key={desk.key}
+                    type="button"
+                    onClick={() => changeDeskView(desk.key)}
+                    className={`inline-flex h-12 items-center gap-3 rounded-xl border px-4 text-sm transition ${
+                      deskView === desk.key ? `${styles.buttonActive} border-transparent` : `${styles.buttonGhost} border-white/10`
+                    }`}
+                  >
+                    <span className="font-medium">{desk.label}</span>
+                    <span className={`text-xs ${deskView === desk.key ? 'text-white/70' : styles.muted}`}>{desk.meta}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {activeNav === 'command' ? (
+              <div className="mt-5 flex flex-wrap items-center gap-2">
+                {([
+                  { key: 'all', label: 'All' },
+                  { key: 'corporate', label: 'Corporate' },
+                  { key: 'leisure', label: 'Leisure' },
+                  { key: 'attention', label: 'Needs Attention' },
+                  { key: 'blocked', label: 'Blocked' },
+                  { key: 'ready', label: 'Ready to Advance' },
+                ] as Array<{ key: CommandLens; label: string }>).map((lens) => (
+                  <button
+                    key={lens.key}
+                    type="button"
+                    onClick={() => {
+                      setCommandLens(lens.key);
+                      setPage(1);
+                    }}
+                    className={`inline-flex h-10 items-center rounded-xl border px-4 text-sm transition ${
+                      commandLens === lens.key ? `${styles.buttonActive} border-transparent` : `${styles.buttonGhost} border-white/10`
+                    }`}
+                  >
+                    {lens.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {activeNav !== 'command' && activeNav !== 'leisureStudio' ? (
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              {visibleTypeFilters.map((filter) => (
                 <button
                   key={filter}
                   type="button"
@@ -1427,8 +2319,9 @@ export function CrmPage() {
                 </button>
               </div>
             </div>
+            ) : null}
 
-            {showFilters ? (
+            {showFilters && activeNav !== 'leisureStudio' ? (
               <div className={`mt-3 grid gap-3 rounded-xl border p-3 md:grid-cols-[1fr_1fr_auto] ${styles.panelSoft}`}>
                 <label className="text-xs font-medium uppercase tracking-[0.14em]">
                   <span className={styles.muted}>Priority</span>
@@ -1471,6 +2364,10 @@ export function CrmPage() {
                 <h2 className="text-lg font-semibold">
                   {activeNav === 'settings'
                     ? 'CRM User Access'
+                    : activeNav === 'leisureStudio'
+                      ? 'Leisure Requests'
+                      : activeNav === 'corporateDesk'
+                        ? 'Corporate Requests'
                     : statusFilter === 'all'
                     ? activeNav === 'calendar'
                       ? 'Dated Requests'
@@ -1625,71 +2522,206 @@ export function CrmPage() {
                   </>
                 ) : (
                   <>
-                    <div className={`grid grid-cols-[1.5fr_1fr_1fr_1fr_100px_84px] gap-4 border-b px-5 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
-                      <div>Client / Request</div>
-                      <div>Segment</div>
-                      <div>Travel Dates</div>
-                      <div>Budget</div>
-                      <div>Priority</div>
-                      <div className="text-right">Received</div>
-                    </div>
-
-                    {pageLeads.length === 0 ? (
+                    {activeNav === 'command' ? (
+                      pageLeads.length === 0 ? (
+                        <div className="p-10 text-center">
+                          <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
+                          <div className="mt-4 text-lg font-semibold">No requests in this board</div>
+                          <p className={`mt-2 text-sm ${styles.muted}`}>Adjust filters or submit a form to create a request.</p>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className={`grid grid-cols-[96px_minmax(0,1.3fr)_110px_120px_100px_120px_minmax(0,1.2fr)] gap-4 border-b px-4 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
+                            <div>Request</div>
+                            <div>Client / Trip</div>
+                            <div>Status</div>
+                            <div>Owner</div>
+                            <div>Travel date</div>
+                            <div>Urgency</div>
+                            <div>Bottleneck</div>
+                          </div>
+                          {pageLeads.map((lead) => {
+                            const priority = fallbackPriority(lead);
+                            const isSelected = selectedLead?.id === lead.id;
+                            const rowOwner = extractManagerBoardMeta(lead.internalNotes)?.owner || leadOwner(lead);
+                            return (
+                              <button
+                                key={lead.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedLeadId(lead.id);
+                                  setDetailTab('overview');
+                                }}
+                                className={`grid w-full grid-cols-[96px_minmax(0,1.3fr)_110px_120px_100px_120px_minmax(0,1.2fr)] gap-4 border-b px-4 py-3 text-left transition ${
+                                  isSelected ? styles.rowActive : styles.row
+                                }`}
+                              >
+                                <div className="flex items-center">
+                                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${styles.buttonGhost}`}>{lead.id.slice(0, 8).toUpperCase()}</span>
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-semibold">{lead.name}</div>
+                                  <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || 'Destination pending'} - {typeLabels[lead.serviceKey]}</div>
+                                </div>
+                                <div className="flex items-center">
+                                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
+                                    {leadStatusLabel(lead, lead.status)}
+                                  </span>
+                                </div>
+                                <div className="flex min-w-0 items-center">
+                                  <span className="truncate text-sm font-medium">{rowOwner}</span>
+                                </div>
+                                <div className="flex min-w-0 flex-col justify-center">
+                                  <span className="truncate text-sm font-medium">{lead.dates || 'Pending'}</span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.priority[priority]}`}>
+                                    {priorityLabels[priority]}
+                                  </span>
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-medium">{leadPrimaryBlocker(lead)}</div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )
+                    ) : pageLeads.length === 0 ? (
                       <div className="p-10 text-center">
                         <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                        <div className="mt-4 text-lg font-semibold">No requests in this queue</div>
-                        <p className={`mt-2 text-sm ${styles.muted}`}>Adjust filters or submit a form to create a request.</p>
+                        <div className="mt-4 text-lg font-semibold">{activeNav === 'leisureStudio' ? 'No leisure trips in this inbox' : 'No requests in this queue'}</div>
+                        <p className={`mt-2 text-sm ${styles.muted}`}>{activeNav === 'leisureStudio' ? 'Adjust the stage lens or add a leisure request to start working.' : 'Adjust filters or submit a form to create a request.'}</p>
                       </div>
                     ) : (
-                      pageLeads.map((lead) => {
-                        const priority = fallbackPriority(lead);
-                        const isSelected = selectedLead?.id === lead.id;
-                        return (
-                          <button
-                            key={lead.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedLeadId(lead.id);
-                              setDetailTab('overview');
-                            }}
-                            className={`grid w-full grid-cols-[1.5fr_1fr_1fr_1fr_100px_84px] gap-4 border-b px-5 py-4 text-left transition ${
-                              isSelected ? styles.rowActive : styles.row
-                            }`}
-                          >
-                            <div className="flex min-w-0 items-center gap-4">
-                              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-sm font-semibold text-white">
-                                {initials(lead.name)}
-                              </span>
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-semibold">{lead.name}</span>
-                                <span className={`mt-1 block truncate text-xs ${styles.muted}`}>
-                                  {leadSegment(lead)} - {lead.destination || 'Destination pending'} - {statusLabels[lead.status]}
-                                </span>
-                              </span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
-                                {typeLabels[lead.serviceKey]}
-                              </span>
-                            </div>
-                            <div className="flex min-w-0 flex-col justify-center">
-                              <span className={`truncate text-sm ${styles.soft}`}>{lead.dates || 'Dates pending'}</span>
-                              <span className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.travelers || 'Travelers pending'}</span>
-                            </div>
-                            <div className="flex min-w-0 flex-col justify-center">
-                              <span className={`truncate text-sm ${styles.soft}`}>{lead.budget || 'Budget pending'}</span>
-                              <span className={`mt-1 text-xs ${styles.muted}`}>USD</span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.priority[priority]}`}>
-                                <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${styles.attention[attentionLevel(lead)]}`} />
-                                {priorityLabels[priority]}
-                              </span>
-                            </div>
-                            <div className={`flex items-center justify-end text-sm ${styles.muted}`}>{formatDate(lead.createdAt)}</div>
-                          </button>
-                        );
-                      })
+                      leadSections.map((section) => (
+                        <div key={section.key}>
+                          <div className={`${activeNav === 'leisureStudio' ? 'border-b px-4 py-3' : `border-b px-5 py-3 ${styles.panelSoft}`}`}>
+                            {activeNav === 'leisureStudio' ? (
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="text-sm font-semibold">{section.title}</div>
+                                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${styles.buttonGhost}`}>{section.leads.length}</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {([
+                                    { key: 'all', label: 'All' },
+                                    { key: 'contacted', label: 'Brief' },
+                                    { key: 'planning', label: 'Research' },
+                                    { key: 'proposal', label: 'Package' },
+                                    { key: 'won', label: 'Payment' },
+                                    { key: 'execution', label: 'Travel Pack' },
+                                  ] as Array<{ key: StatusFilter; label: string }>).map((filter) => (
+                                    <button
+                                      key={filter.key}
+                                      type="button"
+                                      onClick={() => changeStatusFilter(filter.key)}
+                                      className={`inline-flex h-8 items-center rounded-lg border px-3 text-xs transition ${
+                                        statusFilter === filter.key ? `${styles.buttonActive} border-transparent` : `${styles.buttonGhost} border-white/10`
+                                      }`}
+                                    >
+                                      {filter.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <div className="text-sm font-semibold">{section.title}</div>
+                                  <div className={`mt-1 text-xs ${styles.muted}`}>{section.subtitle}</div>
+                                </div>
+                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{section.leads.length} in view</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className={activeNav === 'leisureStudio' ? 'grid' : 'grid gap-3 p-4'}>
+                            {section.leads.map((lead) => {
+                              const priority = fallbackPriority(lead);
+                              const isSelected = selectedLead?.id === lead.id;
+                              return (
+                                activeNav === 'leisureStudio' ? (
+                                  <button
+                                    key={lead.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedLeadId(lead.id);
+                                      setDetailTab('brief');
+                                    }}
+                                    className={`grid w-full grid-cols-[minmax(0,1fr)_92px] gap-3 border-b px-4 py-3 text-left transition ${
+                                      isSelected ? styles.rowActive : styles.row
+                                    }`}
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${lead.serviceKey === 'luxury' ? 'bg-[#d4af37]' : 'bg-emerald-400'}`} />
+                                        <div className="truncate text-sm font-semibold">{lead.name}</div>
+                                      </div>
+                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || 'Destination pending'}</div>
+                                      <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{lead.dates || 'Dates pending'} - {leadStatusLabel(lead, lead.status)}</div>
+                                    </div>
+                                    <div className="flex flex-col items-end justify-center gap-1">
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] ring-1 ${styles.type[lead.serviceKey]}`}>{typeLabels[lead.serviceKey]}</span>
+                                      <span className={`inline-flex items-center gap-1 text-[10px] ${priority === 'urgent' || priority === 'high' ? 'text-red-300' : priority === 'normal' ? styles.soft : styles.muted}`}>
+                                        <span className={`${priority === 'urgent' || priority === 'high' ? 'text-red-400' : priority === 'normal' ? 'text-sky-300' : 'text-slate-400'}`}>⚑</span>
+                                        {priorityLabels[priority]}
+                                      </span>
+                                    </div>
+                                  </button>
+                                ) : (
+                                <button
+                                  key={lead.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedLeadId(lead.id);
+                                    setDetailTab('overview');
+                                  }}
+                                  className={`rounded-xl border p-4 text-left transition ${isSelected ? styles.rowActive : styles.row}`}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="flex min-w-0 items-center gap-3">
+                                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-sm font-semibold text-white">
+                                          {initials(lead.name)}
+                                        </span>
+                                        <div className="min-w-0">
+                                          <div className="truncate text-sm font-semibold">{lead.name}</div>
+                                          <div className={`mt-1 truncate text-xs ${styles.muted}`}>
+                                            {leadSegment(lead)} · {lead.destination || 'Destination pending'}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
+                                      {typeLabels[lead.serviceKey]}
+                                    </span>
+                                  </div>
+                                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                    <div>
+                                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Travel dates</div>
+                                      <div className="mt-1 text-sm font-medium">{lead.dates || 'Dates pending'}</div>
+                                      <div className={`mt-1 text-xs ${styles.muted}`}>{lead.travelers || 'Travelers pending'}</div>
+                                    </div>
+                                    <div>
+                                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Budget</div>
+                                      <div className="mt-1 text-sm font-medium">{lead.budget || 'Budget pending'}</div>
+                                      <div className={`mt-1 text-xs ${styles.muted}`}>Received {formatDate(lead.createdAt)}</div>
+                                    </div>
+                                  </div>
+                                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.priority[priority]}`}>
+                                      <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${styles.attention[attentionLevel(lead)]}`} />
+                                      {priorityLabels[priority]}
+                                    </span>
+                                    <span className={`text-xs ${styles.muted}`}>Blocker: {leadPrimaryBlocker(lead)}</span>
+                                  </div>
+                                </button>
+                                )
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))
                     )}
                   </>
                 )}
@@ -1697,8 +2729,11 @@ export function CrmPage() {
 
               <div className={`flex flex-wrap items-center justify-between gap-3 px-1 py-4 text-sm ${styles.muted}`}>
                 <div>
-                  {activeItems.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, activeItems.length)} of {activeItems.length}{' '}
-                  {activeNav === 'clients' ? 'clients' : activeNav === 'settings' ? 'users' : 'requests'}
+                  {activeNav === 'command'
+                    ? `${activeItems.length === 0 ? 0 : pageStart + 1}-${Math.min(pageStart + PAGE_SIZE, activeItems.length)} of ${filteredLeads.length} active requests in the manager board`
+                    : `${activeItems.length === 0 ? 0 : pageStart + 1}-${Math.min(pageStart + PAGE_SIZE, activeItems.length)} of ${activeItems.length} ${
+                        activeNav === 'clients' ? 'clients' : activeNav === 'settings' ? 'users' : 'requests'
+                      }`}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -1874,6 +2909,614 @@ export function CrmPage() {
                 <p className={`mt-2 text-sm ${styles.muted}`}>Registered client context appears here.</p>
               </div>
             )
+          ) : activeNav === 'command' ? (
+            selectedLead ? (
+              <div className="grid gap-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-4">
+                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-lg font-semibold text-white">
+                      {initials(selectedLead.name)}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h2 className="truncate text-lg font-semibold">{selectedLead.name}</h2>
+                        <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
+                          {typeLabels[selectedLead.serviceKey]}
+                        </span>
+                      </div>
+                      <p className={`mt-1 text-sm ${styles.muted}`}>{leadSegment(selectedLead)} · {selectedLead.destination || 'Destination pending'}</p>
+                      <p className={`mt-1 text-xs uppercase tracking-[0.16em] ${styles.muted}`}>Manager decision board</p>
+                    </div>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadStatusLabel(selectedLead, selectedLead.status)}</span>
+                </div>
+
+                <div className={`rounded-xl border p-4 ${styles.panel}`}>
+                  <div className="font-semibold">Status report</div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current status</div>
+                      <div className="mt-1 text-sm font-semibold">{leadStatusLabel(selectedLead, selectedLead.status)}</div>
+                    </div>
+                    <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current owner</div>
+                      <div className="mt-1 text-sm font-semibold">{managerMeta?.owner || leadOwner(selectedLead)}</div>
+                    </div>
+                    <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Travel date</div>
+                      <div className="mt-1 text-sm font-semibold">{selectedLead.dates || 'Dates pending'}</div>
+                    </div>
+                    <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Urgency</div>
+                      <div className="mt-1 text-sm font-semibold">{priorityLabels[fallbackPriority(selectedLead)]}</div>
+                    </div>
+                    <div className={`rounded-lg border px-3 py-3 sm:col-span-2 ${styles.panelSoft}`}>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Bottleneck</div>
+                      <div className="mt-1 text-sm font-semibold">{leadPrimaryBlocker(selectedLead)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`rounded-xl border p-4 ${styles.panel}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-semibold">Value-chain progress</div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{managerMeta?.task || selectedProcess?.primaryAction || 'Review request'}</span>
+                  </div>
+                  {(() => {
+                    const steps = workflowStepsForLead(selectedLead);
+                    const activeIndex = selectedLead.status === 'lost' ? -1 : steps.findIndex(([step]) => step === selectedLead.status);
+                    const currentStep =
+                      activeIndex >= 0 ? steps[activeIndex] : null;
+
+                    return (
+                      <div className="mt-4 grid gap-3">
+                        <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Stage roadmap</div>
+                          <div className="mt-3 grid grid-cols-4 gap-x-2 gap-y-3">
+                            {steps.map(([status, label], index) => {
+                              const isDone = activeIndex >= 0 && index < activeIndex;
+                              const isCurrent = activeIndex === index;
+                              const isBlocked = (selectedLead.status === 'proposal' || selectedLead.status === 'won') && isCurrent;
+                              const StageIcon = isDone ? CheckSquare : isCurrent ? (isBlocked ? Bell : ClipboardCheck) : MoreHorizontal;
+
+                              return (
+                                <div key={status} className="flex min-w-0 flex-col items-center text-center">
+                                  <span
+                                    className={`flex h-9 w-9 items-center justify-center rounded-full border ${
+                                      isDone
+                                        ? 'border-emerald-400/60 bg-emerald-500/12 text-emerald-300'
+                                        : isCurrent
+                                          ? isBlocked
+                                            ? 'border-red-400/60 bg-red-500/12 text-red-300'
+                                            : 'border-sky-400/60 bg-sky-500/12 text-sky-300'
+                                          : 'border-white/10 bg-white/5 text-white/40'
+                                    }`}
+                                  >
+                                    <StageIcon className="h-4 w-4" />
+                                  </span>
+                                  <div className={`mt-1 max-w-full text-[11px] leading-4 ${isCurrent ? styles.soft : styles.muted}`}>
+                                    {label}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {selectedLead.status === 'lost' ? (
+                          <div className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-3 text-sm text-red-200">
+                            Request closed. Capture the reason and decide whether it should return to nurture.
+                          </div>
+                        ) : currentStep ? (
+                          <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current stage</div>
+                                <div className="mt-1 text-sm font-semibold">{currentStep[1]}</div>
+                              </div>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[11px] ${
+                                  selectedLead.status === 'proposal' || selectedLead.status === 'won'
+                                    ? 'bg-red-500/15 text-red-300'
+                                    : 'bg-sky-500/15 text-sky-300'
+                                }`}
+                              >
+                                {selectedLead.status === 'proposal' || selectedLead.status === 'won' ? 'Current blocker' : 'In progress'}
+                              </span>
+                            </div>
+                            <div className={`mt-3 text-sm leading-6 ${styles.soft}`}>
+                              {selectedProcess?.stageGate || 'Current operating checkpoint.'}
+                            </div>
+                            <div className={`mt-3 border-t pt-3 text-sm leading-6 ${styles.muted}`}>
+                              <span className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Next move</span>
+                              <div className={`mt-1 ${styles.soft}`}>{selectedProcess?.nextAction || 'No active process note yet.'}</div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            ) : (
+              <div className="p-8 text-center">
+                <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
+                <div className="mt-4 text-lg font-semibold">Select a request</div>
+                <p className={`mt-2 text-sm ${styles.muted}`}>Manager decision context appears here.</p>
+              </div>
+            )
+          ) : activeNav === 'leisureStudio' ? (
+            selectedLead ? (() => {
+              const currentWorkbenchIndex = leisureWorkbenchTabs.findIndex((tab) => tab.id === detailTab);
+              const pricing = selectedLeisureRows.reduce(
+                (totals, row) => ({
+                  cost: totals.cost + row.cost,
+                  sell: totals.sell + row.sell,
+                }),
+                { cost: 0, sell: 0 },
+              );
+              const margin = pricing.sell - pricing.cost;
+              const marginPercent = pricing.sell > 0 ? Math.round((margin / pricing.sell) * 100) : 0;
+              const currentWorkbenchLabel =
+                leisureWorkbenchTabs.find((tab) => tab.id === detailTab)?.label ?? 'Brief';
+
+              return (
+                <div className="grid gap-4">
+                    <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                        <div className="min-w-0">
+                          <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">DPM Leisure Studio</div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <h2 className="text-2xl font-semibold">{selectedLead.destination || 'Destination pending'}</h2>
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
+                              {typeLabels[selectedLead.serviceKey]}
+                            </span>
+                            <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadStatusLabel(selectedLead, selectedLead.status)}</span>
+                          </div>
+                          <div className={`mt-2 text-sm ${styles.muted}`}>
+                            {selectedLead.name} · {selectedLead.tripType || selectedLead.service} · {selectedLead.dates || 'Dates pending'}
+                          </div>
+                          <div className={`mt-2 text-sm ${styles.soft}`}>
+                            {selectedLead.serviceKey === 'luxury' ? 'High-touch leisure design with premium service framing.' : 'Balanced leisure design focused on clarity, fit, and smooth delivery.'}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 text-right">
+                          <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
+                            <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Budget</div>
+                            <div className="mt-1 text-sm font-semibold">{selectedLead.budget || 'Pending'}</div>
+                          </div>
+                          <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
+                            <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Sell</div>
+                            <div className="mt-1 text-sm font-semibold">${pricing.sell.toLocaleString()}</div>
+                          </div>
+                          <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
+                            <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Margin</div>
+                            <div className="mt-1 text-sm font-semibold">{marginPercent}%</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Travel mood</div>
+                          <div className="mt-1 text-sm font-semibold">{selectedLead.urgency || 'Planned trip'}</div>
+                          <div className={`mt-1 text-xs ${styles.muted}`}>{selectedLead.preferredContact || 'Contact preference pending'}</div>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Travelers</div>
+                          <div className="mt-1 text-sm font-semibold">{selectedLead.travelers || 'Pending'}</div>
+                          <div className={`mt-1 text-xs ${styles.muted}`}>{selectedLead.departureCity || 'Origin pending'}</div>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current owner</div>
+                          <div className="mt-1 text-sm font-semibold">{leadOwner(selectedLead)}</div>
+                          <div className={`mt-1 text-xs ${styles.muted}`}>Studio work owner</div>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current stage</div>
+                          <div className="mt-1 text-sm font-semibold">{currentWorkbenchLabel}</div>
+                          <div className={`mt-1 text-xs ${styles.muted}`}>{leadPrimaryBlocker(selectedLead)}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-semibold">Leisure value chain</div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{currentWorkbenchLabel}</span>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-7">
+                        {leisureWorkbenchTabs.map(({ id, label, Icon }, index) => {
+                          const isDone = currentWorkbenchIndex > index;
+                          const isCurrent = currentWorkbenchIndex === index;
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => setDetailTab(id)}
+                              className={`rounded-xl border px-3 py-3 text-left transition ${
+                                isDone
+                                  ? 'border-emerald-400/25 bg-emerald-500/10'
+                                  : isCurrent
+                                    ? 'border-sky-400/25 bg-sky-500/10'
+                                    : `${styles.panelSoft}`
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`flex h-8 w-8 items-center justify-center rounded-full border ${
+                                    isDone
+                                      ? 'border-emerald-400/60 text-emerald-300'
+                                      : isCurrent
+                                        ? 'border-sky-400/60 text-sky-300'
+                                        : 'border-white/10 text-white/45'
+                                  }`}
+                                >
+                                  <Icon className="h-4 w-4" />
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-medium">{label}</div>
+                                  <div className={`mt-0.5 text-[11px] ${isCurrent ? styles.soft : styles.muted}`}>
+                                    {isDone ? 'Done' : isCurrent ? 'Live' : 'Upcoming'}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold">{currentWorkbenchLabel}</div>
+                          <div className={`mt-1 text-sm ${styles.muted}`}>{selectedProcess?.stageGate || 'Use this space to move the trip through the active leisure checkpoint.'}</div>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedProcess?.primaryAction || 'Working stage'}</span>
+                      </div>
+
+                      {detailTab === 'brief' ? (
+                        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+                          <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                            <div className="font-semibold">Client brief fields</div>
+                            <div className="mt-4 grid gap-3">
+                              <div className={`rounded-lg border p-3 ${styles.panel}`}>
+                                <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Travelers</div>
+                                <div className="mt-2 text-sm font-semibold">{selectedLead.travelers || 'Pending'}</div>
+                              </div>
+                              <div className={`rounded-lg border p-3 ${styles.panel}`}>
+                                <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Origin</div>
+                                <div className="mt-2 text-sm font-semibold">{selectedLead.departureCity || 'Pending'}</div>
+                              </div>
+                              <div className={`rounded-lg border p-3 ${styles.panel}`}>
+                                <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Budget range</div>
+                                <div className="mt-2 text-sm font-semibold">{selectedLead.budget || 'Pending'}</div>
+                              </div>
+                              <div className={`rounded-lg border p-3 ${styles.panel}`}>
+                                <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Must-have direction</div>
+                                <div className="mt-2 text-sm leading-6">{selectedLead.requestedServices || 'Service scope pending'}</div>
+                              </div>
+                              <div className={`rounded-lg border p-3 ${styles.panel}`}>
+                                <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Client summary</div>
+                                <div className="mt-2 text-sm leading-6">{selectedLead.notes || 'No request summary captured yet.'}</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                            <div className="font-semibold">Working notes</div>
+                            <textarea
+                              value={selectedLead.internalNotes || ''}
+                              onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
+                              className={`mt-4 h-72 w-full resize-none rounded-xl border px-4 py-4 text-sm leading-6 outline-none transition ${styles.input}`}
+                              placeholder="Capture tone, trip mood, supplier instincts, and what would make the proposal feel right."
+                            />
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {(selectedLead.requestedServices || 'Relaxed pacing, smooth logistics')
+                                .split(',')
+                                .map((item) => item.trim())
+                                .filter(Boolean)
+                                .map((item) => (
+                                  <span key={item} className="rounded-full bg-fuchsia-500/15 px-3 py-1 text-xs text-fuchsia-100">
+                                    {item}
+                                  </span>
+                                ))}
+                            </div>
+                          </div>
+                          <div className="xl:col-span-2 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                              <div className="font-semibold">Action checklist</div>
+                              <div className="mt-4 grid gap-3">
+                                {selectedTasks.map((task, index) => (
+                                  <div key={task.title} className={`flex items-center gap-3 rounded-lg border px-3 py-3 ${styles.panel}`}>
+                                    <span className={`flex h-6 w-6 items-center justify-center rounded-full border ${index < 2 ? 'border-emerald-400/50 text-emerald-300' : 'border-white/10 text-white/45'}`}>
+                                      <CheckSquare className="h-3.5 w-3.5" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-medium">{task.title}</div>
+                                      <div className={`mt-1 text-xs ${styles.muted}`}>{task.due}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="grid gap-4">
+                              <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                                <div className="font-semibold">Decision alert</div>
+                                <div className="mt-3 text-sm font-semibold">{leadPrimaryBlocker(selectedLead)}</div>
+                                <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+                                  {selectedProcess?.nextAction || 'Keep the current stage clean before advancing the trip.'}
+                                </p>
+                              </div>
+                              <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                                <div className="font-semibold">Supplier notes</div>
+                                <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
+                                  Use this stage to capture trip mood, supplier protection windows, and anything that should shape the proposal before research turns into pricing.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {detailTab === 'research' ? (
+                        <div className="grid gap-4">
+                          <div className="grid gap-3 xl:grid-cols-4">
+                            {selectedLeisureRows.map((row) => (
+                              <div key={row.service} className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="font-semibold">{row.service}</div>
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{row.status}</span>
+                                </div>
+                                <div className={`mt-3 text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Supplier</div>
+                                <div className="mt-1 text-sm">{row.supplier}</div>
+                                <div className="mt-4 grid grid-cols-2 gap-2">
+                                  <div className={`rounded-lg border px-3 py-2 ${styles.panel}`}>
+                                    <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Cost</div>
+                                    <div className="mt-1 text-sm font-semibold">${row.cost.toLocaleString()}</div>
+                                  </div>
+                                  <div className={`rounded-lg border px-3 py-2 ${styles.panel}`}>
+                                    <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Sell</div>
+                                    <div className="mt-1 text-sm font-semibold">${row.sell.toLocaleString()}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                            <div className="font-semibold">Research focus</div>
+                            <div className="mt-3 grid gap-3 md:grid-cols-3">
+                              {leisureProposalCards(selectedLead).map((card) => (
+                                <div key={card.label} className={`rounded-lg border p-4 ${styles.panel}`}>
+                                  <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                                  <div className="mt-2 font-semibold">{card.value}</div>
+                                  {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                              <div className="font-semibold">Supplier notes</div>
+                              <textarea
+                                className={`mt-4 h-36 w-full resize-none rounded-xl border px-4 py-4 text-sm leading-6 outline-none transition ${styles.input}`}
+                                defaultValue={`${selectedLeisureRows[0]?.supplier || 'Supplier partner'} availability should be protected before client review. Keep hotel and transfer timing aligned with ${selectedLead.dates || 'the current travel window'}.`}
+                              />
+                            </div>
+                            <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4">
+                              <div className="text-xs uppercase tracking-[0.18em] text-red-200">Decision alert</div>
+                              <div className="mt-3 text-sm font-semibold text-white">{leadPrimaryBlocker(selectedLead)}</div>
+                              <p className="mt-2 text-sm leading-6 text-red-100/90">
+                                Protect the best-fit suppliers before this request moves into package comparison.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {detailTab === 'costing' ? (
+                        <div className="grid gap-4">
+                          <div className={`overflow-hidden rounded-xl border ${styles.panelSoft}`}>
+                            <div className={`grid grid-cols-[1.1fr_1fr_110px_110px_110px] gap-4 border-b px-4 py-3 text-xs uppercase tracking-[0.14em] ${styles.tableHead}`}>
+                              <div>Service</div>
+                              <div>Supplier</div>
+                              <div>Cost</div>
+                              <div>Sell</div>
+                              <div>Margin</div>
+                            </div>
+                            {selectedLeisureRows.map((row) => (
+                              <div key={row.service} className={`grid grid-cols-[1.1fr_1fr_110px_110px_110px] gap-4 border-b px-4 py-4 text-sm ${styles.panel}`}>
+                                <div className="font-semibold">{row.service}</div>
+                                <div className={styles.soft}>{row.supplier}</div>
+                                <div>${row.cost.toLocaleString()}</div>
+                                <div className="text-emerald-300">${row.sell.toLocaleString()}</div>
+                                <div className="text-fuchsia-300">${(row.sell - row.cost).toLocaleString()}</div>
+                              </div>
+                            ))}
+                            <div className="grid grid-cols-3 gap-3 p-4">
+                              <div className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
+                                <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Total cost</div>
+                                <div className="mt-1 text-sm font-semibold">${pricing.cost.toLocaleString()}</div>
+                              </div>
+                              <div className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
+                                <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Total sell</div>
+                                <div className="mt-1 text-sm font-semibold">${pricing.sell.toLocaleString()}</div>
+                              </div>
+                              <div className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
+                                <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Gross margin</div>
+                                <div className="mt-1 text-sm font-semibold">{marginPercent}%</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4">
+                            <div className="text-xs uppercase tracking-[0.18em] text-red-200">Decision alert</div>
+                            <div className="mt-3 text-sm font-semibold text-white">Do not release package until the margin feels safe</div>
+                            <p className="mt-2 text-sm leading-6 text-red-100/90">
+                              Use costing to pressure-test hotel, transfer, and experience sell values before the client-facing package is locked.
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {detailTab === 'package' ? (
+                        <div className="grid gap-4 xl:grid-cols-3">
+                          {selectedLeisurePackages.map((option) => (
+                            <div key={option.name} className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="font-semibold">{option.name}</div>
+                                  <div className={`mt-1 text-xs ${styles.muted}`}>Package concept</div>
+                                </div>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{option.fit}</span>
+                              </div>
+                              <div className="mt-5 text-2xl font-bold text-emerald-300">${option.price.toLocaleString()}</div>
+                              <div className={`mt-3 text-sm leading-6 ${styles.soft}`}>{option.recommendation}</div>
+                              <div className="mt-4 grid gap-3">
+                                {leisureProposalCards(selectedLead).map((card) => (
+                                  <div key={card.label} className={`rounded-lg border p-3 ${styles.panel}`}>
+                                    <div className={`text-xs ${styles.muted}`}>{card.label}</div>
+                                    <div className="mt-1 text-sm font-semibold">{card.value}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {detailTab === 'clientReview' ? (
+                        <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+                          <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                            <div className="font-semibold">Client message draft</div>
+                            <textarea
+                              className={`mt-4 h-80 w-full resize-none rounded-xl border px-4 py-4 text-sm leading-6 outline-none transition ${styles.input}`}
+                              defaultValue={`Hello ${selectedLead.name},\n\nWe prepared your ${selectedLead.destination || 'upcoming'} travel direction based on your requested scope: ${selectedLead.requestedServices || 'trip design in progress'}.\n\nOur recommended package balances comfort, fit, and logistics within ${selectedLead.budget || 'your target range'}.\n\nPlease review the options and let us know which direction feels right so we can prepare the payment and confirmation steps.\n\nWarm regards,\nDestinos Pelo Mundo`}
+                            />
+                          </div>
+                          <div className="grid gap-4">
+                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                              <div className="font-semibold">Attachments</div>
+                              <div className="mt-3 grid gap-3">
+                                {['Package comparison PDF', 'Draft itinerary', 'Payment guidance'].map((item) => (
+                                  <div key={item} className={`flex items-center justify-between rounded-lg border px-3 py-3 ${styles.panel}`}>
+                                    <span className="text-sm">{item}</span>
+                                    <span className={`text-xs ${styles.muted}`}>Ready</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                              <div className="font-semibold">Client review note</div>
+                              <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
+                                {selectedProcess?.nextAction || 'Keep the package clear, emotionally strong, and easy to choose.'}
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4">
+                              <div className="text-xs uppercase tracking-[0.18em] text-red-200">Decision alert</div>
+                              <p className="mt-3 text-sm leading-6 text-red-100/90">
+                                Make sure the client message reflects the recommended package clearly. Too many choices weakens the decision.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {detailTab === 'payment' ? (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                            <div className="font-semibold">Payment posture</div>
+                            <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
+                              {selectedLead.status === 'won' || selectedLead.status === 'execution' || selectedLead.status === 'completed'
+                                ? 'Client approval is already secured. Keep payment confirmation and supplier-hold timing tightly aligned.'
+                                : 'Use this lane to make payment expectations explicit before the trip moves into booking.'}
+                            </p>
+                          </div>
+                          <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                            <div className={`text-sm ${styles.muted}`}>Decision pressure</div>
+                            <div className="mt-2 text-lg font-semibold">{leadPrimaryBlocker(selectedLead)}</div>
+                            <div className={`mt-2 text-sm ${styles.muted}`}>{selectedLead.preferredContact || 'Preferred contact pending'}</div>
+                          </div>
+                          {leisurePaymentCards(selectedLead).map((card) => (
+                            <div key={card.label} className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                              <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                              <div className="mt-2 font-semibold">{card.value}</div>
+                              {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {detailTab === 'travelPack' ? (
+                        <div className="grid gap-4">
+                          <div className="grid gap-3 md:grid-cols-3">
+                            {leisureTravelPackCards(selectedLead).map((card) => (
+                              <div key={card.label} className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                                <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                                <div className="mt-2 font-semibold">{card.value}</div>
+                                {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                              </div>
+                            ))}
+                          </div>
+                          <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="font-semibold">Booking snapshot</div>
+                              <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>Leisure fulfilment mock</span>
+                            </div>
+                            <div className="mt-4 grid gap-3">
+                              {mockBookingRecords(selectedLead).map((booking) => (
+                                <div key={booking.reference} className={`rounded-lg border p-4 ${styles.panel}`}>
+                                  <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                      <div className="font-medium">{booking.service}</div>
+                                      <div className={`mt-1 text-sm ${styles.muted}`}>{booking.supplier}</div>
+                                    </div>
+                                    <div className="text-right">
+                                      <div className="text-sm font-semibold">{booking.status}</div>
+                                      <div className={`mt-1 text-xs ${styles.muted}`}>{booking.reference}</div>
+                                    </div>
+                                  </div>
+                                  <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{booking.note}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                              <div className="font-semibold">Action checklist</div>
+                              <div className="mt-4 grid gap-3">
+                                {selectedTasks.map((task, index) => (
+                                  <div key={task.title} className={`flex items-center gap-3 rounded-lg border px-3 py-3 ${styles.panel}`}>
+                                    <span className={`flex h-6 w-6 items-center justify-center rounded-full border ${index < 2 ? 'border-emerald-400/50 text-emerald-300' : 'border-white/10 text-white/45'}`}>
+                                      <CheckSquare className="h-3.5 w-3.5" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-medium">{task.title}</div>
+                                      <div className={`mt-1 text-xs ${styles.muted}`}>{task.due}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                              <div className="font-semibold">Decision alert</div>
+                              <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
+                                Final confirmations, notes, and traveler-facing instructions should all be coherent before the travel pack is sent.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                </div>
+              );
+            })() : (
+              <div className="p-8 text-center">
+                <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
+                <div className="mt-4 text-lg font-semibold">Select a leisure request</div>
+                <p className={`mt-2 text-sm ${styles.muted}`}>Leisure Studio workbench appears here.</p>
+              </div>
+            )
           ) : selectedLead ? (
             <div className="grid gap-4">
               <div className="flex items-start justify-between gap-4">
@@ -1889,6 +3532,7 @@ export function CrmPage() {
                       </span>
                     </div>
                     <p className={`mt-1 text-sm ${styles.muted}`}>{leadSegment(selectedLead)} - {selectedLead.destination || 'Destination pending'}</p>
+                    <p className={`mt-1 text-xs uppercase tracking-[0.16em] ${styles.muted}`}>{leadFlowTitle(selectedLead)}</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -1905,9 +3549,13 @@ export function CrmPage() {
               </div>
 
               <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                <div className={`mb-5 rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                  <div className="text-xs uppercase tracking-[0.14em] text-[#d9b46f]">{leadFlowTitle(selectedLead)}</div>
+                  <div className={`mt-2 text-sm leading-6 ${styles.soft}`}>{leadFlowDescription(selectedLead)}</div>
+                </div>
                 <div className="grid grid-cols-4 items-center gap-3">
-                  {workflowSteps.map(([status, label], index) => {
-                    const activeIndex = selectedLead.status === 'lost' ? -1 : workflowSteps.findIndex(([step]) => step === selectedLead.status);
+                  {workflowStepsForLead(selectedLead).map(([status, label], index) => {
+                    const activeIndex = selectedLead.status === 'lost' ? -1 : workflowStepsForLead(selectedLead).findIndex(([step]) => step === selectedLead.status);
                     const isDone = activeIndex >= 0 && index <= activeIndex;
                     return (
                       <div key={status} className="min-w-0 text-center">
@@ -1945,6 +3593,7 @@ export function CrmPage() {
                   <div>
                     <div className={`text-sm ${styles.muted}`}>Form</div>
                     <div className="mt-1 font-semibold">{selectedLead.service}</div>
+                    <div className={`mt-1 text-xs ${styles.muted}`}>{leadStatusLabel(selectedLead, selectedLead.status)}</div>
                   </div>
                 </div>
 
@@ -1984,15 +3633,15 @@ export function CrmPage() {
               </div>
 
               <div className="flex gap-2">
-                {(['overview', 'tasks', 'notes', 'history'] as DetailTab[]).map((tab) => (
+                {selectedDetailTabs.map((tab) => (
                   <button
                     key={tab}
                     type="button"
                     onClick={() => setDetailTab(tab)}
                     className={`h-10 rounded-lg px-4 text-sm capitalize ${detailTab === tab ? styles.buttonActive : styles.buttonGhost}`}
                   >
-                    {tab}
-                    {tab === 'tasks' ? <span className="ml-2 rounded-full bg-red-500 px-1.5 py-0.5 text-xs text-white">{selectedTasks.length}</span> : null}
+                    {detailTabLabel(tab)}
+                    {(tab === 'approvals' || tab === 'proposal') ? <span className="ml-2 rounded-full bg-red-500 px-1.5 py-0.5 text-xs text-white">{selectedTasks.length}</span> : null}
                   </button>
                 ))}
               </div>
@@ -2079,8 +3728,30 @@ export function CrmPage() {
                   </div>
                 ) : null}
 
-                {detailTab === 'tasks' ? (
+                {detailTab === 'proposal' ? (
                   <div className="grid gap-3">
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className="font-semibold">Proposal direction</div>
+                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedProcess?.nextAction}</p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {leisureProposalCards(selectedLead).map((card) => (
+                        <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className="mt-2 font-semibold">{card.value}</div>
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {mockWorkflowItems(selectedLead, 'proposal').map((item) => (
+                        <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="font-semibold">{item.title}</div>
+                          <div className="mt-2 text-sm font-medium">{item.value}</div>
+                          <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
+                        </div>
+                      ))}
+                    </div>
                     {selectedTasks.map((task) => (
                       <div key={task.title} className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${styles.panelSoft}`}>
                         <span className="flex min-w-0 items-center gap-3">
@@ -2095,8 +3766,367 @@ export function CrmPage() {
                   </div>
                 ) : null}
 
+                {detailTab === 'payments' ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className="font-semibold">Payment posture</div>
+                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+                        {selectedLead.status === 'won' || selectedLead.status === 'execution' || selectedLead.status === 'completed'
+                          ? 'Client approval is secured. Track payment confirmation before or alongside supplier fulfilment.'
+                          : 'Keep payment expectations clear in the proposal so the client knows what unlocks booking.'}
+                      </p>
+                    </div>
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className={`text-sm ${styles.muted}`}>Budget band</div>
+                      <div className="mt-2 text-lg font-semibold">{selectedLead.budget || 'Budget pending'}</div>
+                      <div className={`mt-2 text-sm ${styles.muted}`}>Preferred contact: {selectedLead.preferredContact || 'Not captured yet'}</div>
+                    </div>
+                    {leisurePaymentCards(selectedLead).map((card) => (
+                      <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                        <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                        <div className="mt-2 font-semibold">{card.value}</div>
+                        {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                      </div>
+                    ))}
+                    {mockWorkflowItems(selectedLead, 'payments').map((item) => (
+                      <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                        <div className="font-semibold">{item.title}</div>
+                        <div className="mt-2 text-sm font-medium">{item.value}</div>
+                        <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {detailTab === 'travelPack' ? (
+                  <div className="grid gap-4">
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className="font-semibold">Travel pack readiness</div>
+                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+                        Use this stage for itinerary polish, service confirmations, and final client communication before departure.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {leisureTravelPackCards(selectedLead).map((card) => (
+                        <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className="mt-2 font-semibold">{card.value}</div>
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {mockWorkflowItems(selectedLead, 'travelPack').map((item) => (
+                        <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="font-semibold">{item.title}</div>
+                          <div className="mt-2 text-sm font-medium">{item.value}</div>
+                          <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-semibold">Simulated booking snapshot</div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>Leisure fulfillment mock</span>
+                      </div>
+                      <div className="mt-4 grid gap-3">
+                        {mockBookingRecords(selectedLead).map((booking) => (
+                          <div key={booking.reference} className={`rounded-lg border p-4 ${styles.panel}`}>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <div className="font-medium">{booking.service}</div>
+                                <div className={`mt-1 text-sm ${styles.muted}`}>{booking.supplier}</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm font-semibold">{booking.status}</div>
+                                <div className={`mt-1 text-xs ${styles.muted}`}>{booking.reference}</div>
+                              </div>
+                            </div>
+                            <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{booking.note}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid gap-3">
+                      {selectedHistory.map((item) => (
+                        <div key={`${item.label}-${item.meta}`} className={`rounded-lg border p-3 ${styles.panelSoft}`}>
+                          <div className="font-medium">{item.label}</div>
+                          <div className={`mt-1 text-sm ${styles.muted}`}>{item.meta}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {detailTab === 'itinerary' ? (
+                  <div className="grid gap-5">
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold">Trip processing workspace</div>
+                          <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+                            Use this dedicated itinerary lane to shape the full trip: routing, hotel count, room type, activities, and the operating notes that make the proposal bookable.
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>Itinerary mock workspace</span>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-4">
+                      {selectedItinerarySummary.map((card) => (
+                        <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className="mt-2 font-semibold">{card.value}</div>
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className={`rounded-lg border p-4 ${styles.panel}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="font-semibold">Route and stay plan</div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedItineraryStops.length} cities / stays</span>
+                      </div>
+                      <div className="mt-4 grid gap-4">
+                        {selectedItineraryStops.map((stop, index) => (
+                          <div key={`${stop.city}-${index}`} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="text-xs uppercase tracking-[0.14em] text-[#d9b46f]">Stop {index + 1}</div>
+                                <div className="mt-2 text-lg font-semibold">{stop.city}</div>
+                                <div className={`mt-1 text-sm ${styles.muted}`}>{stop.nights} · {stop.stay}</div>
+                              </div>
+                              <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{stop.focus}</span>
+                            </div>
+                            <div className="mt-4 grid gap-4 md:grid-cols-2">
+                              <div>
+                                <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>Room setup</div>
+                                <div className="mt-1 text-sm font-medium">{stop.room}</div>
+                              </div>
+                              <div>
+                                <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>Operational note</div>
+                                <div className="mt-1 text-sm font-medium">{stop.note}</div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+                      <div className={`rounded-lg border p-4 ${styles.panel}`}>
+                        <div className="font-semibold">Activities and experiences</div>
+                        <div className="mt-4 grid gap-3">
+                          {selectedItineraryExperiences.map((experience) => (
+                            <div key={experience.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="font-medium">{experience.title}</div>
+                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{experience.timing}</span>
+                              </div>
+                              <div className={`mt-2 text-sm ${styles.muted}`}>{experience.category}</div>
+                              <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{experience.note}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4">
+                        <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="font-semibold">Hotel count and room control</div>
+                          <div className="mt-3 text-sm leading-6">
+                            <div className={`flex items-center justify-between gap-3 ${styles.soft}`}>
+                              <span>Planned hotel stays</span>
+                              <span className="font-semibold">{selectedItineraryStops.length}</span>
+                            </div>
+                            <div className={`mt-2 flex items-center justify-between gap-3 ${styles.soft}`}>
+                              <span>Traveler setup</span>
+                              <span className="font-semibold">{selectedLead.travelers || 'Pending'}</span>
+                            </div>
+                            <div className={`mt-2 flex items-center justify-between gap-3 ${styles.soft}`}>
+                              <span>Room brief</span>
+                              <span className="font-semibold">{isCorporateLead(selectedLead) ? 'Executive allocation' : selectedLead.serviceKey === 'luxury' ? 'Suite-led' : 'Double / twin mix'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="font-semibold">Itinerary processing note</div>
+                          <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
+                            This is the space where we should eventually edit routing, hotel count, room types, transfers, and experiences directly instead of squeezing them into a narrow follow-up panel.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {detailTab === 'notes' ? (
                   <p className={`text-sm leading-6 ${styles.soft}`}>{selectedLead.internalNotes || 'No internal notes yet.'}</p>
+                ) : null}
+
+                {detailTab === 'travelers' ? (
+                  <div className="grid gap-4">
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className="font-semibold">Traveler coordination</div>
+                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+                        Corporate movement should keep traveler count, route coordination, and readiness visible before booking is released.
+                      </p>
+                    </div>
+                    <div className="grid gap-3">
+                      <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                        <div className={`text-sm ${styles.muted}`}>Traveler scope</div>
+                        <div className="mt-2 text-lg font-semibold">{selectedLead.travelers || 'Traveler list pending'}</div>
+                        <div className={`mt-2 text-sm ${styles.muted}`}>{selectedLead.departureCity || 'Departure city pending'} - {selectedLead.destination || 'Destination pending'}</div>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {corporateTravelerCards(selectedLead).map((card) => (
+                        <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className="mt-2 font-semibold">{card.value}</div>
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {mockWorkflowItems(selectedLead, 'travelers').map((item) => (
+                        <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="font-semibold">{item.title}</div>
+                          <div className="mt-2 text-sm font-medium">{item.value}</div>
+                          <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {detailTab === 'approvals' ? (
+                  <div className="grid gap-3">
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className="font-semibold">Approval posture</div>
+                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedProcess?.stageGate}</p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {corporateApprovalCards(selectedLead).map((card) => (
+                        <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className="mt-2 font-semibold">{card.value}</div>
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {mockWorkflowItems(selectedLead, 'approvals').map((item) => (
+                        <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="font-semibold">{item.title}</div>
+                          <div className="mt-2 text-sm font-medium">{item.value}</div>
+                          <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {selectedTasks.map((task) => (
+                      <div key={task.title} className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${styles.panelSoft}`}>
+                        <span className="flex min-w-0 items-center gap-3">
+                          <CheckSquare className={`h-4 w-4 ${task.tone === 'urgent' ? 'text-red-400' : task.tone === 'upcoming' ? styles.muted : 'text-sky-400'}`} />
+                          <span className="truncate text-sm">{task.title}</span>
+                        </span>
+                        <span className={`shrink-0 rounded-full px-2 py-1 text-xs ${task.tone === 'urgent' ? 'bg-red-500/15 text-red-300' : styles.buttonGhost}`}>
+                          {task.due}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {detailTab === 'finance' ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className="font-semibold">Finance clearance</div>
+                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+                        Use this lane for PO, invoice approval, or account-credit coordination before booking is released.
+                      </p>
+                    </div>
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className={`text-sm ${styles.muted}`}>Commercial shape</div>
+                      <div className="mt-2 text-lg font-semibold">{selectedLead.budget || 'Policy-based / budget pending'}</div>
+                      <div className={`mt-2 text-sm ${styles.muted}`}>{selectedLead.requestedServices || 'Service scope pending'}</div>
+                    </div>
+                    {corporateFinanceCards(selectedLead).map((card) => (
+                      <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                        <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                        <div className="mt-2 font-semibold">{card.value}</div>
+                        {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                      </div>
+                    ))}
+                    {mockWorkflowItems(selectedLead, 'finance').map((item) => (
+                      <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                        <div className="font-semibold">{item.title}</div>
+                        <div className="mt-2 text-sm font-medium">{item.value}</div>
+                        <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
+                      </div>
+                    ))}
+                    <div className={`rounded-lg border p-4 md:col-span-2 ${styles.panelSoft}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-semibold">Simulated booking release snapshot</div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>Corporate fulfillment mock</span>
+                      </div>
+                      <div className="mt-4 grid gap-3">
+                        {mockBookingRecords(selectedLead).map((booking) => (
+                          <div key={booking.reference} className={`rounded-lg border p-4 ${styles.panel}`}>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <div className="font-medium">{booking.service}</div>
+                                <div className={`mt-1 text-sm ${styles.muted}`}>{booking.supplier}</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm font-semibold">{booking.status}</div>
+                                <div className={`mt-1 text-xs ${styles.muted}`}>{booking.reference}</div>
+                              </div>
+                            </div>
+                            <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{booking.note}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {detailTab === 'documents' ? (
+                  <div className="grid gap-4">
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className="font-semibold">Documents and readiness</div>
+                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+                        Keep approvals, traveler documentation, and operational notes aligned before fulfilment starts.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {corporateDocumentCards(selectedLead).map((card) => (
+                        <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className="mt-2 font-semibold">{card.value}</div>
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {mockWorkflowItems(selectedLead, 'documents').map((item) => (
+                        <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="font-semibold">{item.title}</div>
+                          <div className="mt-2 text-sm font-medium">{item.value}</div>
+                          <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <label className="block">
+                      <span className="font-semibold">Internal readiness notes</span>
+                      <textarea
+                        value={selectedLead.internalNotes || ''}
+                        onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
+                        className={`mt-3 min-h-24 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
+                        placeholder="Visa status, missing traveler data, invoice dependencies..."
+                      />
+                    </label>
+                  </div>
                 ) : null}
 
                 {detailTab === 'history' ? (
@@ -2148,8 +4178,8 @@ export function CrmPage() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className={`text-xs uppercase tracking-[0.18em] ${styles.muted}`}>Phone intake</div>
-                <h2 className="mt-1 text-xl font-semibold">New request from phone call</h2>
-                <p className={`mt-1 text-sm ${styles.muted}`}>Capture the essentials now and qualify the request later.</p>
+                <h2 className="mt-1 text-xl font-semibold">New leisure request from phone call</h2>
+                <p className={`mt-1 text-sm ${styles.muted}`}>Capture the essentials for Classic or Luxury now and qualify the request later. Corporate requests should come from CTM.</p>
               </div>
               <button
                 type="button"
@@ -2181,7 +4211,6 @@ export function CrmPage() {
                 >
                   <option value="classic">Classic</option>
                   <option value="luxury">Luxury</option>
-                  <option value="corporate">Corporate</option>
                 </select>
               </label>
               <label className="text-sm font-medium">
@@ -2272,7 +4301,7 @@ export function CrmPage() {
                 Cancel
               </button>
               <button type="submit" className="rounded-lg bg-[#12305a] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#173d72]">
-                Create phone request
+                Create leisure request
               </button>
             </div>
           </form>
