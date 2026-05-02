@@ -19,6 +19,15 @@ export type LeadLifecycleStage =
   | 'closed';
 export type LeadEmailStatus = 'pending' | 'sent' | 'failed';
 export type LeadPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'revision_requested' | 'rejected' | 'expired';
+export type QuoteLineCategory = 'flight' | 'hotel' | 'transfer' | 'visa' | 'activity' | 'insurance' | 'service_fee' | 'other';
+export type QuoteLineStatus = 'research' | 'quoted' | 'held' | 'confirmed' | 'unavailable';
+export type QuoteApprovalDecision = 'pending' | 'approved' | 'changes_requested' | 'rejected';
+export type ItineraryStatus = 'draft' | 'proposed' | 'confirmed' | 'in_travel' | 'completed';
+export type ItineraryStopPurpose = 'leisure' | 'business' | 'transit' | 'event' | 'extension';
+export type AccommodationType = 'hotel' | 'resort' | 'lodge' | 'villa' | 'apartment' | 'camp' | 'cruise' | 'other';
+export type ItineraryBookingStatus = 'draft' | 'quoted' | 'held' | 'confirmed' | 'cancelled';
+export type TransportMode = 'flight' | 'train' | 'car' | 'ferry' | 'transfer' | 'other';
 export type CrmRole = 'admin' | 'manager' | 'agent' | 'client' | 'viewer' | 'none';
 
 export type CrmUser = {
@@ -91,4 +100,135 @@ export type CrmLead = {
   internalNotes: string;
   clientId?: string | null;
   clientName?: string;
+};
+
+export type CrmQuoteLine = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  quoteId: string;
+  category: QuoteLineCategory;
+  supplier: string;
+  description: string;
+  quantity: string;
+  unitCost: string;
+  unitSell: string;
+  totalCost: string;
+  totalSell: string;
+  margin: string;
+  status: QuoteLineStatus;
+  notes: string;
+};
+
+export type CrmQuoteApproval = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  quoteId: string;
+  approverName: string;
+  approverEmail: string;
+  decision: QuoteApprovalDecision;
+  decisionAt?: string | null;
+  notes: string;
+};
+
+export type CrmQuote = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  leadId: string;
+  leadName: string;
+  quoteNumber: string;
+  version: number;
+  status: QuoteStatus;
+  currency: string;
+  subtotalCost: string;
+  subtotalSell: string;
+  margin: string;
+  validUntil?: string | null;
+  notes: string;
+  sentAt?: string | null;
+  acceptedAt?: string | null;
+  lines: CrmQuoteLine[];
+  approvals: CrmQuoteApproval[];
+};
+
+export type CrmAccommodationBlock = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  stopId: string;
+  name: string;
+  accommodationType: AccommodationType;
+  roomType: string;
+  boardBasis: string;
+  checkIn?: string | null;
+  checkOut?: string | null;
+  rooms: number;
+  supplier: string;
+  bookingStatus: ItineraryBookingStatus;
+  confirmationReference: string;
+  notes: string;
+};
+
+export type CrmExperienceBlock = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  stopId: string;
+  title: string;
+  category: string;
+  startAt?: string | null;
+  supplier: string;
+  status: ItineraryBookingStatus;
+  notes: string;
+};
+
+export type CrmItineraryStop = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  itineraryId: string;
+  sequenceNumber: number;
+  city: string;
+  country: string;
+  arrivalDate?: string | null;
+  departureDate?: string | null;
+  nights: number;
+  purpose: ItineraryStopPurpose;
+  notes: string;
+  accommodations: CrmAccommodationBlock[];
+  experiences: CrmExperienceBlock[];
+};
+
+export type CrmTransportSegment = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  itineraryId: string;
+  sequenceNumber: number;
+  mode: TransportMode;
+  fromCity: string;
+  toCity: string;
+  departureAt?: string | null;
+  arrivalAt?: string | null;
+  supplier: string;
+  bookingStatus: ItineraryBookingStatus;
+  reference: string;
+  notes: string;
+};
+
+export type CrmTripItinerary = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  leadId: string;
+  leadName: string;
+  title: string;
+  status: ItineraryStatus;
+  startDate?: string | null;
+  endDate?: string | null;
+  notes: string;
+  stops: CrmItineraryStop[];
+  transports: CrmTransportSegment[];
 };

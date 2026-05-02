@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
+from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.utils import timezone
 
-from crm.models import Client, Lead
+from crm.models import AccommodationBlock, Client, ExperienceBlock, ItineraryStop, Lead, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
 
 
 @dataclass(frozen=True)
@@ -575,6 +578,327 @@ CORPORATE_SAMPLES: list[SampleLead] = [
 ]
 
 
+QUOTE_STATUS_BY_STAGE = {
+    Lead.LifecycleStage.NEW_REQUEST: Quote.Status.DRAFT,
+    Lead.LifecycleStage.PENDING_INFORMATION: Quote.Status.DRAFT,
+    Lead.LifecycleStage.VALIDATED: Quote.Status.DRAFT,
+    Lead.LifecycleStage.QUOTE_IN_PROGRESS: Quote.Status.DRAFT,
+    Lead.LifecycleStage.QUOTE_SENT: Quote.Status.SENT,
+    Lead.LifecycleStage.AWAITING_APPROVAL: Quote.Status.SENT,
+    Lead.LifecycleStage.APPROVED: Quote.Status.ACCEPTED,
+    Lead.LifecycleStage.AWAITING_PAYMENT_FINANCE: Quote.Status.ACCEPTED,
+    Lead.LifecycleStage.BOOKING_IN_PROGRESS: Quote.Status.ACCEPTED,
+    Lead.LifecycleStage.CONFIRMED: Quote.Status.ACCEPTED,
+    Lead.LifecycleStage.TRAVEL_PACK_SENT: Quote.Status.ACCEPTED,
+    Lead.LifecycleStage.IN_TRAVEL: Quote.Status.ACCEPTED,
+    Lead.LifecycleStage.COMPLETED: Quote.Status.ACCEPTED,
+    Lead.LifecycleStage.CLOSED: Quote.Status.REJECTED,
+}
+
+
+APPROVAL_DECISION_BY_QUOTE_STATUS = {
+    Quote.Status.DRAFT: QuoteApproval.Decision.PENDING,
+    Quote.Status.SENT: QuoteApproval.Decision.PENDING,
+    Quote.Status.ACCEPTED: QuoteApproval.Decision.APPROVED,
+    Quote.Status.REVISION_REQUESTED: QuoteApproval.Decision.CHANGES_REQUESTED,
+    Quote.Status.REJECTED: QuoteApproval.Decision.REJECTED,
+    Quote.Status.EXPIRED: QuoteApproval.Decision.REJECTED,
+}
+
+
+def quote_number_for_lead(lead: Lead) -> str:
+    return f"DPM-Q-{str(lead.id)[:8].upper()}"
+
+
+def quote_lines_for_sample(sample: SampleLead):
+    if sample.service_key == Lead.ServiceKey.CORPORATE:
+        return [
+            (QuoteLine.Category.FLIGHT, "Corporate fare desk", "Policy-aligned flight options", Decimal("1"), Decimal("2450.00"), Decimal("2980.00")),
+            (QuoteLine.Category.HOTEL, "Preferred corporate hotel partner", "Hotel block with rooming control", Decimal("1"), Decimal("1850.00"), Decimal("2320.00")),
+            (QuoteLine.Category.TRANSFER, "Ground operations partner", "Airport and meeting transfers", Decimal("1"), Decimal("420.00"), Decimal("680.00")),
+            (QuoteLine.Category.SERVICE_FEE, "DPM Corporate Desk", "Corporate coordination and reporting fee", Decimal("1"), Decimal("0.00"), Decimal("450.00")),
+        ]
+
+    if sample.service_key == Lead.ServiceKey.LUXURY:
+        return [
+            (QuoteLine.Category.FLIGHT, "Premium fare partner", "Premium cabin or best-fit fare option", Decimal("1"), Decimal("4200.00"), Decimal("4900.00")),
+            (QuoteLine.Category.HOTEL, "Luxury hotel partner", "Premium stay aligned to travel brief", Decimal("1"), Decimal("7200.00"), Decimal("8900.00")),
+            (QuoteLine.Category.TRANSFER, "Private ground desk", "Private transfers and arrival handling", Decimal("1"), Decimal("650.00"), Decimal("950.00")),
+            (QuoteLine.Category.ACTIVITY, "Concierge partner", "Curated experience layer", Decimal("1"), Decimal("900.00"), Decimal("1450.00")),
+        ]
+
+    return [
+        (QuoteLine.Category.FLIGHT, "Regional fare partner", "Best-fit economy fare option", Decimal("1"), Decimal("1150.00"), Decimal("1420.00")),
+        (QuoteLine.Category.HOTEL, "Selected leisure hotel", "Comfort hotel package", Decimal("1"), Decimal("1400.00"), Decimal("1780.00")),
+        (QuoteLine.Category.TRANSFER, "Ground transport partner", "Return transfers", Decimal("1"), Decimal("180.00"), Decimal("320.00")),
+        (QuoteLine.Category.ACTIVITY, "Destination operator", "Core excursion or activity", Decimal("1"), Decimal("260.00"), Decimal("460.00")),
+    ]
+
+
+def seed_quote_for_lead(lead: Lead, sample: SampleLead):
+    lifecycle_stage = sample.lifecycle_stage or Lead.LifecycleStage.NEW_REQUEST
+    quote_status = QUOTE_STATUS_BY_STAGE.get(lifecycle_stage, Quote.Status.DRAFT)
+    now = timezone.now()
+    sent_at = now - timedelta(days=1) if quote_status in {Quote.Status.SENT, Quote.Status.ACCEPTED, Quote.Status.REJECTED} else None
+    accepted_at = now if quote_status == Quote.Status.ACCEPTED else None
+    quote_number = quote_number_for_lead(lead)
+
+    quote, created = Quote.objects.update_or_create(
+        lead=lead,
+        version=1,
+        defaults={
+            "quote_number": quote_number,
+            "status": quote_status,
+            "currency": "USD",
+            "valid_until": (now + timedelta(days=14)).date(),
+            "notes": f"Seeded quote for {sample.trip_type}.",
+            "sent_at": sent_at,
+            "accepted_at": accepted_at,
+        },
+    )
+
+    line_status = QuoteLine.Status.QUOTED if quote_status in {Quote.Status.SENT, Quote.Status.ACCEPTED} else QuoteLine.Status.RESEARCH
+    if quote_status == Quote.Status.ACCEPTED:
+        line_status = QuoteLine.Status.HELD
+    if quote_status == Quote.Status.REJECTED:
+        line_status = QuoteLine.Status.UNAVAILABLE
+
+    existing_descriptions = set(quote.lines.values_list("description", flat=True))
+    for category, supplier, description, quantity, unit_cost, unit_sell in quote_lines_for_sample(sample):
+        QuoteLine.objects.update_or_create(
+            quote=quote,
+            description=description,
+            defaults={
+                "category": category,
+                "supplier": supplier,
+                "quantity": quantity,
+                "unit_cost": unit_cost,
+                "unit_sell": unit_sell,
+                "status": line_status,
+                "notes": "Seeded quote line.",
+            },
+        )
+        existing_descriptions.discard(description)
+
+    if existing_descriptions:
+        quote.lines.filter(description__in=existing_descriptions).delete()
+
+    approver_name = sample.contact or sample.client_name
+    approver_email = sample.email
+    decision = APPROVAL_DECISION_BY_QUOTE_STATUS.get(quote_status, QuoteApproval.Decision.PENDING)
+    QuoteApproval.objects.update_or_create(
+        quote=quote,
+        approver_email=approver_email,
+        defaults={
+            "approver_name": approver_name,
+            "decision": decision,
+            "decision_at": now if decision in {QuoteApproval.Decision.APPROVED, QuoteApproval.Decision.REJECTED} else None,
+            "notes": "Seeded approval state aligned with quote status.",
+        },
+    )
+
+    return quote, created
+
+
+def itinerary_status_for_stage(stage: str) -> str:
+    if stage in {Lead.LifecycleStage.COMPLETED, Lead.LifecycleStage.CLOSED}:
+        return TripItinerary.Status.COMPLETED
+    if stage == Lead.LifecycleStage.IN_TRAVEL:
+        return TripItinerary.Status.IN_TRAVEL
+    if stage in {
+        Lead.LifecycleStage.BOOKING_IN_PROGRESS,
+        Lead.LifecycleStage.CONFIRMED,
+        Lead.LifecycleStage.TRAVEL_PACK_SENT,
+    }:
+        return TripItinerary.Status.CONFIRMED
+    if stage in {Lead.LifecycleStage.QUOTE_SENT, Lead.LifecycleStage.AWAITING_APPROVAL, Lead.LifecycleStage.APPROVED}:
+        return TripItinerary.Status.PROPOSED
+    return TripItinerary.Status.DRAFT
+
+
+def sample_stop_plan(sample: SampleLead):
+    destination_parts = [part.strip() for part in sample.destination.replace("&", "+").split("+") if part.strip()]
+    if not destination_parts:
+        destination_parts = [sample.destination or "Destination"]
+
+    if sample.service_key == Lead.ServiceKey.CORPORATE:
+        primary = destination_parts[0]
+        return [
+            {
+                "city": sample.departure_city or "Maputo",
+                "country": "Departure hub",
+                "nights": 0,
+                "purpose": ItineraryStop.Purpose.TRANSIT,
+                "hotel": "Airport coordination point",
+                "room": "Day-use / traveler assembly",
+                "experience": "Traveler readiness checkpoint",
+            },
+            {
+                "city": primary,
+                "country": "Corporate destination",
+                "nights": 3,
+                "purpose": ItineraryStop.Purpose.BUSINESS,
+                "hotel": "Preferred corporate hotel block",
+                "room": "Executive rooms with twin fallback",
+                "experience": "Meeting transfer schedule",
+            },
+            {
+                "city": f"{primary} overflow",
+                "country": "Corporate destination",
+                "nights": 1,
+                "purpose": ItineraryStop.Purpose.EXTENSION,
+                "hotel": "Overflow / late-change hotel",
+                "room": "Flexible rooming allocation",
+                "experience": "Departure buffer support",
+            },
+        ]
+
+    if sample.service_key == Lead.ServiceKey.LUXURY:
+        primary = destination_parts[0]
+        secondary = destination_parts[1] if len(destination_parts) > 1 else f"{primary} coast"
+        return [
+            {
+                "city": primary,
+                "country": "Signature destination",
+                "nights": 3,
+                "purpose": ItineraryStop.Purpose.LEISURE,
+                "hotel": "Premium city or resort stay",
+                "room": "Suite / villa preference",
+                "experience": "Private guided signature experience",
+            },
+            {
+                "city": secondary,
+                "country": "Signature destination",
+                "nights": 3,
+                "purpose": ItineraryStop.Purpose.LEISURE,
+                "hotel": "Boutique luxury stay",
+                "room": "High-floor or private-view room",
+                "experience": "Wellness, sunset, or curated dining moment",
+            },
+        ]
+
+    primary = destination_parts[0]
+    secondary = destination_parts[1] if len(destination_parts) > 1 else f"{primary} highlights"
+    return [
+        {
+            "city": primary,
+            "country": "Leisure destination",
+            "nights": 3,
+            "purpose": ItineraryStop.Purpose.LEISURE,
+            "hotel": "Comfort hotel base",
+            "room": "Double or twin rooms",
+            "experience": "Core city or destination tour",
+        },
+        {
+            "city": secondary,
+            "country": "Leisure destination",
+            "nights": 2,
+            "purpose": ItineraryStop.Purpose.LEISURE,
+            "hotel": "Practical second stay",
+            "room": "Best-fit room allocation",
+            "experience": "Optional activity layer",
+        },
+    ]
+
+
+def seed_itinerary_for_lead(lead: Lead, sample: SampleLead):
+    lifecycle_stage = sample.lifecycle_stage or Lead.LifecycleStage.NEW_REQUEST
+    status = itinerary_status_for_stage(lifecycle_stage)
+    start_date = timezone.now().date() + timedelta(days=30 + (abs(hash(sample.email)) % 90))
+    stop_plan = sample_stop_plan(sample)
+    total_nights = sum(stop["nights"] for stop in stop_plan)
+    end_date = start_date + timedelta(days=total_nights)
+
+    itinerary, created = TripItinerary.objects.update_or_create(
+        lead=lead,
+        title=f"{sample.destination} itinerary",
+        defaults={
+            "status": status,
+            "start_date": start_date,
+            "end_date": end_date,
+            "notes": f"Seeded multi-stop itinerary for {sample.trip_type}.",
+        },
+    )
+
+    running_date = start_date
+    kept_stop_ids = []
+    for index, stop_data in enumerate(stop_plan, start=1):
+        arrival_date = running_date
+        departure_date = running_date + timedelta(days=stop_data["nights"])
+        stop, _ = ItineraryStop.objects.update_or_create(
+            itinerary=itinerary,
+            sequence_number=index,
+            defaults={
+                "city": stop_data["city"],
+                "country": stop_data["country"],
+                "arrival_date": arrival_date,
+                "departure_date": departure_date,
+                "nights": stop_data["nights"],
+                "purpose": stop_data["purpose"],
+                "notes": "Seeded itinerary stop. Use this area to shape routing, hotel count, and room needs.",
+            },
+        )
+        kept_stop_ids.append(stop.id)
+
+        booking_status = AccommodationBlock.BookingStatus.CONFIRMED if status in {TripItinerary.Status.CONFIRMED, TripItinerary.Status.IN_TRAVEL, TripItinerary.Status.COMPLETED} else AccommodationBlock.BookingStatus.QUOTED
+        if stop_data["nights"]:
+            AccommodationBlock.objects.update_or_create(
+                stop=stop,
+                name=stop_data["hotel"],
+                defaults={
+                    "accommodation_type": AccommodationBlock.AccommodationType.HOTEL,
+                    "room_type": stop_data["room"],
+                    "board_basis": "Breakfast included",
+                    "check_in": arrival_date,
+                    "check_out": departure_date,
+                    "rooms": max(1, min(4, travelerCount := int(next((part for part in sample.travelers.split() if part.isdigit()), "2")))),
+                    "supplier": "Seed accommodation supplier",
+                    "booking_status": booking_status,
+                    "confirmation_reference": f"DPM-STAY-{str(lead.id)[:6].upper()}-{index}",
+                    "notes": "Seeded accommodation block for CRM itinerary planning.",
+                },
+            )
+
+        experience_status = ExperienceBlock.Status.CONFIRMED if status in {TripItinerary.Status.CONFIRMED, TripItinerary.Status.IN_TRAVEL, TripItinerary.Status.COMPLETED} else ExperienceBlock.Status.QUOTED
+        ExperienceBlock.objects.update_or_create(
+            stop=stop,
+            title=stop_data["experience"],
+            defaults={
+                "category": "Business support" if sample.service_key == Lead.ServiceKey.CORPORATE else "Experience",
+                "start_at": timezone.make_aware(timezone.datetime.combine(arrival_date + timedelta(days=1 if stop_data["nights"] else 0), timezone.datetime.min.time())),
+                "supplier": "Seed experience partner",
+                "status": experience_status,
+                "notes": "Seeded experience or operational activity linked to this stop.",
+            },
+        )
+        running_date = departure_date
+
+    itinerary.stops.exclude(id__in=kept_stop_ids).delete()
+
+    kept_transport_sequences = []
+    route_points = [sample.departure_city or "Maputo", *[stop["city"] for stop in stop_plan], sample.departure_city or "Maputo"]
+    for index, (from_city, to_city) in enumerate(zip(route_points, route_points[1:]), start=1):
+        kept_transport_sequences.append(index)
+        TransportSegment.objects.update_or_create(
+            itinerary=itinerary,
+            sequence_number=index,
+            defaults={
+                "mode": TransportSegment.Mode.FLIGHT if index in {1, len(route_points) - 1} else TransportSegment.Mode.TRANSFER,
+                "from_city": from_city,
+                "to_city": to_city,
+                "departure_at": timezone.make_aware(timezone.datetime.combine(start_date + timedelta(days=index - 1), timezone.datetime.min.time())),
+                "arrival_at": timezone.make_aware(timezone.datetime.combine(start_date + timedelta(days=index - 1), timezone.datetime.min.time())) + timedelta(hours=2),
+                "supplier": "Seed transport supplier",
+                "booking_status": TransportSegment.BookingStatus.CONFIRMED if status in {TripItinerary.Status.CONFIRMED, TripItinerary.Status.IN_TRAVEL, TripItinerary.Status.COMPLETED} else TransportSegment.BookingStatus.QUOTED,
+                "reference": f"DPM-MOVE-{str(lead.id)[:6].upper()}-{index}",
+                "notes": "Seeded transport segment connecting itinerary stops.",
+            },
+        )
+    itinerary.transports.exclude(sequence_number__in=kept_transport_sequences).delete()
+
+    return itinerary, created
+
+
 class Command(BaseCommand):
     help = "Seed the CRM with sample leisure and corporate travel requests."
 
@@ -584,6 +908,10 @@ class Command(BaseCommand):
         updated_clients = 0
         created_leads = 0
         updated_leads = 0
+        created_quotes = 0
+        updated_quotes = 0
+        created_itineraries = 0
+        updated_itineraries = 0
 
         for sample in [*LEISURE_SAMPLES, *CORPORATE_SAMPLES]:
             client_defaults = {
@@ -644,9 +972,23 @@ class Command(BaseCommand):
             else:
                 updated_leads += 1
 
+            quote, quote_created = seed_quote_for_lead(lead, sample)
+            if quote_created:
+                created_quotes += 1
+            else:
+                updated_quotes += 1
+
+            itinerary, itinerary_created = seed_itinerary_for_lead(lead, sample)
+            if itinerary_created:
+                created_itineraries += 1
+            else:
+                updated_itineraries += 1
+
         self.stdout.write(
             self.style.SUCCESS(
                 f"Seeded sample CRM data: {created_leads} leads created, {updated_leads} leads updated, "
-                f"{created_clients} clients created, {updated_clients} clients updated."
+                f"{created_clients} clients created, {updated_clients} clients updated, "
+                f"{created_quotes} quotes created, {updated_quotes} quotes updated, "
+                f"{created_itineraries} itineraries created, {updated_itineraries} itineraries updated."
             )
         )

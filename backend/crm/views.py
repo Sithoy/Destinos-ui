@@ -5,12 +5,20 @@ from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Client, Lead
+from .models import AccommodationBlock, Client, ExperienceBlock, ItineraryStop, Lead, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
 from .serializers import (
+    AccommodationBlockSerializer,
     ClientSerializer,
+    ExperienceBlockSerializer,
+    ItineraryStopSerializer,
     LeadSerializer,
     LoginSerializer,
     PublicLeadSerializer,
+    QuoteApprovalSerializer,
+    QuoteLineSerializer,
+    QuoteSerializer,
+    TransportSegmentSerializer,
+    TripItinerarySerializer,
     UserManagementSerializer,
     UserSerializer,
     can_access_crm,
@@ -110,6 +118,198 @@ class ClientViewSet(viewsets.ModelViewSet):
         if self.action in {"create", "update", "partial_update", "destroy"}:
             return [HasCrmAccess(), CanManageClients()]
         return [HasCrmAccess()]
+
+
+class QuoteViewSet(viewsets.ModelViewSet):
+    queryset = Quote.objects.prefetch_related("lines", "approvals").select_related("lead")
+    serializer_class = QuoteSerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["created_at", "updated_at", "status", "valid_until", "version"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        lead_id = self.request.query_params.get("leadId")
+        status_value = self.request.query_params.get("status")
+        quote_number = self.request.query_params.get("quoteNumber")
+
+        if lead_id:
+            queryset = queryset.filter(lead_id=lead_id)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if quote_number:
+            queryset = queryset.filter(quote_number__iexact=quote_number)
+
+        return queryset
+
+
+class QuoteLineViewSet(viewsets.ModelViewSet):
+    queryset = QuoteLine.objects.select_related("quote", "quote__lead")
+    serializer_class = QuoteLineSerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["created_at", "updated_at", "category", "status"]
+    ordering = ["category", "created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        quote_id = self.request.query_params.get("quoteId")
+        category = self.request.query_params.get("category")
+        status_value = self.request.query_params.get("status")
+
+        if quote_id:
+            queryset = queryset.filter(quote_id=quote_id)
+        if category:
+            queryset = queryset.filter(category=category)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+
+        return queryset
+
+
+class QuoteApprovalViewSet(viewsets.ModelViewSet):
+    queryset = QuoteApproval.objects.select_related("quote", "quote__lead")
+    serializer_class = QuoteApprovalSerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["created_at", "updated_at", "decision", "decision_at"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        quote_id = self.request.query_params.get("quoteId")
+        decision = self.request.query_params.get("decision")
+
+        if quote_id:
+            queryset = queryset.filter(quote_id=quote_id)
+        if decision:
+            queryset = queryset.filter(decision=decision)
+
+        return queryset
+
+
+class TripItineraryViewSet(viewsets.ModelViewSet):
+    queryset = (
+        TripItinerary.objects.select_related("lead")
+        .prefetch_related("stops", "stops__accommodations", "stops__experiences", "transports")
+    )
+    serializer_class = TripItinerarySerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["created_at", "updated_at", "start_date", "end_date", "status"]
+    ordering = ["start_date", "created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        lead_id = self.request.query_params.get("leadId")
+        status_value = self.request.query_params.get("status")
+
+        if lead_id:
+            queryset = queryset.filter(lead_id=lead_id)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+
+        return queryset
+
+
+class ItineraryStopViewSet(viewsets.ModelViewSet):
+    queryset = ItineraryStop.objects.select_related("itinerary", "itinerary__lead").prefetch_related("accommodations", "experiences")
+    serializer_class = ItineraryStopSerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["sequence_number", "arrival_date", "departure_date", "city"]
+    ordering = ["itinerary", "sequence_number"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        itinerary_id = self.request.query_params.get("itineraryId")
+        lead_id = self.request.query_params.get("leadId")
+
+        if itinerary_id:
+            queryset = queryset.filter(itinerary_id=itinerary_id)
+        if lead_id:
+            queryset = queryset.filter(itinerary__lead_id=lead_id)
+
+        return queryset
+
+
+class AccommodationBlockViewSet(viewsets.ModelViewSet):
+    queryset = AccommodationBlock.objects.select_related("stop", "stop__itinerary", "stop__itinerary__lead")
+    serializer_class = AccommodationBlockSerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["check_in", "check_out", "booking_status", "name"]
+    ordering = ["stop", "check_in", "name"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        stop_id = self.request.query_params.get("stopId")
+        itinerary_id = self.request.query_params.get("itineraryId")
+        lead_id = self.request.query_params.get("leadId")
+        booking_status = self.request.query_params.get("bookingStatus")
+
+        if stop_id:
+            queryset = queryset.filter(stop_id=stop_id)
+        if itinerary_id:
+            queryset = queryset.filter(stop__itinerary_id=itinerary_id)
+        if lead_id:
+            queryset = queryset.filter(stop__itinerary__lead_id=lead_id)
+        if booking_status:
+            queryset = queryset.filter(booking_status=booking_status)
+
+        return queryset
+
+
+class TransportSegmentViewSet(viewsets.ModelViewSet):
+    queryset = TransportSegment.objects.select_related("itinerary", "itinerary__lead")
+    serializer_class = TransportSegmentSerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["sequence_number", "departure_at", "arrival_at", "booking_status"]
+    ordering = ["itinerary", "sequence_number"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        itinerary_id = self.request.query_params.get("itineraryId")
+        lead_id = self.request.query_params.get("leadId")
+        booking_status = self.request.query_params.get("bookingStatus")
+
+        if itinerary_id:
+            queryset = queryset.filter(itinerary_id=itinerary_id)
+        if lead_id:
+            queryset = queryset.filter(itinerary__lead_id=lead_id)
+        if booking_status:
+            queryset = queryset.filter(booking_status=booking_status)
+
+        return queryset
+
+
+class ExperienceBlockViewSet(viewsets.ModelViewSet):
+    queryset = ExperienceBlock.objects.select_related("stop", "stop__itinerary", "stop__itinerary__lead")
+    serializer_class = ExperienceBlockSerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["start_at", "status", "category", "title"]
+    ordering = ["stop", "start_at", "title"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        stop_id = self.request.query_params.get("stopId")
+        itinerary_id = self.request.query_params.get("itineraryId")
+        lead_id = self.request.query_params.get("leadId")
+        status_value = self.request.query_params.get("status")
+
+        if stop_id:
+            queryset = queryset.filter(stop_id=stop_id)
+        if itinerary_id:
+            queryset = queryset.filter(stop__itinerary_id=itinerary_id)
+        if lead_id:
+            queryset = queryset.filter(stop__itinerary__lead_id=lead_id)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+
+        return queryset
 
 
 class UserViewSet(viewsets.ModelViewSet):

@@ -1,4 +1,4 @@
-import type { CrmClient, CrmLead, CrmManagedUser, CrmSession, CrmUser, InquiryKind, LeadLifecycleStage, LeadStatus } from '../types';
+import type { CrmClient, CrmLead, CrmManagedUser, CrmQuote, CrmQuoteLine, CrmSession, CrmTripItinerary, CrmUser, InquiryKind, LeadLifecycleStage, LeadStatus } from '../types';
 
 const CRM_STORAGE_KEY = 'dpm.crm.leads.v1';
 const CRM_CLIENT_STORAGE_KEY = 'dpm.crm.clients.v1';
@@ -10,6 +10,9 @@ const CRM_DEMO_VERSION_KEY = 'dpm.crm.demo.version';
 const CRM_DEMO_VERSION = 'process-v3';
 
 type CrmLeadCreateInput = Omit<CrmLead, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'emailStatus' | 'internalNotes'>;
+type CrmQuoteCreateInput = Omit<CrmQuote, 'id' | 'createdAt' | 'updatedAt' | 'leadName' | 'subtotalCost' | 'subtotalSell' | 'margin' | 'lines' | 'approvals'>;
+type CrmQuoteLineCreateInput = Omit<CrmQuoteLine, 'id' | 'createdAt' | 'updatedAt' | 'totalCost' | 'totalSell' | 'margin'>;
+type CrmQuoteLineUpdateInput = Partial<Omit<CrmQuoteLine, 'id' | 'createdAt' | 'updatedAt' | 'quoteId' | 'totalCost' | 'totalSell' | 'margin'>>;
 type CrmClientCreateInput = Omit<CrmClient, 'id' | 'createdAt' | 'updatedAt' | 'lastRequestAt' | 'activeRequestCount'>;
 type CrmManagedUserInput = {
   username: string;
@@ -773,6 +776,84 @@ export async function fetchCrmUsers(session?: CrmSession | null): Promise<CrmMan
   return parseApiResponse<CrmManagedUser[]>(
     await fetch(`${base}/api/users/`, {
       headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function fetchCrmQuotes(session?: CrmSession | null, leadId?: string): Promise<CrmQuote[]> {
+  const base = crmApiBase();
+  if (!base || !session?.token) return [];
+
+  const params = new URLSearchParams();
+  if (leadId) params.set('leadId', leadId);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+
+  return parseApiResponse<CrmQuote[]>(
+    await fetch(`${base}/api/quotes/${suffix}`, {
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function fetchCrmTripItineraries(session?: CrmSession | null, leadId?: string): Promise<CrmTripItinerary[]> {
+  const base = crmApiBase();
+  if (!base || !session?.token) return [];
+
+  const params = new URLSearchParams();
+  if (leadId) params.set('leadId', leadId);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+
+  return parseApiResponse<CrmTripItinerary[]>(
+    await fetch(`${base}/api/trip-itineraries/${suffix}`, {
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function createCrmQuoteRecord(input: CrmQuoteCreateInput, session?: CrmSession | null): Promise<CrmQuote> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for quote creation.');
+
+  return parseApiResponse<CrmQuote>(
+    await fetch(`${base}/api/quotes/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCrmQuoteLineRecord(input: CrmQuoteLineCreateInput, session?: CrmSession | null): Promise<CrmQuoteLine> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for quote line creation.');
+
+  return parseApiResponse<CrmQuoteLine>(
+    await fetch(`${base}/api/quote-lines/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCrmQuoteLineRecord(id: string, patch: CrmQuoteLineUpdateInput, session?: CrmSession | null): Promise<CrmQuoteLine> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for quote line updates.');
+
+  return parseApiResponse<CrmQuoteLine>(
+    await fetch(`${base}/api/quote-lines/${id}/`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(patch),
     }),
   );
 }

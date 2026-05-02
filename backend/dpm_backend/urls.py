@@ -3,12 +3,20 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from ctm.views import BillingInvoiceReportView, BillingPaymentReportView, BillingSummaryReportView, CompanyUserViewSet, CorporatePortalContextView, CtmAuthLoginView, CtmAuthLogoutView, CtmAuthMeView, ItineraryViewSet, TravelerViewSet, TripBookingView, TripDocumentDetailView, TripDocumentListView, TripInvoiceView, TripMessageListView, TripPaymentDetailView, TripPaymentListView, TripQuoteView, TripRequestViewSet, TripTaskDetailView, TripTaskListView
-from crm.views import AuthLoginView, AuthLogoutView, AuthMeView, ClientViewSet, LeadViewSet, PublicLeadCreateView, UserViewSet
+from crm.views import AccommodationBlockViewSet, AuthLoginView, AuthLogoutView, AuthMeView, ClientViewSet, ExperienceBlockViewSet, ItineraryStopViewSet, LeadViewSet, PublicLeadCreateView, QuoteApprovalViewSet, QuoteLineViewSet, QuoteViewSet, TransportSegmentViewSet, TripItineraryViewSet, UserViewSet
 
 router = DefaultRouter()
 router.register("leads", LeadViewSet, basename="lead")
 router.register("clients", ClientViewSet, basename="client")
 router.register("users", UserViewSet, basename="user")
+router.register("quotes", QuoteViewSet, basename="quote")
+router.register("quote-lines", QuoteLineViewSet, basename="quote-line")
+router.register("quote-approvals", QuoteApprovalViewSet, basename="quote-approval")
+router.register("trip-itineraries", TripItineraryViewSet, basename="trip-itinerary")
+router.register("itinerary-stops", ItineraryStopViewSet, basename="itinerary-stop")
+router.register("accommodation-blocks", AccommodationBlockViewSet, basename="accommodation-block")
+router.register("transport-segments", TransportSegmentViewSet, basename="transport-segment")
+router.register("experience-blocks", ExperienceBlockViewSet, basename="experience-block")
 router.register("ctm/trip-requests", TripRequestViewSet, basename="ctm-trip-request")
 router.register("ctm/travelers", TravelerViewSet, basename="ctm-traveler")
 router.register("ctm/itineraries", ItineraryViewSet, basename="ctm-itinerary")

@@ -115,3 +115,324 @@ class Lead(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} - {self.destination or self.service}"
+
+
+class Quote(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SENT = "sent", "Sent"
+        ACCEPTED = "accepted", "Accepted"
+        REVISION_REQUESTED = "revision_requested", "Revision Requested"
+        REJECTED = "rejected", "Rejected"
+        EXPIRED = "expired", "Expired"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    lead = models.ForeignKey(Lead, related_name="quotes", on_delete=models.CASCADE)
+    quote_number = models.CharField(max_length=40, unique=True)
+    version = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.DRAFT)
+    currency = models.CharField(max_length=3, default="USD")
+    valid_until = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["lead", "status"]),
+            models.Index(fields=["quote_number"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["lead", "version"], name="unique_quote_version_per_lead"),
+        ]
+
+    @property
+    def subtotal_cost(self):
+        return sum(line.total_cost for line in self.lines.all())
+
+    @property
+    def subtotal_sell(self):
+        return sum(line.total_sell for line in self.lines.all())
+
+    @property
+    def margin(self):
+        return self.subtotal_sell - self.subtotal_cost
+
+    def __str__(self) -> str:
+        return f"{self.quote_number} v{self.version}"
+
+
+class QuoteLine(models.Model):
+    class Category(models.TextChoices):
+        FLIGHT = "flight", "Flight"
+        HOTEL = "hotel", "Hotel"
+        TRANSFER = "transfer", "Transfer"
+        VISA = "visa", "Visa"
+        ACTIVITY = "activity", "Activity"
+        INSURANCE = "insurance", "Insurance"
+        SERVICE_FEE = "service_fee", "Service Fee"
+        OTHER = "other", "Other"
+
+    class Status(models.TextChoices):
+        RESEARCH = "research", "Research"
+        QUOTED = "quoted", "Quoted"
+        HELD = "held", "Held"
+        CONFIRMED = "confirmed", "Confirmed"
+        UNAVAILABLE = "unavailable", "Unavailable"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    quote = models.ForeignKey(Quote, related_name="lines", on_delete=models.CASCADE)
+    category = models.CharField(max_length=30, choices=Category.choices)
+    supplier = models.CharField(max_length=180, blank=True)
+    description = models.CharField(max_length=255)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=1)
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    unit_sell = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.RESEARCH)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["category", "created_at"]
+        indexes = [
+            models.Index(fields=["quote", "category"]),
+            models.Index(fields=["status"]),
+        ]
+
+    @property
+    def total_cost(self):
+        return self.quantity * self.unit_cost
+
+    @property
+    def total_sell(self):
+        return self.quantity * self.unit_sell
+
+    @property
+    def margin(self):
+        return self.total_sell - self.total_cost
+
+    def __str__(self) -> str:
+        return f"{self.get_category_display()} - {self.description}"
+
+
+class QuoteApproval(models.Model):
+    class Decision(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        CHANGES_REQUESTED = "changes_requested", "Changes Requested"
+        REJECTED = "rejected", "Rejected"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    quote = models.ForeignKey(Quote, related_name="approvals", on_delete=models.CASCADE)
+    approver_name = models.CharField(max_length=180)
+    approver_email = models.EmailField(blank=True)
+    decision = models.CharField(max_length=30, choices=Decision.choices, default=Decision.PENDING)
+    decision_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["quote", "decision"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.approver_name} - {self.get_decision_display()}"
+
+
+class TripItinerary(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        PROPOSED = "proposed", "Proposed"
+        CONFIRMED = "confirmed", "Confirmed"
+        IN_TRAVEL = "in_travel", "In Travel"
+        COMPLETED = "completed", "Completed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    lead = models.ForeignKey(Lead, related_name="itineraries", on_delete=models.CASCADE)
+    title = models.CharField(max_length=180)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["lead", "start_date", "created_at"]
+        indexes = [
+            models.Index(fields=["lead", "status"]),
+            models.Index(fields=["start_date", "end_date"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class ItineraryStop(models.Model):
+    class Purpose(models.TextChoices):
+        LEISURE = "leisure", "Leisure"
+        BUSINESS = "business", "Business"
+        TRANSIT = "transit", "Transit"
+        EVENT = "event", "Event"
+        EXTENSION = "extension", "Extension"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    itinerary = models.ForeignKey(TripItinerary, related_name="stops", on_delete=models.CASCADE)
+    sequence_number = models.PositiveIntegerField()
+    city = models.CharField(max_length=140)
+    country = models.CharField(max_length=140, blank=True)
+    arrival_date = models.DateField(null=True, blank=True)
+    departure_date = models.DateField(null=True, blank=True)
+    nights = models.PositiveIntegerField(default=0)
+    purpose = models.CharField(max_length=20, choices=Purpose.choices, default=Purpose.LEISURE)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["itinerary", "sequence_number"]
+        indexes = [
+            models.Index(fields=["itinerary", "sequence_number"]),
+            models.Index(fields=["city", "country"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["itinerary", "sequence_number"], name="unique_stop_sequence_per_itinerary"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.sequence_number}. {self.city}"
+
+
+class AccommodationBlock(models.Model):
+    class AccommodationType(models.TextChoices):
+        HOTEL = "hotel", "Hotel"
+        RESORT = "resort", "Resort"
+        LODGE = "lodge", "Lodge"
+        VILLA = "villa", "Villa"
+        APARTMENT = "apartment", "Apartment"
+        CAMP = "camp", "Camp"
+        CRUISE = "cruise", "Cruise"
+        OTHER = "other", "Other"
+
+    class BookingStatus(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        QUOTED = "quoted", "Quoted"
+        HELD = "held", "Held"
+        CONFIRMED = "confirmed", "Confirmed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    stop = models.ForeignKey(ItineraryStop, related_name="accommodations", on_delete=models.CASCADE)
+    name = models.CharField(max_length=180)
+    accommodation_type = models.CharField(max_length=20, choices=AccommodationType.choices, default=AccommodationType.HOTEL)
+    room_type = models.CharField(max_length=160, blank=True)
+    board_basis = models.CharField(max_length=120, blank=True)
+    check_in = models.DateField(null=True, blank=True)
+    check_out = models.DateField(null=True, blank=True)
+    rooms = models.PositiveIntegerField(default=1)
+    supplier = models.CharField(max_length=180, blank=True)
+    booking_status = models.CharField(max_length=20, choices=BookingStatus.choices, default=BookingStatus.DRAFT)
+    confirmation_reference = models.CharField(max_length=120, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["stop", "check_in", "name"]
+        indexes = [
+            models.Index(fields=["stop", "booking_status"]),
+            models.Index(fields=["name"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class TransportSegment(models.Model):
+    class Mode(models.TextChoices):
+        FLIGHT = "flight", "Flight"
+        TRAIN = "train", "Train"
+        CAR = "car", "Car"
+        FERRY = "ferry", "Ferry"
+        TRANSFER = "transfer", "Transfer"
+        OTHER = "other", "Other"
+
+    class BookingStatus(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        QUOTED = "quoted", "Quoted"
+        HELD = "held", "Held"
+        CONFIRMED = "confirmed", "Confirmed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    itinerary = models.ForeignKey(TripItinerary, related_name="transports", on_delete=models.CASCADE)
+    sequence_number = models.PositiveIntegerField()
+    mode = models.CharField(max_length=20, choices=Mode.choices, default=Mode.FLIGHT)
+    from_city = models.CharField(max_length=140)
+    to_city = models.CharField(max_length=140)
+    departure_at = models.DateTimeField(null=True, blank=True)
+    arrival_at = models.DateTimeField(null=True, blank=True)
+    supplier = models.CharField(max_length=180, blank=True)
+    booking_status = models.CharField(max_length=20, choices=BookingStatus.choices, default=BookingStatus.DRAFT)
+    reference = models.CharField(max_length=120, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["itinerary", "sequence_number"]
+        indexes = [
+            models.Index(fields=["itinerary", "sequence_number"]),
+            models.Index(fields=["booking_status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["itinerary", "sequence_number"], name="unique_transport_sequence_per_itinerary"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_mode_display()}: {self.from_city} to {self.to_city}"
+
+
+class ExperienceBlock(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        QUOTED = "quoted", "Quoted"
+        HELD = "held", "Held"
+        CONFIRMED = "confirmed", "Confirmed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    stop = models.ForeignKey(ItineraryStop, related_name="experiences", on_delete=models.CASCADE)
+    title = models.CharField(max_length=180)
+    category = models.CharField(max_length=120, blank=True)
+    start_at = models.DateTimeField(null=True, blank=True)
+    supplier = models.CharField(max_length=180, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["stop", "start_at", "title"]
+        indexes = [
+            models.Index(fields=["stop", "status"]),
+            models.Index(fields=["category"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.title

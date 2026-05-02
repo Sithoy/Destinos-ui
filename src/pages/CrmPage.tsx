@@ -36,12 +36,16 @@ import {
   CRM_AUTH_EVENT,
   CRM_CLIENT_EVENT,
   createCrmLeadRecord,
+  createCrmQuoteRecord,
+  createCrmQuoteLineRecord,
   createCrmClientRecord,
   createCrmUserRecord,
   emptyClientRegistration,
   fetchCrmCurrentUser,
   fetchCrmLeads,
   fetchCrmClients,
+  fetchCrmQuotes,
+  fetchCrmTripItineraries,
   fetchCrmUsers,
   hasCrmApi,
   loginCrm,
@@ -51,12 +55,13 @@ import {
   readCrmSession,
   saveCrmSession,
   updateCrmLeadRecord,
+  updateCrmQuoteLineRecord,
   updateCrmClientRecord,
   updateCrmUserRecord,
 } from '../data/crm';
 import { classicLogo } from '../data/travel';
 import { BrandLockup } from '../components/ui';
-import type { CrmClient, CrmLead, CrmManagedUser, CrmRole, CrmSession, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus } from '../types';
+import type { CrmClient, CrmLead, CrmManagedUser, CrmQuote, CrmQuoteLine, CrmRole, CrmSession, CrmTripItinerary, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus, QuoteLineCategory, QuoteLineStatus } from '../types';
 
 type LeadTypeFilter = 'all' | InquiryKind;
 type StatusFilter = 'all' | LeadStatus | 'confirmedGroup' | 'workflowGroup';
@@ -92,6 +97,17 @@ type UserFormState = {
   role: Extract<CrmRole, 'admin' | 'manager' | 'agent' | 'viewer'>;
   isActive: boolean;
   password: string;
+};
+
+type QuoteLineDraft = {
+  category: QuoteLineCategory;
+  supplier: string;
+  description: string;
+  quantity: string;
+  unitCost: string;
+  unitSell: string;
+  status: QuoteLineStatus;
+  notes: string;
 };
 
 type ProcessTask = {
@@ -144,6 +160,8 @@ type ItineraryStop = {
   room: string;
   focus: string;
   note: string;
+  dates?: string;
+  status?: string;
 };
 
 type ItineraryExperience = {
@@ -151,6 +169,7 @@ type ItineraryExperience = {
   category: string;
   timing: string;
   note: string;
+  status?: string;
 };
 
 type LeisureWorkbenchRow = {
@@ -259,6 +278,60 @@ const priorityLabels: Record<LeadPriority, string> = {
   high: 'High',
   urgent: 'Urgent',
 };
+
+const quoteStatusLabels: Record<CrmQuote['status'], string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  accepted: 'Accepted',
+  revision_requested: 'Revision Requested',
+  rejected: 'Rejected',
+  expired: 'Expired',
+};
+
+const quoteApprovalLabels: Record<CrmQuote['approvals'][number]['decision'], string> = {
+  pending: 'Pending',
+  approved: 'Approved',
+  changes_requested: 'Changes Requested',
+  rejected: 'Rejected',
+};
+
+const quoteLineCategoryLabels: Record<QuoteLineCategory, string> = {
+  flight: 'Flight',
+  hotel: 'Hotel',
+  transfer: 'Transfer',
+  visa: 'Visa',
+  activity: 'Activity',
+  insurance: 'Insurance',
+  service_fee: 'Service Fee',
+  other: 'Other',
+};
+
+const quoteLineStatusLabels: Record<QuoteLineStatus, string> = {
+  research: 'Research',
+  quoted: 'Quoted',
+  held: 'Held',
+  confirmed: 'Confirmed',
+  unavailable: 'Unavailable',
+};
+
+const itineraryStatusLabels: Record<CrmTripItinerary['status'], string> = {
+  draft: 'Draft',
+  proposed: 'Proposed',
+  confirmed: 'Confirmed',
+  in_travel: 'In Travel',
+  completed: 'Completed',
+};
+
+const itineraryBookingStatusLabels = {
+  draft: 'Draft',
+  quoted: 'Quoted',
+  held: 'Held',
+  confirmed: 'Confirmed',
+  cancelled: 'Cancelled',
+} as const;
+
+const quoteLineCategories = Object.keys(quoteLineCategoryLabels) as QuoteLineCategory[];
+const quoteLineStatuses = Object.keys(quoteLineStatusLabels) as QuoteLineStatus[];
 
 const typeLabels: Record<LeadTypeFilter, string> = {
   all: 'All',
@@ -433,6 +506,7 @@ const navItems: Array<{ id: CrmNavId; label: string; Icon: LucideIcon }> = [
 
 const leisureWorkbenchTabs: Array<{ id: DetailTab; label: string; Icon: LucideIcon }> = [
   { id: 'brief', label: 'Brief', Icon: ClipboardCheck },
+  { id: 'itinerary', label: 'Itinerary', Icon: CalendarDays },
   { id: 'research', label: 'Research', Icon: Search },
   { id: 'costing', label: 'Costing', Icon: FileText },
   { id: 'package', label: 'Package', Icon: Sparkles },
@@ -446,7 +520,7 @@ const corporateWorkbenchTabs: Array<{ id: DetailTab; label: string; Icon: Lucide
   { id: 'approvals', label: 'Approvals', Icon: Shield },
   { id: 'finance', label: 'Finance', Icon: FileText },
   { id: 'documents', label: 'Documents', Icon: ClipboardCheck },
-  { id: 'itinerary', label: 'Booking Release', Icon: Briefcase },
+  { id: 'itinerary', label: 'Itinerary', Icon: Briefcase },
   { id: 'history', label: 'Fulfilment', Icon: CheckSquare },
 ];
 
@@ -548,6 +622,30 @@ function formatDate(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
+}
+
+function formatDateOnly(value?: string | null) {
+  if (!value) return 'Date pending';
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(value));
+}
+
+function formatDateRange(start?: string | null, end?: string | null) {
+  if (!start && !end) return 'Dates pending';
+  if (!end) return formatDateOnly(start);
+  return `${formatDateOnly(start)} - ${formatDateOnly(end)}`;
+}
+
+function moneyValue(value: string | number | null | undefined, currency = 'USD') {
+  const numeric = Number(value ?? 0);
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(numeric) ? numeric : 0);
 }
 
 function csvEscape(value: unknown) {
@@ -962,8 +1060,19 @@ function leftRailStatusCards(lead: CrmLead): InfoCard[] {
   ];
 }
 
-function itinerarySummaryCards(lead: CrmLead): InfoCard[] {
+function itinerarySummaryCards(lead: CrmLead, itinerary?: CrmTripItinerary | null): InfoCard[] {
   const travelerCount = travelerCountValue(lead) || 2;
+  if (itinerary) {
+    const hotelCount = itinerary.stops.reduce((count, stop) => count + stop.accommodations.length, 0);
+    const experienceCount = itinerary.stops.reduce((count, stop) => count + stop.experiences.length, 0);
+    return [
+      { label: 'Journey shape', value: itinerary.title, meta: `${itinerary.stops.length} stops from ${formatDateRange(itinerary.startDate, itinerary.endDate)}.` },
+      { label: 'Stay plan', value: `${hotelCount} accommodation blocks`, meta: `${itinerary.transports.length} transport segments controlled in one itinerary.` },
+      { label: 'Room posture', value: itinerary.stops.flatMap((stop) => stop.accommodations).find(Boolean)?.roomType || 'Room setup pending', meta: `${travelerCount} travelers. Status: ${itineraryStatusLabels[itinerary.status]}.` },
+      { label: 'Experience layer', value: `${experienceCount} planned activities`, meta: itinerary.notes || 'Experience and operating notes are linked to each city stop.' },
+    ];
+  }
+
   return isCorporateLead(lead)
     ? [
         { label: 'Movement shape', value: 'Multi-stop corporate movement', meta: `${travelerCount} travelers across one controlled operating brief.` },
@@ -1052,6 +1161,38 @@ function itineraryExperiences(lead: CrmLead): ItineraryExperience[] {
         { title: lead.serviceKey === 'luxury' ? 'Wellness / sunset / curated dining moment' : 'Easy leisure excursion', category: 'Experience', timing: 'Second day', note: 'Use this block to make the proposal feel lived-in, not generic.' },
         { title: 'Departure-day support', category: 'Service', timing: 'Final day', note: 'Transfers, check-out timing, and baggage flow should be visible in the itinerary.' },
       ];
+}
+
+function itineraryStopsFromBackend(itinerary: CrmTripItinerary): ItineraryStop[] {
+  return [...itinerary.stops]
+    .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+    .map((stop) => {
+      const accommodation = stop.accommodations[0];
+      return {
+        city: [stop.city, stop.country].filter(Boolean).join(', '),
+        nights: `${stop.nights} ${stop.nights === 1 ? 'night' : 'nights'}`,
+        stay: accommodation?.name || 'Accommodation pending',
+        room: accommodation?.roomType || 'Room setup pending',
+        focus: stop.purpose.charAt(0).toUpperCase() + stop.purpose.slice(1),
+        note: stop.notes || accommodation?.notes || 'No operating note yet.',
+        dates: formatDateRange(stop.arrivalDate, stop.departureDate),
+        status: accommodation ? itineraryBookingStatusLabels[accommodation.bookingStatus] : 'Pending',
+      };
+    });
+}
+
+function itineraryExperiencesFromBackend(itinerary: CrmTripItinerary): ItineraryExperience[] {
+  return itinerary.stops
+    .flatMap((stop) =>
+      stop.experiences.map((experience) => ({
+        title: experience.title,
+        category: [stop.city, experience.category].filter(Boolean).join(' - '),
+        timing: experience.startAt ? formatDateOnly(experience.startAt) : 'Timing pending',
+        note: experience.notes || 'No experience note yet.',
+        status: itineraryBookingStatusLabels[experience.status],
+      })),
+    )
+    .sort((a, b) => a.timing.localeCompare(b.timing));
 }
 
 function leisureWorkbenchRows(lead: CrmLead): LeisureWorkbenchRow[] {
@@ -1313,11 +1454,26 @@ function emptyUserForm(): UserFormState {
   };
 }
 
+function emptyQuoteLineDraft(): QuoteLineDraft {
+  return {
+    category: 'flight',
+    supplier: '',
+    description: '',
+    quantity: '1',
+    unitCost: '0.00',
+    unitSell: '0.00',
+    status: 'research',
+    notes: '',
+  };
+}
+
 export function CrmPage() {
   const apiEnabled = hasCrmApi();
   const [crmSession, setCrmSession] = useState<CrmSession | null>(() => readCrmSession());
   const [leads, setLeads] = useState<CrmLead[]>(() => (apiEnabled ? [] : readCrmLeads()));
   const [clients, setClients] = useState<CrmClient[]>([]);
+  const [quotes, setQuotes] = useState<CrmQuote[]>([]);
+  const [tripItineraries, setTripItineraries] = useState<CrmTripItinerary[]>([]);
   const [crmUsers, setCrmUsers] = useState<CrmManagedUser[]>([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [crmError, setCrmError] = useState('');
@@ -1344,6 +1500,7 @@ export function CrmPage() {
   const [showUserManagementModal, setShowUserManagementModal] = useState(false);
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [userForm, setUserForm] = useState<UserFormState>(() => emptyUserForm());
+  const [quoteLineDraft, setQuoteLineDraft] = useState<QuoteLineDraft>(() => emptyQuoteLineDraft());
   const styles = themeStyles[theme];
 
   useEffect(() => {
@@ -1371,11 +1528,15 @@ export function CrmPage() {
       Promise.all([
         fetchCrmLeads(crmSession),
         fetchCrmClients(crmSession),
+        fetchCrmQuotes(crmSession),
+        fetchCrmTripItineraries(crmSession),
         canManageUsers(crmSession?.user) ? fetchCrmUsers(crmSession) : Promise.resolve([]),
       ])
-        .then(([nextLeads, nextClients, nextUsers]) => {
+        .then(([nextLeads, nextClients, nextQuotes, nextItineraries, nextUsers]) => {
           setLeads(nextLeads);
           setClients(nextClients);
+          setQuotes(nextQuotes);
+          setTripItineraries(nextItineraries);
           setCrmUsers(nextUsers);
           setCrmError('');
         })
@@ -1539,6 +1700,10 @@ export function CrmPage() {
   const pageUsers = filteredUsers.slice(pageStart, pageStart + PAGE_SIZE);
   const selectedLead = leadSource.find((lead) => lead.id === selectedLeadId) ?? pageLeads[0] ?? leadSource[0] ?? null;
   const selectedClient = filteredClients.find((client) => client.id === selectedClientId) ?? pageClients[0] ?? filteredClients[0] ?? null;
+  const selectedQuotes = selectedLead ? quotes.filter((quote) => quote.leadId === selectedLead.id).sort((a, b) => b.version - a.version) : [];
+  const selectedQuote = selectedQuotes[0] ?? null;
+  const selectedItineraries = selectedLead ? tripItineraries.filter((itinerary) => itinerary.leadId === selectedLead.id).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) : [];
+  const selectedItinerary = selectedItineraries[0] ?? null;
   const selectedProcess = selectedLead ? processForLead(selectedLead) : null;
   const selectedDetailTabs = useMemo(() => {
     if (!selectedLead) return [];
@@ -1549,9 +1714,9 @@ export function CrmPage() {
   const selectedTasks = selectedLead ? leadTasks(selectedLead) : [];
   const selectedHistory = selectedLead ? workflowHistory(selectedLead) : [];
   const selectedStatusCards = selectedLead ? leftRailStatusCards(selectedLead) : [];
-  const selectedItinerarySummary = selectedLead ? itinerarySummaryCards(selectedLead) : [];
-  const selectedItineraryStops = selectedLead ? itineraryStops(selectedLead) : [];
-  const selectedItineraryExperiences = selectedLead ? itineraryExperiences(selectedLead) : [];
+  const selectedItinerarySummary = selectedLead ? itinerarySummaryCards(selectedLead, selectedItinerary) : [];
+  const selectedItineraryStops = selectedItinerary ? itineraryStopsFromBackend(selectedItinerary) : selectedLead ? itineraryStops(selectedLead) : [];
+  const selectedItineraryExperiences = selectedItinerary ? itineraryExperiencesFromBackend(selectedItinerary) : selectedLead ? itineraryExperiences(selectedLead) : [];
   const selectedLeisureRows = selectedLead ? leisureWorkbenchRows(selectedLead) : [];
   const selectedLeisurePackages = selectedLead ? leisurePackageOptions(selectedLead) : [];
   const managerMeta = selectedLead ? extractManagerBoardMeta(selectedLead.internalNotes) : null;
@@ -1735,6 +1900,12 @@ export function CrmPage() {
     return nextUsers;
   }
 
+  async function reloadQuotes() {
+    const nextQuotes = await fetchCrmQuotes(crmSession);
+    setQuotes(nextQuotes);
+    return nextQuotes;
+  }
+
   async function refreshLead(id: string, patch: Partial<Pick<CrmLead, 'status' | 'lifecycleStage' | 'priority' | 'internalNotes'>>) {
     try {
       const updatedLead = await updateCrmLeadRecord(id, patch, crmSession);
@@ -1756,6 +1927,31 @@ export function CrmPage() {
       lifecycleStage: nextStage,
       status: lifecycleStageToStatus[nextStage],
     });
+  }
+
+  async function createDraftQuoteForLead(lead: CrmLead) {
+    try {
+      const quote = await createCrmQuoteRecord(
+        {
+          leadId: lead.id,
+          quoteNumber: `DPM-Q-${lead.id.slice(0, 8).toUpperCase()}`,
+          version: Math.max(1, quotes.filter((item) => item.leadId === lead.id).length + 1),
+          status: 'draft',
+          currency: 'USD',
+          validUntil: null,
+          notes: `Draft quote for ${lead.destination || lead.service}.`,
+          sentAt: null,
+          acceptedAt: null,
+        },
+        crmSession,
+      );
+      await reloadQuotes();
+      setCrmError('');
+      return quote;
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not create quote.');
+      return null;
+    }
   }
 
   async function refreshClient(id: string, patch: Partial<Pick<CrmClient, 'notes' | 'owner' | 'preferredContact'>>) {
@@ -1914,6 +2110,49 @@ export function CrmPage() {
 
   function updateUserField<K extends keyof UserFormState>(field: K, value: UserFormState[K]) {
     setUserForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateQuoteLineDraft<K extends keyof QuoteLineDraft>(field: K, value: QuoteLineDraft[K]) {
+    setQuoteLineDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  async function saveQuoteLine(line: CrmQuoteLine, patch: Partial<Pick<CrmQuoteLine, 'category' | 'supplier' | 'description' | 'quantity' | 'unitCost' | 'unitSell' | 'status' | 'notes'>>) {
+    try {
+      await updateCrmQuoteLineRecord(line.id, patch, crmSession);
+      await reloadQuotes();
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not update quote line.');
+    }
+  }
+
+  async function submitQuoteLine(quote: CrmQuote) {
+    if (!quoteLineDraft.description.trim()) {
+      setCrmError('Quote line description is required.');
+      return;
+    }
+
+    try {
+      await createCrmQuoteLineRecord(
+        {
+          quoteId: quote.id,
+          category: quoteLineDraft.category,
+          supplier: quoteLineDraft.supplier,
+          description: quoteLineDraft.description,
+          quantity: quoteLineDraft.quantity || '1',
+          unitCost: quoteLineDraft.unitCost || '0.00',
+          unitSell: quoteLineDraft.unitSell || '0.00',
+          status: quoteLineDraft.status,
+          notes: quoteLineDraft.notes,
+        },
+        crmSession,
+      );
+      setQuoteLineDraft(emptyQuoteLineDraft());
+      await reloadQuotes();
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not add quote line.');
+    }
   }
 
   async function submitManualRequest(event: React.FormEvent<HTMLFormElement>) {
@@ -3211,6 +3450,22 @@ export function CrmPage() {
                         <div className={`mt-2 text-sm ${styles.soft}`}>
                           Keep traveler readiness, approval ownership, finance clearance, documents, and booking release visible in one operating view.
                         </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {selectedQuote ? (
+                            <>
+                              <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedQuote.quoteNumber} v{selectedQuote.version}</span>
+                              <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{quoteStatusLabels[selectedQuote.status]}</span>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => createDraftQuoteForLead(selectedLead)}
+                              className={`inline-flex h-8 items-center rounded-lg px-3 text-xs ${styles.buttonGhost}`}
+                            >
+                              Create draft quote
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-3 gap-2 text-right">
@@ -3242,8 +3497,8 @@ export function CrmPage() {
                       </div>
                       <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                         <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Finance</div>
-                        <div className="mt-1 text-sm font-semibold">{selectedLead.budget || 'Budget / PO pending'}</div>
-                        <div className={`mt-1 text-xs ${styles.muted}`}>Invoice-aware release</div>
+                        <div className="mt-1 text-sm font-semibold">{selectedQuote ? moneyValue(selectedQuote.subtotalSell, selectedQuote.currency) : selectedLead.budget || 'Budget / PO pending'}</div>
+                        <div className={`mt-1 text-xs ${styles.muted}`}>{selectedQuote ? `${quoteStatusLabels[selectedQuote.status]} quote` : 'Invoice-aware release'}</div>
                       </div>
                       <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                         <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Bottleneck</div>
@@ -3358,19 +3613,35 @@ export function CrmPage() {
 
                     {detailTab === 'itinerary' ? (
                       <div className="grid gap-4">
-                        <div className="grid gap-3 md:grid-cols-3">
-                          {bookings.map((booking) => (
-                            <div key={booking.reference} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="font-semibold">{booking.service}</div>
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{booking.status}</span>
+                        {selectedQuote ? (
+                          <div className="grid gap-3 md:grid-cols-3">
+                            {selectedQuote.lines.map((line) => (
+                              <div key={line.id} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="font-semibold">{line.description}</div>
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{line.status}</span>
+                                </div>
+                                <div className={`mt-2 text-sm ${styles.muted}`}>{line.supplier || line.category}</div>
+                                <div className="mt-3 text-xs font-semibold text-[#d9b46f]">{selectedQuote.quoteNumber}</div>
+                                <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>Sell value: {moneyValue(line.totalSell, selectedQuote.currency)}</p>
                               </div>
-                              <div className={`mt-2 text-sm ${styles.muted}`}>{booking.supplier}</div>
-                              <div className="mt-3 text-xs font-semibold text-[#d9b46f]">{booking.reference}</div>
-                              <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{booking.note}</p>
-                            </div>
-                          ))}
-                        </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="grid gap-3 md:grid-cols-3">
+                            {bookings.map((booking) => (
+                              <div key={booking.reference} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="font-semibold">{booking.service}</div>
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{booking.status}</span>
+                                </div>
+                                <div className={`mt-2 text-sm ${styles.muted}`}>{booking.supplier}</div>
+                                <div className="mt-3 text-xs font-semibold text-[#d9b46f]">{booking.reference}</div>
+                                <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{booking.note}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                           <div className="font-semibold">Booking release rule</div>
                           <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
@@ -3457,13 +3728,19 @@ export function CrmPage() {
           ) : activeNav === 'leisureStudio' ? (
             selectedLead ? (() => {
               const currentWorkbenchIndex = leisureWorkbenchTabs.findIndex((tab) => tab.id === detailTab);
-              const pricing = selectedLeisureRows.reduce(
+              const fallbackPricing = selectedLeisureRows.reduce(
                 (totals, row) => ({
                   cost: totals.cost + row.cost,
                   sell: totals.sell + row.sell,
                 }),
                 { cost: 0, sell: 0 },
               );
+              const pricing = selectedQuote
+                ? {
+                    cost: Number(selectedQuote.subtotalCost),
+                    sell: Number(selectedQuote.subtotalSell),
+                  }
+                : fallbackPricing;
               const margin = pricing.sell - pricing.cost;
               const marginPercent = pricing.sell > 0 ? Math.round((margin / pricing.sell) * 100) : 0;
               const currentWorkbenchLabel =
@@ -3488,6 +3765,22 @@ export function CrmPage() {
                           </div>
                           <div className={`mt-2 text-sm ${styles.soft}`}>
                             {selectedLead.serviceKey === 'luxury' ? 'High-touch leisure design with premium service framing.' : 'Balanced leisure design focused on clarity, fit, and smooth delivery.'}
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {selectedQuote ? (
+                              <>
+                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedQuote.quoteNumber} v{selectedQuote.version}</span>
+                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{quoteStatusLabels[selectedQuote.status]}</span>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => createDraftQuoteForLead(selectedLead)}
+                                className={`inline-flex h-8 items-center rounded-lg px-3 text-xs ${styles.buttonGhost}`}
+                              >
+                                Create draft quote
+                              </button>
+                            )}
                           </div>
                           <button
                             type="button"
@@ -3737,30 +4030,74 @@ export function CrmPage() {
                       {detailTab === 'costing' ? (
                         <div className="grid gap-4">
                           <div className={`overflow-hidden rounded-xl border ${styles.panelSoft}`}>
-                            <div className={`grid grid-cols-[1.1fr_1fr_110px_110px_110px] gap-4 border-b px-4 py-3 text-xs uppercase tracking-[0.14em] ${styles.tableHead}`}>
-                              <div>Service</div>
+                            <div className={`grid grid-cols-[130px_1.1fr_1fr_90px_110px_110px_100px] gap-3 border-b px-4 py-3 text-xs uppercase tracking-[0.14em] ${styles.tableHead}`}>
+                              <div>Category</div>
+                              <div>Description</div>
                               <div>Supplier</div>
+                              <div>Qty</div>
                               <div>Cost</div>
                               <div>Sell</div>
-                              <div>Margin</div>
+                              <div>Status</div>
                             </div>
-                            {selectedLeisureRows.map((row) => (
-                              <div key={row.service} className={`grid grid-cols-[1.1fr_1fr_110px_110px_110px] gap-4 border-b px-4 py-4 text-sm ${styles.panel}`}>
-                                <div className="font-semibold">{row.service}</div>
-                                <div className={styles.soft}>{row.supplier}</div>
-                                <div>${row.cost.toLocaleString()}</div>
-                                <div className="text-emerald-300">${row.sell.toLocaleString()}</div>
-                                <div className="text-fuchsia-300">${(row.sell - row.cost).toLocaleString()}</div>
+                            {selectedQuote
+                              ? selectedQuote.lines.map((line) => (
+                                  <div key={line.id} className={`grid grid-cols-[130px_1.1fr_1fr_90px_110px_110px_100px] gap-3 border-b px-4 py-3 text-sm ${styles.panel}`}>
+                                    <select value={line.category} onChange={(event) => saveQuoteLine(line, { category: event.target.value as QuoteLineCategory })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                      {quoteLineCategories.map((category) => (
+                                        <option key={category} value={category}>{quoteLineCategoryLabels[category]}</option>
+                                      ))}
+                                    </select>
+                                    <input value={line.description} onChange={(event) => saveQuoteLine(line, { description: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                    <input value={line.supplier} onChange={(event) => saveQuoteLine(line, { supplier: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                    <input value={line.quantity} onChange={(event) => saveQuoteLine(line, { quantity: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                    <input value={line.unitCost} onChange={(event) => saveQuoteLine(line, { unitCost: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                    <input value={line.unitSell} onChange={(event) => saveQuoteLine(line, { unitSell: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                    <select value={line.status} onChange={(event) => saveQuoteLine(line, { status: event.target.value as QuoteLineStatus })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                      {quoteLineStatuses.map((status) => (
+                                        <option key={status} value={status}>{quoteLineStatusLabels[status]}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                ))
+                              : selectedLeisureRows.map((row) => (
+                                  <div key={row.service} className={`grid grid-cols-[1.1fr_1fr_110px_110px_110px] gap-4 border-b px-4 py-4 text-sm ${styles.panel}`}>
+                                    <div className="font-semibold">{row.service}</div>
+                                    <div className={styles.soft}>{row.supplier}</div>
+                                    <div>${row.cost.toLocaleString()}</div>
+                                    <div className="text-emerald-300">${row.sell.toLocaleString()}</div>
+                                    <div className="text-fuchsia-300">${(row.sell - row.cost).toLocaleString()}</div>
+                                  </div>
+                                ))}
+                            {selectedQuote ? (
+                              <div className={`grid grid-cols-[130px_1.1fr_1fr_90px_110px_110px_100px_auto] gap-3 px-4 py-3 text-sm ${styles.panelSoft}`}>
+                                <select value={quoteLineDraft.category} onChange={(event) => updateQuoteLineDraft('category', event.target.value as QuoteLineCategory)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                  {quoteLineCategories.map((category) => (
+                                    <option key={category} value={category}>{quoteLineCategoryLabels[category]}</option>
+                                  ))}
+                                </select>
+                                <input value={quoteLineDraft.description} onChange={(event) => updateQuoteLineDraft('description', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="New quote line" />
+                                <input value={quoteLineDraft.supplier} onChange={(event) => updateQuoteLineDraft('supplier', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Supplier" />
+                                <input value={quoteLineDraft.quantity} onChange={(event) => updateQuoteLineDraft('quantity', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                <input value={quoteLineDraft.unitCost} onChange={(event) => updateQuoteLineDraft('unitCost', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                <input value={quoteLineDraft.unitSell} onChange={(event) => updateQuoteLineDraft('unitSell', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                <select value={quoteLineDraft.status} onChange={(event) => updateQuoteLineDraft('status', event.target.value as QuoteLineStatus)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                  {quoteLineStatuses.map((status) => (
+                                    <option key={status} value={status}>{quoteLineStatusLabels[status]}</option>
+                                  ))}
+                                </select>
+                                <button type="button" onClick={() => submitQuoteLine(selectedQuote)} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
+                                  Add
+                                </button>
                               </div>
-                            ))}
+                            ) : null}
                             <div className="grid grid-cols-3 gap-3 p-4">
                               <div className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
                                 <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Total cost</div>
-                                <div className="mt-1 text-sm font-semibold">${pricing.cost.toLocaleString()}</div>
+                                <div className="mt-1 text-sm font-semibold">{moneyValue(pricing.cost, selectedQuote?.currency ?? 'USD')}</div>
                               </div>
                               <div className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
                                 <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Total sell</div>
-                                <div className="mt-1 text-sm font-semibold">${pricing.sell.toLocaleString()}</div>
+                                <div className="mt-1 text-sm font-semibold">{moneyValue(pricing.sell, selectedQuote?.currency ?? 'USD')}</div>
                               </div>
                               <div className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
                                 <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Gross margin</div>
@@ -3779,6 +4116,50 @@ export function CrmPage() {
                       ) : null}
 
                       {detailTab === 'package' ? (
+                        selectedQuote ? (
+                          <div className="grid gap-4">
+                            <div className={`rounded-xl border p-5 ${styles.panelSoft}`}>
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <div className="font-semibold">{selectedQuote.quoteNumber} v{selectedQuote.version}</div>
+                                  <div className={`mt-1 text-sm ${styles.muted}`}>{selectedQuote.notes || 'Quote package ready for client review.'}</div>
+                                </div>
+                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{quoteStatusLabels[selectedQuote.status]}</span>
+                              </div>
+                              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                                <div className={`rounded-lg border p-4 ${styles.panel}`}>
+                                  <div className={`text-sm ${styles.muted}`}>Client sell</div>
+                                  <div className="mt-2 text-xl font-semibold text-emerald-300">{moneyValue(selectedQuote.subtotalSell, selectedQuote.currency)}</div>
+                                </div>
+                                <div className={`rounded-lg border p-4 ${styles.panel}`}>
+                                  <div className={`text-sm ${styles.muted}`}>Gross margin</div>
+                                  <div className="mt-2 text-xl font-semibold text-fuchsia-300">{moneyValue(selectedQuote.margin, selectedQuote.currency)}</div>
+                                </div>
+                                <div className={`rounded-lg border p-4 ${styles.panel}`}>
+                                  <div className={`text-sm ${styles.muted}`}>Valid until</div>
+                                  <div className="mt-2 text-xl font-semibold">{selectedQuote.validUntil || 'Not set'}</div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {selectedQuote.lines.map((line) => (
+                                <div key={line.id} className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <div className="font-semibold">{line.description}</div>
+                                      <div className={`mt-1 text-sm ${styles.muted}`}>{line.supplier || line.category}</div>
+                                    </div>
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{line.status}</span>
+                                  </div>
+                                  <div className="mt-4 flex items-center justify-between gap-3">
+                                    <span className={styles.muted}>Sell</span>
+                                    <span className="font-semibold text-emerald-300">{moneyValue(line.totalSell, selectedQuote.currency)}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
                         <div className="grid gap-4 xl:grid-cols-3">
                           {selectedLeisurePackages.map((option) => (
                             <div key={option.name} className={`rounded-xl border p-4 ${styles.panelSoft}`}>
@@ -3802,6 +4183,7 @@ export function CrmPage() {
                             </div>
                           ))}
                         </div>
+                        )
                       ) : null}
 
                       {detailTab === 'clientReview' ? (
@@ -4285,7 +4667,9 @@ export function CrmPage() {
                             Use this dedicated itinerary lane to shape the full trip: routing, hotel count, room type, activities, and the operating notes that make the proposal bookable.
                           </p>
                         </div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>Itinerary mock workspace</span>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
+                          {selectedItinerary ? itineraryStatusLabels[selectedItinerary.status] : 'Draft workspace'}
+                        </span>
                       </div>
                     </div>
 
@@ -4302,7 +4686,9 @@ export function CrmPage() {
                     <div className={`rounded-lg border p-4 ${styles.panel}`}>
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="font-semibold">Route and stay plan</div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedItineraryStops.length} cities / stays</span>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
+                          {selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : `${selectedItineraryStops.length} cities / stays`}
+                        </span>
                       </div>
                       <div className="mt-4 grid gap-4">
                         {selectedItineraryStops.map((stop, index) => (
@@ -4311,9 +4697,10 @@ export function CrmPage() {
                               <div>
                                 <div className="text-xs uppercase tracking-[0.14em] text-[#d9b46f]">Stop {index + 1}</div>
                                 <div className="mt-2 text-lg font-semibold">{stop.city}</div>
-                                <div className={`mt-1 text-sm ${styles.muted}`}>{stop.nights} · {stop.stay}</div>
+                                <div className={`mt-1 text-sm ${styles.muted}`}>{stop.nights} - {stop.stay}</div>
+                                {stop.dates ? <div className={`mt-1 text-xs ${styles.muted}`}>{stop.dates}</div> : null}
                               </div>
-                              <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{stop.focus}</span>
+                              <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{stop.status || stop.focus}</span>
                             </div>
                             <div className="mt-4 grid gap-4 md:grid-cols-2">
                               <div>
@@ -4338,9 +4725,9 @@ export function CrmPage() {
                             <div key={experience.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="font-medium">{experience.title}</div>
-                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{experience.timing}</span>
+                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{experience.status || experience.timing}</span>
                               </div>
-                              <div className={`mt-2 text-sm ${styles.muted}`}>{experience.category}</div>
+                              <div className={`mt-2 text-sm ${styles.muted}`}>{experience.category} - {experience.timing}</div>
                               <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{experience.note}</p>
                             </div>
                           ))}
@@ -4353,7 +4740,7 @@ export function CrmPage() {
                           <div className="mt-3 text-sm leading-6">
                             <div className={`flex items-center justify-between gap-3 ${styles.soft}`}>
                               <span>Planned hotel stays</span>
-                              <span className="font-semibold">{selectedItineraryStops.length}</span>
+                              <span className="font-semibold">{selectedItinerary ? selectedItinerary.stops.reduce((count, stop) => count + stop.accommodations.length, 0) : selectedItineraryStops.length}</span>
                             </div>
                             <div className={`mt-2 flex items-center justify-between gap-3 ${styles.soft}`}>
                               <span>Traveler setup</span>
@@ -4369,7 +4756,7 @@ export function CrmPage() {
                         <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                           <div className="font-semibold">Itinerary processing note</div>
                           <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
-                            This is the space where we should eventually edit routing, hotel count, room types, transfers, and experiences directly instead of squeezing them into a narrow follow-up panel.
+                            {selectedItinerary?.notes || 'Use this space to control routing, hotel count, room types, transfers, and experiences directly from the trip workspace.'}
                           </p>
                         </div>
                       </div>
@@ -4423,6 +4810,22 @@ export function CrmPage() {
                       <div className="font-semibold">Approval posture</div>
                       <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedProcess?.stageGate}</p>
                     </div>
+                    {selectedQuote ? (
+                      <div className="grid gap-3 md:grid-cols-3">
+                        {selectedQuote.approvals.map((approval) => (
+                          <div key={approval.id} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                            <div className={`text-sm ${styles.muted}`}>Quote approval</div>
+                            <div className="mt-2 font-semibold">{approval.approverName}</div>
+                            <div className={`mt-2 text-sm ${styles.muted}`}>{quoteApprovalLabels[approval.decision]}</div>
+                          </div>
+                        ))}
+                        <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className={`text-sm ${styles.muted}`}>Quote status</div>
+                          <div className="mt-2 font-semibold">{quoteStatusLabels[selectedQuote.status]}</div>
+                          <div className={`mt-2 text-sm ${styles.muted}`}>{selectedQuote.quoteNumber}</div>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="grid gap-3 md:grid-cols-3">
                       {corporateApprovalCards(selectedLead).map((card) => (
                         <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
@@ -4465,9 +4868,23 @@ export function CrmPage() {
                     </div>
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                       <div className={`text-sm ${styles.muted}`}>Commercial shape</div>
-                      <div className="mt-2 text-lg font-semibold">{selectedLead.budget || 'Policy-based / budget pending'}</div>
-                      <div className={`mt-2 text-sm ${styles.muted}`}>{selectedLead.requestedServices || 'Service scope pending'}</div>
+                      <div className="mt-2 text-lg font-semibold">{selectedQuote ? moneyValue(selectedQuote.subtotalSell, selectedQuote.currency) : selectedLead.budget || 'Policy-based / budget pending'}</div>
+                      <div className={`mt-2 text-sm ${styles.muted}`}>{selectedQuote ? `${selectedQuote.quoteNumber} - ${quoteStatusLabels[selectedQuote.status]}` : selectedLead.requestedServices || 'Service scope pending'}</div>
                     </div>
+                    {selectedQuote ? (
+                      <>
+                        <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className={`text-sm ${styles.muted}`}>Quote cost</div>
+                          <div className="mt-2 font-semibold">{moneyValue(selectedQuote.subtotalCost, selectedQuote.currency)}</div>
+                          <div className={`mt-2 text-sm ${styles.muted}`}>Supplier-side estimate</div>
+                        </div>
+                        <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className={`text-sm ${styles.muted}`}>Quote margin</div>
+                          <div className="mt-2 font-semibold text-fuchsia-300">{moneyValue(selectedQuote.margin, selectedQuote.currency)}</div>
+                          <div className={`mt-2 text-sm ${styles.muted}`}>Before invoice release</div>
+                        </div>
+                      </>
+                    ) : null}
                     {corporateFinanceCards(selectedLead).map((card) => (
                       <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                         <div className={`text-sm ${styles.muted}`}>{card.label}</div>
@@ -4484,11 +4901,38 @@ export function CrmPage() {
                     ))}
                     <div className={`rounded-lg border p-4 md:col-span-2 ${styles.panelSoft}`}>
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-semibold">Simulated booking release snapshot</div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>Corporate fulfillment mock</span>
+                        <div className="font-semibold">{selectedQuote ? 'Quote release snapshot' : 'Simulated booking release snapshot'}</div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedQuote ? quoteStatusLabels[selectedQuote.status] : 'Corporate fulfillment mock'}</span>
                       </div>
                       <div className="mt-4 grid gap-3">
-                        {mockBookingRecords(selectedLead).map((booking) => (
+                        {selectedQuote ? selectedQuote.lines.map((line) => (
+                          <div key={line.id} className={`rounded-lg border p-4 ${styles.panel}`}>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <input value={line.description} onChange={(event) => saveQuoteLine(line, { description: event.target.value })} className={`h-9 rounded-lg border px-2 text-sm font-medium ${styles.input}`} />
+                                <input value={line.supplier} onChange={(event) => saveQuoteLine(line, { supplier: event.target.value })} className={`mt-2 h-9 rounded-lg border px-2 text-sm ${styles.input}`} placeholder="Supplier" />
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-right">
+                                <select value={line.status} onChange={(event) => saveQuoteLine(line, { status: event.target.value as QuoteLineStatus })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                  {quoteLineStatuses.map((status) => (
+                                    <option key={status} value={status}>{quoteLineStatusLabels[status]}</option>
+                                  ))}
+                                </select>
+                                <select value={line.category} onChange={(event) => saveQuoteLine(line, { category: event.target.value as QuoteLineCategory })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                  {quoteLineCategories.map((category) => (
+                                    <option key={category} value={category}>{quoteLineCategoryLabels[category]}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                            <div className="mt-3 grid gap-2 md:grid-cols-4">
+                              <input value={line.quantity} onChange={(event) => saveQuoteLine(line, { quantity: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <input value={line.unitCost} onChange={(event) => saveQuoteLine(line, { unitCost: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <input value={line.unitSell} onChange={(event) => saveQuoteLine(line, { unitSell: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <div className={`flex h-9 items-center justify-end rounded-lg border px-2 text-xs ${styles.panelSoft}`}>{moneyValue(line.margin, selectedQuote.currency)}</div>
+                            </div>
+                          </div>
+                        )) : mockBookingRecords(selectedLead).map((booking) => (
                           <div key={booking.reference} className={`rounded-lg border p-4 ${styles.panel}`}>
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
@@ -4503,6 +4947,30 @@ export function CrmPage() {
                             <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{booking.note}</p>
                           </div>
                         ))}
+                        {selectedQuote ? (
+                          <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                            <div className="grid gap-3 md:grid-cols-[130px_1fr_1fr_90px_110px_110px_100px_auto]">
+                              <select value={quoteLineDraft.category} onChange={(event) => updateQuoteLineDraft('category', event.target.value as QuoteLineCategory)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                {quoteLineCategories.map((category) => (
+                                  <option key={category} value={category}>{quoteLineCategoryLabels[category]}</option>
+                                ))}
+                              </select>
+                              <input value={quoteLineDraft.description} onChange={(event) => updateQuoteLineDraft('description', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="New quote line" />
+                              <input value={quoteLineDraft.supplier} onChange={(event) => updateQuoteLineDraft('supplier', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Supplier" />
+                              <input value={quoteLineDraft.quantity} onChange={(event) => updateQuoteLineDraft('quantity', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <input value={quoteLineDraft.unitCost} onChange={(event) => updateQuoteLineDraft('unitCost', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <input value={quoteLineDraft.unitSell} onChange={(event) => updateQuoteLineDraft('unitSell', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <select value={quoteLineDraft.status} onChange={(event) => updateQuoteLineDraft('status', event.target.value as QuoteLineStatus)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                {quoteLineStatuses.map((status) => (
+                                  <option key={status} value={status}>{quoteLineStatusLabels[status]}</option>
+                                ))}
+                              </select>
+                              <button type="button" onClick={() => submitQuoteLine(selectedQuote)} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
+                                Add
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </div>

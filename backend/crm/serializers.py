@@ -2,7 +2,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group, User
 from rest_framework import serializers
 
-from .models import Client, Lead
+from .models import AccommodationBlock, Client, ExperienceBlock, ItineraryStop, Lead, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
 
 
 CRM_GROUP_ROLE_MAP = {
@@ -193,6 +193,251 @@ class LeadSerializer(serializers.ModelSerializer):
 class PublicLeadSerializer(LeadSerializer):
     class Meta(LeadSerializer.Meta):
         read_only_fields = ["id", "createdAt", "updatedAt", "status", "lifecycleStage", "internalNotes"]
+
+
+class QuoteLineSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    quoteId = serializers.PrimaryKeyRelatedField(source="quote", queryset=Quote.objects.all())
+    unitCost = serializers.DecimalField(source="unit_cost", max_digits=12, decimal_places=2, required=False)
+    unitSell = serializers.DecimalField(source="unit_sell", max_digits=12, decimal_places=2, required=False)
+    totalCost = serializers.DecimalField(source="total_cost", max_digits=14, decimal_places=2, read_only=True)
+    totalSell = serializers.DecimalField(source="total_sell", max_digits=14, decimal_places=2, read_only=True)
+    margin = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = QuoteLine
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "quoteId",
+            "category",
+            "supplier",
+            "description",
+            "quantity",
+            "unitCost",
+            "unitSell",
+            "totalCost",
+            "totalSell",
+            "margin",
+            "status",
+            "notes",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt", "totalCost", "totalSell", "margin"]
+
+
+class QuoteApprovalSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    quoteId = serializers.PrimaryKeyRelatedField(source="quote", queryset=Quote.objects.all())
+    approverName = serializers.CharField(source="approver_name")
+    approverEmail = serializers.EmailField(source="approver_email", required=False, allow_blank=True)
+    decisionAt = serializers.DateTimeField(source="decision_at", required=False, allow_null=True)
+
+    class Meta:
+        model = QuoteApproval
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "quoteId",
+            "approverName",
+            "approverEmail",
+            "decision",
+            "decisionAt",
+            "notes",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt"]
+
+
+class QuoteSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
+    leadName = serializers.CharField(source="lead.name", read_only=True)
+    quoteNumber = serializers.CharField(source="quote_number")
+    validUntil = serializers.DateField(source="valid_until", required=False, allow_null=True)
+    sentAt = serializers.DateTimeField(source="sent_at", required=False, allow_null=True)
+    acceptedAt = serializers.DateTimeField(source="accepted_at", required=False, allow_null=True)
+    subtotalCost = serializers.DecimalField(source="subtotal_cost", max_digits=14, decimal_places=2, read_only=True)
+    subtotalSell = serializers.DecimalField(source="subtotal_sell", max_digits=14, decimal_places=2, read_only=True)
+    margin = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    lines = QuoteLineSerializer(many=True, read_only=True)
+    approvals = QuoteApprovalSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Quote
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "leadId",
+            "leadName",
+            "quoteNumber",
+            "version",
+            "status",
+            "currency",
+            "subtotalCost",
+            "subtotalSell",
+            "margin",
+            "validUntil",
+            "notes",
+            "sentAt",
+            "acceptedAt",
+            "lines",
+            "approvals",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt", "subtotalCost", "subtotalSell", "margin", "leadName", "lines", "approvals"]
+
+
+class AccommodationBlockSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    stopId = serializers.PrimaryKeyRelatedField(source="stop", queryset=ItineraryStop.objects.all())
+    accommodationType = serializers.ChoiceField(source="accommodation_type", choices=AccommodationBlock.AccommodationType.choices, required=False)
+    roomType = serializers.CharField(source="room_type", required=False, allow_blank=True)
+    boardBasis = serializers.CharField(source="board_basis", required=False, allow_blank=True)
+    checkIn = serializers.DateField(source="check_in", required=False, allow_null=True)
+    checkOut = serializers.DateField(source="check_out", required=False, allow_null=True)
+    bookingStatus = serializers.ChoiceField(source="booking_status", choices=AccommodationBlock.BookingStatus.choices, required=False)
+    confirmationReference = serializers.CharField(source="confirmation_reference", required=False, allow_blank=True)
+
+    class Meta:
+        model = AccommodationBlock
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "stopId",
+            "name",
+            "accommodationType",
+            "roomType",
+            "boardBasis",
+            "checkIn",
+            "checkOut",
+            "rooms",
+            "supplier",
+            "bookingStatus",
+            "confirmationReference",
+            "notes",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt"]
+
+
+class ExperienceBlockSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    stopId = serializers.PrimaryKeyRelatedField(source="stop", queryset=ItineraryStop.objects.all())
+    startAt = serializers.DateTimeField(source="start_at", required=False, allow_null=True)
+
+    class Meta:
+        model = ExperienceBlock
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "stopId",
+            "title",
+            "category",
+            "startAt",
+            "supplier",
+            "status",
+            "notes",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt"]
+
+
+class ItineraryStopSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    itineraryId = serializers.PrimaryKeyRelatedField(source="itinerary", queryset=TripItinerary.objects.all())
+    sequenceNumber = serializers.IntegerField(source="sequence_number")
+    arrivalDate = serializers.DateField(source="arrival_date", required=False, allow_null=True)
+    departureDate = serializers.DateField(source="departure_date", required=False, allow_null=True)
+    accommodations = AccommodationBlockSerializer(many=True, read_only=True)
+    experiences = ExperienceBlockSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ItineraryStop
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "itineraryId",
+            "sequenceNumber",
+            "city",
+            "country",
+            "arrivalDate",
+            "departureDate",
+            "nights",
+            "purpose",
+            "notes",
+            "accommodations",
+            "experiences",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt", "accommodations", "experiences"]
+
+
+class TransportSegmentSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    itineraryId = serializers.PrimaryKeyRelatedField(source="itinerary", queryset=TripItinerary.objects.all())
+    sequenceNumber = serializers.IntegerField(source="sequence_number")
+    fromCity = serializers.CharField(source="from_city")
+    toCity = serializers.CharField(source="to_city")
+    departureAt = serializers.DateTimeField(source="departure_at", required=False, allow_null=True)
+    arrivalAt = serializers.DateTimeField(source="arrival_at", required=False, allow_null=True)
+    bookingStatus = serializers.ChoiceField(source="booking_status", choices=TransportSegment.BookingStatus.choices, required=False)
+
+    class Meta:
+        model = TransportSegment
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "itineraryId",
+            "sequenceNumber",
+            "mode",
+            "fromCity",
+            "toCity",
+            "departureAt",
+            "arrivalAt",
+            "supplier",
+            "bookingStatus",
+            "reference",
+            "notes",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt"]
+
+
+class TripItinerarySerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
+    leadName = serializers.CharField(source="lead.name", read_only=True)
+    startDate = serializers.DateField(source="start_date", required=False, allow_null=True)
+    endDate = serializers.DateField(source="end_date", required=False, allow_null=True)
+    stops = ItineraryStopSerializer(many=True, read_only=True)
+    transports = TransportSegmentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = TripItinerary
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "leadId",
+            "leadName",
+            "title",
+            "status",
+            "startDate",
+            "endDate",
+            "notes",
+            "stops",
+            "transports",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt", "leadName", "stops", "transports"]
 
 
 class LoginSerializer(serializers.Serializer):
