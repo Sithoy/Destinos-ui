@@ -4,8 +4,10 @@ import type {
   CrmExperienceBlock,
   CrmItineraryStop,
   CrmClient,
+  CrmCommunicationRecord,
   CrmLead,
   CrmManagedUser,
+  CrmPaymentRecord,
   CrmQuote,
   CrmQuoteLine,
   CrmSession,
@@ -32,8 +34,14 @@ const CRM_DEMO_VERSION = 'process-v3';
 
 type CrmLeadCreateInput = Omit<CrmLead, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'emailStatus' | 'internalNotes'>;
 type CrmQuoteCreateInput = Omit<CrmQuote, 'id' | 'createdAt' | 'updatedAt' | 'leadName' | 'subtotalCost' | 'subtotalSell' | 'margin' | 'lines' | 'approvals'>;
-type CrmQuoteLineCreateInput = Omit<CrmQuoteLine, 'id' | 'createdAt' | 'updatedAt' | 'totalCost' | 'totalSell' | 'margin'>;
+type CrmQuoteLineBookingFields = 'confirmationReference' | 'supplierDeadline' | 'bookingOwner' | 'bookingNotes' | 'confirmedAt';
+type CrmQuoteLineCreateInput = Omit<CrmQuoteLine, 'id' | 'createdAt' | 'updatedAt' | 'totalCost' | 'totalSell' | 'margin' | CrmQuoteLineBookingFields> &
+  Partial<Pick<CrmQuoteLine, CrmQuoteLineBookingFields>>;
 type CrmQuoteLineUpdateInput = Partial<Omit<CrmQuoteLine, 'id' | 'createdAt' | 'updatedAt' | 'quoteId' | 'totalCost' | 'totalSell' | 'margin'>>;
+type CrmPaymentRecordCreateInput = Omit<CrmPaymentRecord, 'id' | 'createdAt' | 'updatedAt' | 'leadName' | 'quoteNumber'>;
+type CrmPaymentRecordUpdateInput = Partial<Omit<CrmPaymentRecord, 'id' | 'createdAt' | 'updatedAt' | 'leadId' | 'leadName' | 'quoteNumber'>>;
+type CrmCommunicationRecordCreateInput = Omit<CrmCommunicationRecord, 'id' | 'createdAt' | 'updatedAt' | 'leadName' | 'quoteNumber' | 'sentByName'>;
+type CrmCommunicationRecordUpdateInput = Partial<Omit<CrmCommunicationRecord, 'id' | 'createdAt' | 'updatedAt' | 'leadId' | 'leadName' | 'quoteNumber' | 'sentByName'>>;
 type CrmTripItineraryCreateInput = {
   leadId: string;
   title: string;
@@ -871,6 +879,36 @@ export async function fetchCrmQuotes(session?: CrmSession | null, leadId?: strin
   );
 }
 
+export async function fetchCrmPaymentRecords(session?: CrmSession | null, leadId?: string): Promise<CrmPaymentRecord[]> {
+  const base = crmApiBase();
+  if (!base || !session?.token) return [];
+
+  const params = new URLSearchParams();
+  if (leadId) params.set('leadId', leadId);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+
+  return parseApiResponse<CrmPaymentRecord[]>(
+    await fetch(`${base}/api/payment-records/${suffix}`, {
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function fetchCrmCommunicationRecords(session?: CrmSession | null, leadId?: string): Promise<CrmCommunicationRecord[]> {
+  const base = crmApiBase();
+  if (!base || !session?.token) return [];
+
+  const params = new URLSearchParams();
+  if (leadId) params.set('leadId', leadId);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+
+  return parseApiResponse<CrmCommunicationRecord[]>(
+    await fetch(`${base}/api/communication-records/${suffix}`, {
+      headers: authHeaders(session),
+    }),
+  );
+}
+
 export async function fetchCrmTripItineraries(session?: CrmSession | null, leadId?: string): Promise<CrmTripItinerary[]> {
   const base = crmApiBase();
   if (!base || !session?.token) return [];
@@ -882,6 +920,70 @@ export async function fetchCrmTripItineraries(session?: CrmSession | null, leadI
   return parseApiResponse<CrmTripItinerary[]>(
     await fetch(`${base}/api/trip-itineraries/${suffix}`, {
       headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function createCrmPaymentRecord(input: CrmPaymentRecordCreateInput, session?: CrmSession | null): Promise<CrmPaymentRecord> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for payment records.');
+
+  return parseApiResponse<CrmPaymentRecord>(
+    await fetch(`${base}/api/payment-records/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCrmPaymentRecord(id: string, patch: CrmPaymentRecordUpdateInput, session?: CrmSession | null): Promise<CrmPaymentRecord> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for payment records.');
+
+  return parseApiResponse<CrmPaymentRecord>(
+    await fetch(`${base}/api/payment-records/${id}/`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(patch),
+    }),
+  );
+}
+
+export async function createCrmCommunicationRecord(input: CrmCommunicationRecordCreateInput, session?: CrmSession | null): Promise<CrmCommunicationRecord> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for communication records.');
+
+  return parseApiResponse<CrmCommunicationRecord>(
+    await fetch(`${base}/api/communication-records/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCrmCommunicationRecord(id: string, patch: CrmCommunicationRecordUpdateInput, session?: CrmSession | null): Promise<CrmCommunicationRecord> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for communication records.');
+
+  return parseApiResponse<CrmCommunicationRecord>(
+    await fetch(`${base}/api/communication-records/${id}/`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(patch),
     }),
   );
 }

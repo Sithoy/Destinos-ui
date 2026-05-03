@@ -3,7 +3,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from ctm.views import BillingInvoiceReportView, BillingPaymentReportView, BillingSummaryReportView, CompanyUserViewSet, CorporatePortalContextView, CtmAuthLoginView, CtmAuthLogoutView, CtmAuthMeView, ItineraryViewSet, TravelerViewSet, TripBookingView, TripDocumentDetailView, TripDocumentListView, TripInvoiceView, TripMessageListView, TripPaymentDetailView, TripPaymentListView, TripQuoteView, TripRequestViewSet, TripTaskDetailView, TripTaskListView
-from crm.views import AccommodationBlockViewSet, AuthLoginView, AuthLogoutView, AuthMeView, ClientViewSet, CommunicationRecordViewSet, ExperienceBlockViewSet, ItineraryStopViewSet, LeadViewSet, PaymentRecordViewSet, PublicLeadCreateView, QuoteApprovalViewSet, QuoteLineViewSet, QuoteViewSet, TransportSegmentViewSet, TripItineraryViewSet, UserViewSet
+from crm.views import AccommodationBlockViewSet, AuthLoginView, AuthLogoutView, AuthMeView, ClientViewSet, CommunicationRecordViewSet, ExperienceBlockViewSet, ItineraryStopViewSet, LeadViewSet, PaymentRecordViewSet, PublicLeadCreateView, QuoteApprovalViewSet, QuoteLineViewSet, QuoteViewSet, TransportSegmentViewSet, TripItineraryViewSet, UserViewSet, WorkflowReminderViewSet
 
 router = DefaultRouter()
 router.register("leads", LeadViewSet, basename="lead")
@@ -13,6 +13,7 @@ router.register("quotes", QuoteViewSet, basename="quote")
 router.register("quote-lines", QuoteLineViewSet, basename="quote-line")
 router.register("payment-records", PaymentRecordViewSet, basename="payment-record")
 router.register("communication-records", CommunicationRecordViewSet, basename="communication-record")
+router.register("workflow-reminders", WorkflowReminderViewSet, basename="workflow-reminder")
 router.register("quote-approvals", QuoteApprovalViewSet, basename="quote-approval")
 router.register("trip-itineraries", TripItineraryViewSet, basename="trip-itinerary")
 router.register("itinerary-stops", ItineraryStopViewSet, basename="itinerary-stop")

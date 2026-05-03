@@ -325,6 +325,48 @@ class CommunicationRecord(models.Model):
         return f"{self.get_kind_display()} - {self.lead.name}"
 
 
+class WorkflowReminder(models.Model):
+    class ReminderType(models.TextChoices):
+        BLOCKER = "blocker", "Workflow Blocker"
+        FOLLOW_UP = "follow_up", "Follow-up"
+        PAYMENT_DUE = "payment_due", "Payment Due"
+        BOOKING_DEADLINE = "booking_deadline", "Booking Deadline"
+        TRAVEL_PACK = "travel_pack", "Travel Pack"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        DONE = "done", "Done"
+        CANCELLED = "cancelled", "Cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    lead = models.ForeignKey(Lead, related_name="workflow_reminders", on_delete=models.CASCADE)
+    communication = models.ForeignKey(CommunicationRecord, related_name="workflow_reminders", on_delete=models.SET_NULL, null=True, blank=True)
+    reminder_type = models.CharField(max_length=30, choices=ReminderType.choices)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    source_stage = models.CharField(max_length=40, blank=True)
+    title = models.CharField(max_length=180)
+    message = models.TextField(blank=True)
+    due_at = models.DateTimeField()
+    assigned_to = models.CharField(max_length=120, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="crm_workflow_reminders", on_delete=models.SET_NULL, null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["status", "due_at", "-created_at"]
+        indexes = [
+            models.Index(fields=["lead", "status"]),
+            models.Index(fields=["reminder_type", "status"]),
+            models.Index(fields=["due_at"]),
+            models.Index(fields=["source_stage"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_reminder_type_display()} - {self.lead.name}"
+
+
 class QuoteApproval(models.Model):
     class Decision(models.TextChoices):
         PENDING = "pending", "Pending"

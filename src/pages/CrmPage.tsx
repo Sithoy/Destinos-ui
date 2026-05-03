@@ -36,9 +36,11 @@ import {
   CRM_AUTH_EVENT,
   CRM_CLIENT_EVENT,
   createCrmAccommodationBlockRecord,
+  createCrmCommunicationRecord,
   createCrmExperienceBlockRecord,
   createCrmItineraryStopRecord,
   createCrmLeadRecord,
+  createCrmPaymentRecord,
   createCrmQuoteRecord,
   createCrmQuoteLineRecord,
   createCrmClientRecord,
@@ -47,8 +49,10 @@ import {
   createCrmUserRecord,
   emptyClientRegistration,
   fetchCrmCurrentUser,
+  fetchCrmCommunicationRecords,
   fetchCrmLeads,
   fetchCrmClients,
+  fetchCrmPaymentRecords,
   fetchCrmQuotes,
   fetchCrmTripItineraries,
   fetchCrmUsers,
@@ -60,13 +64,14 @@ import {
   readCrmSession,
   saveCrmSession,
   updateCrmLeadRecord,
+  updateCrmPaymentRecord,
   updateCrmQuoteLineRecord,
   updateCrmClientRecord,
   updateCrmUserRecord,
 } from '../data/crm';
 import { classicLogo } from '../data/travel';
 import { BrandLockup } from '../components/ui';
-import type { CrmClient, CrmLead, CrmManagedUser, CrmQuote, CrmQuoteLine, CrmRole, CrmSession, CrmTripItinerary, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus, QuoteLineCategory, QuoteLineStatus } from '../types';
+import type { CrmClient, CrmCommunicationRecord, CrmLead, CrmManagedUser, CrmPaymentRecord, CrmQuote, CrmQuoteLine, CrmRole, CrmSession, CrmTripItinerary, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus, QuoteLineCategory, QuoteLineStatus } from '../types';
 
 type LeadTypeFilter = 'all' | InquiryKind;
 type StatusFilter = 'all' | LeadStatus | 'confirmedGroup' | 'workflowGroup';
@@ -150,6 +155,7 @@ type TripDesignDrafts = {
     status: 'draft' | 'quoted' | 'held' | 'confirmed' | 'cancelled';
   };
 };
+type TripDesignEditor = 'stop' | 'stay' | 'movement' | 'experience' | 'notes';
 
 type CommunicationDraft = {
   kind: CommunicationKind;
@@ -1335,20 +1341,29 @@ function clientProposalSections(quote: CrmQuote | null) {
   ].filter((section) => section.lines.length > 0);
 }
 
-function paymentWorkflowSummary(lead: CrmLead, quote: CrmQuote | null) {
-  const total = Number(quote?.subtotalSell ?? 0);
+function paymentWorkflowSummary(lead: CrmLead, quote: CrmQuote | null, records: CrmPaymentRecord[] = []) {
+  const quoteTotal = Number(quote?.subtotalSell ?? 0);
+  const expectedFromRecords = records.reduce((sum, record) => sum + Number(record.amountExpected || 0), 0);
+  const receivedFromRecords = records.reduce((sum, record) => sum + Number(record.amountReceived || 0), 0);
+  const total = expectedFromRecords > 0 ? expectedFromRecords : quoteTotal;
   const deposit = total > 0 ? Math.ceil(total * 0.3) : 0;
-  const paid = lead.status === 'execution' || lead.status === 'completed' || quote?.status === 'accepted';
-  const approved = paid || lead.status === 'won';
-  const dueDate = quote?.validUntil || 'Set payment due date';
+  const hasPaidRecord = records.some((record) => record.status === 'paid' || record.proofReceived);
+  const paid = total > 0 ? receivedFromRecords >= total || hasPaidRecord : hasPaidRecord;
+  const approved = paid || lead.status === 'won' || lead.status === 'execution' || lead.status === 'completed' || quote?.status === 'accepted';
+  const nextDueDate = records
+    .filter((record) => record.status !== 'paid' && record.dueDate)
+    .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0]?.dueDate;
+  const dueDate = nextDueDate || quote?.validUntil || 'Set payment due date';
 
   return {
     approved,
     paid,
     total,
     deposit,
-    balance: Math.max(total - deposit, 0),
+    received: receivedFromRecords,
+    balance: Math.max(total - receivedFromRecords, 0),
     dueDate,
+    recordCount: records.length,
     status: paid ? 'Paid / cleared' : approved ? 'Approved, awaiting payment' : 'Awaiting client approval',
     nextAction: paid ? 'Release supplier confirmations and prepare the travel pack.' : approved ? 'Collect payment proof before supplier confirmation.' : 'Do not book suppliers until the client approves the package.',
   };
@@ -1438,7 +1453,17 @@ function communicationReadinessItems(kind: CommunicationKind, hasProposalPreview
   ];
 }
 
-function communicationLogItems(lead: CrmLead, quote: CrmQuote | null, isTravelPackReady: boolean) {
+function communicationLogItems(lead: CrmLead, quote: CrmQuote | null, isTravelPackReady: boolean, records: CrmCommunicationRecord[] = []) {
+  if (records.length > 0) {
+    return records.map((record) => ({
+      type: communicationKindLabels[record.kind],
+      channel: communicationChannelLabels[record.channel],
+      owner: record.sentByName || crmOwnerFallback(lead),
+      status: record.status === 'sent' ? 'Sent' : record.status === 'ready' ? 'Ready' : record.status === 'failed' ? 'Failed' : record.status,
+      meta: record.sentAt ? formatDate(record.sentAt) : record.followUpDue ? `Follow-up ${formatDate(record.followUpDue)}` : formatDate(record.updatedAt),
+    }));
+  }
+
   const items = [
     {
       type: 'Intake confirmation',
@@ -1809,6 +1834,8 @@ export function CrmPage() {
   const [leads, setLeads] = useState<CrmLead[]>(() => (apiEnabled ? [] : readCrmLeads()));
   const [clients, setClients] = useState<CrmClient[]>([]);
   const [quotes, setQuotes] = useState<CrmQuote[]>([]);
+  const [paymentRecords, setPaymentRecords] = useState<CrmPaymentRecord[]>([]);
+  const [communicationRecords, setCommunicationRecords] = useState<CrmCommunicationRecord[]>([]);
   const [tripItineraries, setTripItineraries] = useState<CrmTripItinerary[]>([]);
   const [crmUsers, setCrmUsers] = useState<CrmManagedUser[]>([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
@@ -1838,6 +1865,7 @@ export function CrmPage() {
   const [userForm, setUserForm] = useState<UserFormState>(() => emptyUserForm());
   const [quoteLineDraft, setQuoteLineDraft] = useState<QuoteLineDraft>(() => emptyQuoteLineDraft());
   const [tripDesignDrafts, setTripDesignDrafts] = useState<TripDesignDrafts>(() => emptyTripDesignDrafts());
+  const [activeTripDesignEditor, setActiveTripDesignEditor] = useState<TripDesignEditor>('stop');
   const [communicationDraft, setCommunicationDraft] = useState<CommunicationDraft>(() => emptyCommunicationDraft());
   const styles = themeStyles[theme];
 
@@ -1867,13 +1895,17 @@ export function CrmPage() {
         fetchCrmLeads(crmSession),
         fetchCrmClients(crmSession),
         fetchCrmQuotes(crmSession),
+        fetchCrmPaymentRecords(crmSession),
+        fetchCrmCommunicationRecords(crmSession),
         fetchCrmTripItineraries(crmSession),
         canManageUsers(crmSession?.user) ? fetchCrmUsers(crmSession) : Promise.resolve([]),
       ])
-        .then(([nextLeads, nextClients, nextQuotes, nextItineraries, nextUsers]) => {
+        .then(([nextLeads, nextClients, nextQuotes, nextPaymentRecords, nextCommunicationRecords, nextItineraries, nextUsers]) => {
           setLeads(nextLeads);
           setClients(nextClients);
           setQuotes(nextQuotes);
+          setPaymentRecords(nextPaymentRecords);
+          setCommunicationRecords(nextCommunicationRecords);
           setTripItineraries(nextItineraries);
           setCrmUsers(nextUsers);
           setCrmError('');
@@ -2040,6 +2072,8 @@ export function CrmPage() {
   const selectedClient = filteredClients.find((client) => client.id === selectedClientId) ?? pageClients[0] ?? filteredClients[0] ?? null;
   const selectedQuotes = selectedLead ? quotes.filter((quote) => quote.leadId === selectedLead.id).sort((a, b) => b.version - a.version) : [];
   const selectedQuote = selectedQuotes[0] ?? null;
+  const selectedPaymentRecords = selectedLead ? paymentRecords.filter((record) => record.leadId === selectedLead.id) : [];
+  const selectedCommunicationRecords = selectedLead ? communicationRecords.filter((record) => record.leadId === selectedLead.id) : [];
   const selectedItineraries = selectedLead ? tripItineraries.filter((itinerary) => itinerary.leadId === selectedLead.id).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) : [];
   const selectedItinerary = selectedItineraries[0] ?? null;
   const selectedProcess = selectedLead ? processForLead(selectedLead) : null;
@@ -2062,14 +2096,14 @@ export function CrmPage() {
   const isCostingReady = selectedCostingGateItems.every((item) => item.ready);
   const isPackageReady = selectedPackageGateItems.every((item) => item.ready);
   const selectedClientProposalSections = clientProposalSections(selectedQuote);
-  const selectedPaymentSummary = selectedLead ? paymentWorkflowSummary(selectedLead, selectedQuote) : null;
+  const selectedPaymentSummary = selectedLead ? paymentWorkflowSummary(selectedLead, selectedQuote, selectedPaymentRecords) : null;
   const selectedBookingSummary = bookingConfirmationSummary(selectedQuote);
   const selectedTravelPackReadinessItems = selectedLead && selectedPaymentSummary ? travelPackReadinessItems(selectedLead, selectedQuote, selectedItinerary, selectedItineraryStops, selectedTransportSegments, selectedItineraryExperiences, selectedPaymentSummary.paid, selectedBookingSummary.ready) : [];
   const isTravelPackReady = selectedTravelPackReadinessItems.every((item) => item.ready);
   const selectedCommunicationReadinessItems = selectedLead ? communicationReadinessItems(communicationDraft.kind, selectedClientProposalSections.length > 0, isPackageReady, selectedPaymentSummary, selectedBookingSummary, isTravelPackReady) : [];
   const isCommunicationReady = selectedCommunicationReadinessItems.every((item) => item.ready);
   const selectedCommunicationMessage = selectedLead ? communicationDraft.message || communicationTemplate(communicationDraft.kind, selectedLead, selectedQuote, selectedPaymentSummary, isTravelPackReady) : '';
-  const selectedCommunicationLog = selectedLead ? communicationLogItems(selectedLead, selectedQuote, isTravelPackReady) : [];
+  const selectedCommunicationLog = selectedLead ? communicationLogItems(selectedLead, selectedQuote, isTravelPackReady, selectedCommunicationRecords) : [];
   const selectedLeisureRows = selectedLead ? leisureWorkbenchRows(selectedLead) : [];
   const selectedLeisurePackages = selectedLead ? leisurePackageOptions(selectedLead) : [];
   const managerMeta = selectedLead ? extractManagerBoardMeta(selectedLead.internalNotes) : null;
@@ -2259,6 +2293,18 @@ export function CrmPage() {
     return nextQuotes;
   }
 
+  async function reloadPaymentRecords() {
+    const nextPaymentRecords = await fetchCrmPaymentRecords(crmSession);
+    setPaymentRecords(nextPaymentRecords);
+    return nextPaymentRecords;
+  }
+
+  async function reloadCommunicationRecords() {
+    const nextCommunicationRecords = await fetchCrmCommunicationRecords(crmSession);
+    setCommunicationRecords(nextCommunicationRecords);
+    return nextCommunicationRecords;
+  }
+
   async function reloadItineraries() {
     const nextItineraries = await fetchCrmTripItineraries(crmSession);
     setTripItineraries(nextItineraries);
@@ -2329,6 +2375,11 @@ export function CrmPage() {
           unitCost: '0.00',
           unitSell: '0.00',
           status: 'research',
+          confirmationReference: '',
+          supplierDeadline: null,
+          bookingOwner: '',
+          bookingNotes: '',
+          confirmedAt: null,
           notes: input.notes || 'Linked from Trip Design. Add supplier cost and client sell in Costing.',
         },
         crmSession,
@@ -2377,6 +2428,83 @@ export function CrmPage() {
       kind,
       message: communicationTemplate(kind, selectedLead, selectedQuote, selectedPaymentSummary, isTravelPackReady),
     }));
+  }
+
+  async function saveCommunicationRecord(status: CrmCommunicationRecord['status']) {
+    if (!selectedLead) return;
+    try {
+      await createCrmCommunicationRecord(
+        {
+          leadId: selectedLead.id,
+          quoteId: selectedQuote?.id ?? null,
+          kind: communicationDraft.kind,
+          channel: communicationDraft.channel,
+          status,
+          subject: communicationKindLabels[communicationDraft.kind],
+          message: selectedCommunicationMessage,
+          sentBy: crmSession?.user.id ?? null,
+          sentAt: status === 'sent' ? new Date().toISOString() : null,
+          followUpDue: null,
+          responseStatus: status === 'sent' ? 'awaiting' : 'none',
+          notes: communicationDraft.followUpDue ? `Follow-up: ${communicationDraft.followUpDue}` : '',
+        },
+        crmSession,
+      );
+      await reloadCommunicationRecords();
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not save communication record.');
+    }
+  }
+
+  async function createPaymentCheckpoint() {
+    if (!selectedLead) return;
+    const quoteCurrency = selectedQuote?.currency ?? 'USD';
+    const expectedAmount = selectedPaymentSummary && selectedPaymentSummary.deposit > 0 ? selectedPaymentSummary.deposit : Number(selectedQuote?.subtotalSell ?? 0);
+
+    try {
+      await createCrmPaymentRecord(
+        {
+          leadId: selectedLead.id,
+          quoteId: selectedQuote?.id ?? null,
+          paymentType: 'deposit',
+          status: 'pending',
+          currency: quoteCurrency,
+          amountExpected: expectedAmount.toFixed(2),
+          amountReceived: '0.00',
+          dueDate: selectedQuote?.validUntil ?? null,
+          receivedAt: null,
+          proofReceived: false,
+          proofReference: '',
+          notes: 'Created from CRM payment workflow.',
+        },
+        crmSession,
+      );
+      await reloadPaymentRecords();
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not create payment record.');
+    }
+  }
+
+  async function markPaymentRecordPaid(record: CrmPaymentRecord) {
+    try {
+      await updateCrmPaymentRecord(
+        record.id,
+        {
+          status: 'paid',
+          amountReceived: record.amountExpected,
+          receivedAt: new Date().toISOString(),
+          proofReceived: true,
+          proofReference: record.proofReference || 'CRM payment workflow',
+        },
+        crmSession,
+      );
+      await reloadPaymentRecords();
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not update payment record.');
+    }
   }
 
   async function refreshLead(id: string, patch: Partial<Pick<CrmLead, 'status' | 'lifecycleStage' | 'priority' | 'internalNotes'>>) {
@@ -2589,7 +2717,7 @@ export function CrmPage() {
     setQuoteLineDraft((current) => ({ ...current, [field]: value }));
   }
 
-  async function saveQuoteLine(line: CrmQuoteLine, patch: Partial<Pick<CrmQuoteLine, 'category' | 'supplier' | 'description' | 'quantity' | 'unitCost' | 'unitSell' | 'status' | 'notes'>>) {
+  async function saveQuoteLine(line: CrmQuoteLine, patch: Partial<Pick<CrmQuoteLine, 'category' | 'supplier' | 'description' | 'quantity' | 'unitCost' | 'unitSell' | 'status' | 'confirmationReference' | 'supplierDeadline' | 'bookingOwner' | 'bookingNotes' | 'confirmedAt' | 'notes'>>) {
     try {
       await updateCrmQuoteLineRecord(line.id, patch, crmSession);
       await reloadQuotes();
@@ -2616,6 +2744,11 @@ export function CrmPage() {
           unitCost: quoteLineDraft.unitCost || '0.00',
           unitSell: quoteLineDraft.unitSell || '0.00',
           status: quoteLineDraft.status,
+          confirmationReference: '',
+          supplierDeadline: null,
+          bookingOwner: '',
+          bookingNotes: '',
+          confirmedAt: null,
           notes: quoteLineDraft.notes,
         },
         crmSession,
@@ -4736,58 +4869,55 @@ export function CrmPage() {
                             </div>
                           </div>
 
-                          <div className="grid content-start gap-4">
-                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                              <div className="font-semibold">Ready for quote?</div>
-                              <div className="mt-4 grid gap-2">
-                                {selectedTripDesignReadiness.map((item) => (
-                                  <div key={item.label} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${styles.panel}`}>
-                                    <span className="flex min-w-0 items-center gap-2">
-                                      <CheckSquare className={`h-4 w-4 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
-                                      <span className="text-sm font-medium">{item.label}</span>
-                                    </span>
-                                    <span className={`truncate text-right text-xs ${styles.muted}`}>{item.meta}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+                          <div className="grid content-start gap-3 xl:sticky xl:top-24">
+                            <div className={`rounded-xl border p-3 ${styles.panelSoft}`}>
                               <div className="flex items-center justify-between gap-3">
-                                <div className="font-semibold">Ready for costing?</div>
-                                <span className={`rounded-full px-2.5 py-1 text-xs ${isCostingReady ? 'bg-emerald-500/15 text-emerald-200' : 'bg-red-500/15 text-red-200'}`}>
-                                  {isCostingReady ? 'Ready' : 'Needs input'}
+                                <div className="text-sm font-semibold">Design readiness</div>
+                                <span className={`rounded-full px-2.5 py-1 text-[11px] ${isCostingReady ? 'bg-emerald-500/15 text-emerald-200' : 'bg-red-500/15 text-red-200'}`}>
+                                  {isCostingReady ? 'Costing ready' : 'Costing gate'}
                                 </span>
                               </div>
-                              <div className="mt-4 grid gap-2">
-                                {selectedCostingGateItems.map((item) => (
-                                  <div key={item.label} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${styles.panel}`}>
-                                    <span className="flex min-w-0 items-center gap-2">
-                                      <CheckSquare className={`h-4 w-4 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
-                                      <span className="text-sm font-medium">{item.label}</span>
-                                    </span>
-                                    <span className={`truncate text-right text-xs ${styles.muted}`}>{item.meta}</span>
+                              <div className="mt-3 grid grid-cols-2 gap-2">
+                                {selectedTripDesignReadiness.map((item) => (
+                                  <div key={item.label} className={`min-w-0 rounded-lg border px-2.5 py-2 ${styles.panel}`}>
+                                    <div className="flex items-center gap-1.5">
+                                      <CheckSquare className={`h-3.5 w-3.5 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
+                                      <span className="truncate text-xs font-medium">{item.label}</span>
+                                    </div>
+                                    <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{item.meta}</div>
                                   </div>
                                 ))}
                               </div>
                             </div>
 
-                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                              <div className="font-semibold">Design notes</div>
-                              <textarea
-                                value={selectedLead.internalNotes || ''}
-                                onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
-                                className={`mt-4 h-44 w-full resize-none rounded-xl border px-4 py-4 text-sm leading-6 outline-none transition ${styles.input}`}
-                                placeholder="Capture routing logic, hotel reasons, room preferences, activity notes, and proposal angle."
-                              />
-                            </div>
+                            <div className={`rounded-xl border p-3 ${styles.panelSoft}`}>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-sm font-semibold">Add / edit</div>
+                                <span className={`rounded-full px-2.5 py-1 text-[11px] ${styles.buttonGhost}`}>One editor</span>
+                              </div>
+                              <div className="mt-3 grid grid-cols-3 gap-1.5">
+                                {([
+                                  ['stop', 'City'],
+                                  ['stay', 'Stay'],
+                                  ['movement', 'Move'],
+                                  ['experience', 'Experience'],
+                                  ['notes', 'Notes'],
+                                ] as Array<[TripDesignEditor, string]>).map(([id, label]) => (
+                                  <button
+                                    key={id}
+                                    type="button"
+                                    onClick={() => setActiveTripDesignEditor(id)}
+                                    className={`h-9 rounded-lg px-2 text-xs transition ${activeTripDesignEditor === id ? styles.buttonActive : styles.buttonGhost}`}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
 
-                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                              <div className="font-semibold">Add to design</div>
-                              <div className="mt-4 grid gap-4">
-                                <div className={`rounded-lg border p-3 ${styles.panel}`}>
-                                  <div className="text-sm font-semibold">City stop</div>
-                                  <div className="mt-3 grid gap-2">
+                              <div className={`mt-3 rounded-lg border p-3 ${styles.panel}`}>
+                                {activeTripDesignEditor === 'stop' ? (
+                                  <div className="grid gap-2">
+                                    <div className="text-sm font-semibold">City stop</div>
                                     <input value={tripDesignDrafts.stop.city} onChange={(event) => updateTripDesignDraft('stop', 'city', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="City" />
                                     <div className="grid grid-cols-2 gap-2">
                                       <input value={tripDesignDrafts.stop.country} onChange={(event) => updateTripDesignDraft('stop', 'country', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Country" />
@@ -4806,11 +4936,11 @@ export function CrmPage() {
                                       Add city
                                     </button>
                                   </div>
-                                </div>
+                                ) : null}
 
-                                <div className={`rounded-lg border p-3 ${styles.panel}`}>
-                                  <div className="text-sm font-semibold">Stay</div>
-                                  <div className="mt-3 grid gap-2">
+                                {activeTripDesignEditor === 'stay' ? (
+                                  <div className="grid gap-2">
+                                    <div className="text-sm font-semibold">Stay</div>
                                     <select value={tripDesignDrafts.stay.stopId || selectedItinerary?.stops[0]?.id || ''} onChange={(event) => updateTripDesignDraft('stay', 'stopId', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
                                       <option value="">Choose stop</option>
                                       {selectedItinerary?.stops.map((stop) => (
@@ -4832,11 +4962,11 @@ export function CrmPage() {
                                       Add stay
                                     </button>
                                   </div>
-                                </div>
+                                ) : null}
 
-                                <div className={`rounded-lg border p-3 ${styles.panel}`}>
-                                  <div className="text-sm font-semibold">Movement</div>
-                                  <div className="mt-3 grid gap-2">
+                                {activeTripDesignEditor === 'movement' ? (
+                                  <div className="grid gap-2">
+                                    <div className="text-sm font-semibold">Movement</div>
                                     <div className="grid grid-cols-2 gap-2">
                                       <input value={tripDesignDrafts.movement.fromCity} onChange={(event) => updateTripDesignDraft('movement', 'fromCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="From" />
                                       <input value={tripDesignDrafts.movement.toCity} onChange={(event) => updateTripDesignDraft('movement', 'toCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="To" />
@@ -4858,11 +4988,11 @@ export function CrmPage() {
                                       Add movement
                                     </button>
                                   </div>
-                                </div>
+                                ) : null}
 
-                                <div className={`rounded-lg border p-3 ${styles.panel}`}>
-                                  <div className="text-sm font-semibold">Experience</div>
-                                  <div className="mt-3 grid gap-2">
+                                {activeTripDesignEditor === 'experience' ? (
+                                  <div className="grid gap-2">
+                                    <div className="text-sm font-semibold">Experience</div>
                                     <select value={tripDesignDrafts.experience.stopId || selectedItinerary?.stops[0]?.id || ''} onChange={(event) => updateTripDesignDraft('experience', 'stopId', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
                                       <option value="">Choose stop</option>
                                       {selectedItinerary?.stops.map((stop) => (
@@ -4876,25 +5006,43 @@ export function CrmPage() {
                                       Add experience
                                     </button>
                                   </div>
-                                </div>
+                                ) : null}
+
+                                {activeTripDesignEditor === 'notes' ? (
+                                  <div className="grid gap-2">
+                                    <div className="text-sm font-semibold">Design notes</div>
+                                    <textarea
+                                      value={selectedLead.internalNotes || ''}
+                                      onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
+                                      className={`h-44 w-full resize-none rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
+                                      placeholder="Capture routing logic, hotel reasons, room preferences, activity notes, and proposal angle."
+                                    />
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
 
-                            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                              <div className="font-semibold">Next actions</div>
-                              <div className="mt-4 grid gap-2">
+                            <div className={`rounded-xl border p-3 ${styles.panelSoft}`}>
+                              <div className="grid grid-cols-2 gap-2">
                                 <button type="button" onClick={() => setDetailTab('research')} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
                                   <Search className="h-4 w-4" />
-                                  Research suppliers
+                                  Research
                                 </button>
                                 <button type="button" onClick={openCostingWithGate} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-white ${isCostingReady ? 'bg-emerald-600' : 'bg-red-600'}`}>
                                   <FileText className="h-4 w-4" />
-                                  {isCostingReady ? 'Open costing' : 'Resolve costing gate'}
+                                  {isCostingReady ? 'Costing' : 'Gate'}
                                 </button>
                               </div>
-                              <p className={`mt-4 text-sm leading-6 ${styles.muted}`}>
-                                Trip Design should answer where they go, where they sleep, how they move, and what makes the trip worth approving.
-                              </p>
+                              <div className="mt-3 grid grid-cols-2 gap-2">
+                                {selectedCostingGateItems.slice(0, 4).map((item) => (
+                                  <div key={item.label} className={`rounded-lg border px-2.5 py-2 ${styles.panel}`}>
+                                    <div className="flex items-center gap-1.5">
+                                      <CheckSquare className={`h-3.5 w-3.5 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
+                                      <span className="truncate text-xs font-medium">{item.label}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -5334,9 +5482,9 @@ export function CrmPage() {
                               </div>
                               <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
                                 <input value={communicationDraft.followUpDue} onChange={(event) => setCommunicationDraft((current) => ({ ...current, followUpDue: event.target.value }))} className={`h-10 rounded-lg border px-3 text-sm ${styles.input}`} placeholder="Next follow-up" />
-                                <button type="button" className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-white ${isCommunicationReady ? 'bg-emerald-600' : 'bg-red-600'}`}>
+                                <button type="button" onClick={() => saveCommunicationRecord(isCommunicationReady ? 'ready' : 'draft')} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-white ${isCommunicationReady ? 'bg-emerald-600' : 'bg-red-600'}`}>
                                   <Mail className="h-4 w-4" />
-                                  {isCommunicationReady ? 'Ready to send' : 'Resolve gates'}
+                                  {isCommunicationReady ? 'Save ready record' : 'Save draft'}
                                 </button>
                               </div>
                             </div>
@@ -5388,7 +5536,7 @@ export function CrmPage() {
                                 {[
                                   { label: 'Package total', value: selectedQuote ? moneyValue(selectedPaymentSummary?.total, selectedQuote.currency) : 'Quote pending' },
                                   { label: 'Deposit target', value: selectedQuote ? moneyValue(selectedPaymentSummary?.deposit, selectedQuote.currency) : 'Quote pending' },
-                                  { label: 'Balance after deposit', value: selectedQuote ? moneyValue(selectedPaymentSummary?.balance, selectedQuote.currency) : 'Quote pending' },
+                                  { label: 'Outstanding balance', value: selectedQuote ? moneyValue(selectedPaymentSummary?.balance, selectedQuote.currency) : 'Quote pending' },
                                   { label: 'Payment due', value: selectedPaymentSummary?.dueDate || 'Set due date' },
                                 ].map((item) => (
                                   <div key={item.label} className={`rounded-lg border p-3 ${styles.panel}`}>
@@ -5396,6 +5544,38 @@ export function CrmPage() {
                                     <div className="mt-1 text-sm font-semibold">{item.value}</div>
                                   </div>
                                 ))}
+                              </div>
+                              <div className={`mt-4 rounded-lg border p-3 ${styles.panel}`}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Payment records</div>
+                                    <div className={`mt-1 text-sm ${styles.soft}`}>{selectedPaymentRecords.length ? `${selectedPaymentRecords.length} persisted checkpoint(s)` : 'No payment record yet'}</div>
+                                  </div>
+                                  <button type="button" onClick={createPaymentCheckpoint} className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>
+                                    <Plus className="h-4 w-4" />
+                                    Add checkpoint
+                                  </button>
+                                </div>
+                                {selectedPaymentRecords.length ? (
+                                  <div className="mt-3 grid gap-2">
+                                    {selectedPaymentRecords.map((record) => (
+                                      <div key={record.id} className={`grid gap-2 rounded-lg border px-3 py-2 text-xs ${styles.panelSoft} md:grid-cols-[1fr_auto_auto] md:items-center`}>
+                                        <div>
+                                          <div className="font-semibold">{record.paymentType} - {record.status}</div>
+                                          <div className={styles.muted}>{moneyValue(record.amountReceived, record.currency)} / {moneyValue(record.amountExpected, record.currency)} - due {record.dueDate || 'not set'}</div>
+                                        </div>
+                                        <div className={styles.muted}>{record.proofReference || 'Proof pending'}</div>
+                                        {record.status !== 'paid' ? (
+                                          <button type="button" onClick={() => markPaymentRecordPaid(record)} className="h-8 rounded-lg bg-emerald-600 px-3 font-medium text-white">
+                                            Mark paid
+                                          </button>
+                                        ) : (
+                                          <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-emerald-200">Cleared</span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null}
                               </div>
                               <div className={`mt-4 rounded-lg border p-3 ${styles.panel}`}>
                                 <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Client instruction</div>
@@ -5447,12 +5627,15 @@ export function CrmPage() {
                                       </select>
                                       <div className="grid grid-cols-2 gap-2">
                                         <button type="button" onClick={() => saveQuoteLine(line, { status: 'held' })} className={`h-9 rounded-lg px-2 text-xs ${styles.buttonGhost}`}>Hold</button>
-                                        <button type="button" onClick={() => saveQuoteLine(line, { status: 'confirmed' })} className="h-9 rounded-lg bg-emerald-600 px-2 text-xs font-medium text-white">Confirm</button>
+                                        <button type="button" onClick={() => saveQuoteLine(line, { status: 'confirmed', confirmedAt: new Date().toISOString() })} className="h-9 rounded-lg bg-emerald-600 px-2 text-xs font-medium text-white">Confirm</button>
                                       </div>
                                     </div>
-                                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr]">
-                                      <input value={line.supplier} onChange={(event) => saveQuoteLine(line, { supplier: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Supplier / booking owner" />
-                                      <input value={line.notes} onChange={(event) => saveQuoteLine(line, { notes: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Confirmation reference, deadline, or booking note" />
+                                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                                      <input value={line.supplier} onChange={(event) => saveQuoteLine(line, { supplier: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Supplier" />
+                                      <input value={line.bookingOwner} onChange={(event) => saveQuoteLine(line, { bookingOwner: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Booking owner" />
+                                      <input value={line.confirmationReference} onChange={(event) => saveQuoteLine(line, { confirmationReference: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Confirmation reference" />
+                                      <input type="date" value={line.supplierDeadline ?? ''} onChange={(event) => saveQuoteLine(line, { supplierDeadline: event.target.value || null })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                      <input value={line.bookingNotes} onChange={(event) => saveQuoteLine(line, { bookingNotes: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input} md:col-span-2`} placeholder="Booking note" />
                                     </div>
                                   </div>
                                 )) : (
@@ -5608,7 +5791,10 @@ export function CrmPage() {
                                         </div>
                                         <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{item.status}</span>
                                       </div>
-                                      <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{item.notes || 'Confirmation details should be attached before sending the pack.'}</p>
+                                      <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
+                                        {'confirmationReference' in item && item.confirmationReference ? `Reference: ${String(item.confirmationReference)}. ` : ''}
+                                        {'bookingNotes' in item && item.bookingNotes ? String(item.bookingNotes) : item.notes || 'Confirmation details should be attached before sending the pack.'}
+                                      </p>
                                     </div>
                                   ))}
                                 </div>

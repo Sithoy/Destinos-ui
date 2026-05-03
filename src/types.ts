@@ -117,6 +117,52 @@ export type CrmQuoteLine = {
   totalSell: string;
   margin: string;
   status: QuoteLineStatus;
+  confirmationReference: string;
+  supplierDeadline?: string | null;
+  bookingOwner: string;
+  bookingNotes: string;
+  confirmedAt?: string | null;
+  notes: string;
+};
+
+export type CrmPaymentRecord = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  leadId: string;
+  leadName: string;
+  quoteId?: string | null;
+  quoteNumber?: string;
+  paymentType: 'deposit' | 'balance' | 'full' | 'refund';
+  status: 'pending' | 'partial' | 'paid' | 'failed' | 'refunded' | 'cancelled';
+  currency: string;
+  amountExpected: string;
+  amountReceived: string;
+  dueDate?: string | null;
+  receivedAt?: string | null;
+  proofReceived: boolean;
+  proofReference: string;
+  notes: string;
+};
+
+export type CrmCommunicationRecord = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  leadId: string;
+  leadName: string;
+  quoteId?: string | null;
+  quoteNumber?: string;
+  kind: 'proposal' | 'payment' | 'travel_pack' | 'follow_up';
+  channel: 'email' | 'whatsapp' | 'phone';
+  status: 'draft' | 'ready' | 'sent' | 'failed' | 'cancelled';
+  subject: string;
+  message: string;
+  sentBy?: number | null;
+  sentByName: string;
+  sentAt?: string | null;
+  followUpDue?: string | null;
+  responseStatus: 'none' | 'awaiting' | 'responded' | 'action_required';
   notes: string;
 };
 

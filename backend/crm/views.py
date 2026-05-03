@@ -1,11 +1,13 @@
 from django.contrib.auth.models import User
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import filters, permissions, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceBlock, ItineraryStop, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
+from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceBlock, ItineraryStop, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary, WorkflowReminder
 from .serializers import (
     AccommodationBlockSerializer,
     ClientSerializer,
@@ -23,11 +25,16 @@ from .serializers import (
     TripItinerarySerializer,
     UserManagementSerializer,
     UserSerializer,
+    WorkflowAdvanceSerializer,
+    WorkflowReminderSerializer,
+    WorkflowStateSerializer,
     can_access_crm,
     can_manage_clients,
     can_manage_user_target,
     can_manage_users,
 )
+from .workflow import advance_workflow, workflow_for_lead
+from .workflow_automation import generate_workflow_reminders
 
 
 class HasCrmAccess(permissions.BasePermission):
@@ -84,6 +91,27 @@ class LeadViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+
+    @action(detail=True, methods=["get"], url_path="workflow")
+    def workflow(self, request, pk=None):
+        lead = self.get_object()
+        serializer = WorkflowStateSerializer(workflow_for_lead(lead))
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="advance-workflow")
+    def advance_workflow(self, request, pk=None):
+        lead = self.get_object()
+        previous_stage = lead.lifecycle_stage
+        serializer = WorkflowAdvanceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        target_stage = serializer.validated_data.get("targetStage") or None
+        updated_lead, state = advance_workflow(lead, target_stage=target_stage)
+        response_serializer = WorkflowStateSerializer(state)
+
+        if updated_lead.lifecycle_stage == previous_stage:
+            return Response(response_serializer.data, status=status.HTTP_409_CONFLICT)
+
+        return Response(response_serializer.data)
 
 
 class ClientViewSet(viewsets.ModelViewSet):
@@ -234,6 +262,60 @@ class CommunicationRecordViewSet(viewsets.ModelViewSet):
             serializer.save()
         else:
             serializer.save(sent_by=self.request.user)
+
+
+class WorkflowReminderViewSet(viewsets.ModelViewSet):
+    queryset = WorkflowReminder.objects.select_related("lead", "communication", "created_by")
+    serializer_class = WorkflowReminderSerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["created_at", "updated_at", "due_at", "status", "reminder_type"]
+    ordering = ["status", "due_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        lead_id = self.request.query_params.get("leadId")
+        status_value = self.request.query_params.get("status")
+        reminder_type = self.request.query_params.get("reminderType")
+        due_before = self.request.query_params.get("dueBefore")
+        due_after = self.request.query_params.get("dueAfter")
+
+        if lead_id:
+            queryset = queryset.filter(lead_id=lead_id)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if reminder_type:
+            queryset = queryset.filter(reminder_type=reminder_type)
+        if due_before:
+            queryset = queryset.filter(due_at__lte=due_before)
+        if due_after:
+            queryset = queryset.filter(due_at__gte=due_after)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        reminder = self.get_object()
+        reminder.status = WorkflowReminder.Status.DONE
+        reminder.completed_at = timezone.now()
+        reminder.save(update_fields=["status", "completed_at", "updated_at"])
+        return Response(self.get_serializer(reminder).data)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        reminder = self.get_object()
+        reminder.status = WorkflowReminder.Status.CANCELLED
+        reminder.save(update_fields=["status", "updated_at"])
+        return Response(self.get_serializer(reminder).data)
+
+    @action(detail=False, methods=["post"])
+    def generate(self, request):
+        created = generate_workflow_reminders(created_by=request.user)
+        serializer = self.get_serializer(created, many=True)
+        return Response({"created": len(created), "reminders": serializer.data}, status=status.HTTP_201_CREATED)
 
 
 class QuoteApprovalViewSet(viewsets.ModelViewSet):

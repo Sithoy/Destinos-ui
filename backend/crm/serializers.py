@@ -2,7 +2,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group, User
 from rest_framework import serializers
 
-from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceBlock, ItineraryStop, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
+from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceBlock, ItineraryStop, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary, WorkflowReminder
 
 
 CRM_GROUP_ROLE_MAP = {
@@ -193,6 +193,79 @@ class LeadSerializer(serializers.ModelSerializer):
 class PublicLeadSerializer(LeadSerializer):
     class Meta(LeadSerializer.Meta):
         read_only_fields = ["id", "createdAt", "updatedAt", "status", "lifecycleStage", "internalNotes"]
+
+
+class WorkflowChecklistItemSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    label = serializers.CharField()
+    ready = serializers.BooleanField()
+    detail = serializers.CharField()
+
+
+class WorkflowStageSerializer(serializers.Serializer):
+    stage = serializers.CharField()
+    label = serializers.CharField()
+    state = serializers.ChoiceField(choices=["done", "current", "upcoming"])
+
+
+class WorkflowStateSerializer(serializers.Serializer):
+    leadId = serializers.UUIDField()
+    workflowType = serializers.ChoiceField(choices=["leisure", "corporate"])
+    currentStage = serializers.CharField()
+    currentStageLabel = serializers.CharField()
+    nextStage = serializers.CharField(allow_null=True)
+    nextStageLabel = serializers.CharField(allow_blank=True)
+    canAdvance = serializers.BooleanField()
+    responsibleOwner = serializers.CharField()
+    checklist = WorkflowChecklistItemSerializer(many=True)
+    blockers = WorkflowChecklistItemSerializer(many=True)
+    stages = WorkflowStageSerializer(many=True)
+
+
+class WorkflowAdvanceSerializer(serializers.Serializer):
+    targetStage = serializers.CharField(required=False, allow_blank=True)
+
+
+class WorkflowReminderSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
+    leadName = serializers.CharField(source="lead.name", read_only=True)
+    communicationId = serializers.PrimaryKeyRelatedField(source="communication", queryset=CommunicationRecord.objects.all(), required=False, allow_null=True)
+    reminderType = serializers.ChoiceField(source="reminder_type", choices=WorkflowReminder.ReminderType.choices, required=False)
+    sourceStage = serializers.CharField(source="source_stage", required=False, allow_blank=True)
+    dueAt = serializers.DateTimeField(source="due_at")
+    assignedTo = serializers.CharField(source="assigned_to", required=False, allow_blank=True)
+    createdBy = serializers.PrimaryKeyRelatedField(source="created_by", queryset=User.objects.all(), required=False, allow_null=True)
+    completedAt = serializers.DateTimeField(source="completed_at", required=False, allow_null=True)
+
+    class Meta:
+        model = WorkflowReminder
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "leadId",
+            "leadName",
+            "communicationId",
+            "reminderType",
+            "status",
+            "sourceStage",
+            "title",
+            "message",
+            "dueAt",
+            "assignedTo",
+            "createdBy",
+            "completedAt",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt", "leadName"]
+
+    def validate(self, attrs):
+        lead = attrs.get("lead", getattr(self.instance, "lead", None))
+        communication = attrs.get("communication", getattr(self.instance, "communication", None))
+        if lead and communication and communication.lead_id != lead.id:
+            raise serializers.ValidationError({"communicationId": "Communication must belong to the selected lead."})
+        return attrs
 
 
 class QuoteLineSerializer(serializers.ModelSerializer):
