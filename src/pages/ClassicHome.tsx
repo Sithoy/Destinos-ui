@@ -1,4 +1,4 @@
-import { ArrowRight, LayoutDashboard, Shield } from 'lucide-react';
+import { ArrowRight, Headphones, LogIn, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   champagneImage,
@@ -76,19 +76,9 @@ export function ClassicHome({
                 {t('nav.enterPrestige')} <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={openCrm}
-                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-white/85 backdrop-blur-sm transition hover:bg-white/15 hover:text-white"
-              >
-                <LayoutDashboard className="h-4 w-4" />
-                <span>{canOpenCrm ? 'Open CRM' : 'Staff Login'}</span>
-              </button>
-            </div>
           </div>
 
-          <div className="hidden xl:flex xl:justify-end">
+          <div className="flex justify-start xl:justify-end">
             <div className="w-full max-w-[380px] rounded-[30px] border border-white/12 bg-white/10 p-6 text-white shadow-2xl backdrop-blur-md">
               <div className="text-xs uppercase tracking-[0.35em] text-white/60">{t('home.hero.cardEyebrow')}</div>
               <div className="mt-3 text-2xl font-semibold leading-tight">{t('home.hero.cardTitle')}</div>
@@ -100,20 +90,22 @@ export function ClassicHome({
               <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-white/55">DPM staff access</div>
-                    <div className="mt-2 text-sm leading-6 text-white/78">Open the operational workspace for leads, clients, and follow-up.</div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-white/55">DPM support desk</div>
+                    <div className="mt-2 text-sm leading-6 text-white/78">Dedicated support for planning, bookings, and travel assistance, with replies within 24 business hours on working days.</div>
                   </div>
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-white">
-                    <Shield className="h-4 w-4" />
+                    <Headphones className="h-4 w-4" />
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={openCrm}
-                  className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/15"
+                  className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#07111d] shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition hover:bg-[#f8fafc] hover:shadow-[0_18px_42px_rgba(0,0,0,0.28)]"
                 >
-                  <LayoutDashboard className="h-4 w-4" />
-                  <span>{canOpenCrm ? 'Open CRM' : 'Staff Login'}</span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#d4af37] text-[#241f1b]">
+                    {canOpenCrm ? <ShieldCheck className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+                  </span>
+                  <span>{canOpenCrm ? 'Open Team Workspace' : 'DPM Team Access'}</span>
                 </button>
               </div>
             </div>

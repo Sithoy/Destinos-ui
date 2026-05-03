@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AccommodationBlock, Client, ExperienceBlock, ItineraryStop, Lead, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
+from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceBlock, ItineraryStop, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
 
 
 @admin.register(Client)
@@ -59,9 +59,25 @@ class QuoteAdmin(admin.ModelAdmin):
 
 @admin.register(QuoteLine)
 class QuoteLineAdmin(admin.ModelAdmin):
-    list_display = ("quote", "category", "supplier", "description", "quantity", "unit_cost", "unit_sell", "status")
+    list_display = ("quote", "category", "supplier", "description", "quantity", "unit_cost", "unit_sell", "status", "confirmation_reference", "supplier_deadline")
     list_filter = ("category", "status")
-    search_fields = ("quote__quote_number", "supplier", "description", "notes")
+    search_fields = ("quote__quote_number", "supplier", "description", "confirmation_reference", "booking_notes", "notes")
+
+
+@admin.register(PaymentRecord)
+class PaymentRecordAdmin(admin.ModelAdmin):
+    list_display = ("lead", "quote", "payment_type", "status", "currency", "amount_expected", "amount_received", "due_date", "proof_received")
+    list_filter = ("payment_type", "status", "proof_received", "currency")
+    search_fields = ("lead__name", "quote__quote_number", "proof_reference", "notes")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(CommunicationRecord)
+class CommunicationRecordAdmin(admin.ModelAdmin):
+    list_display = ("lead", "kind", "channel", "status", "response_status", "sent_by", "sent_at", "follow_up_due")
+    list_filter = ("kind", "channel", "status", "response_status")
+    search_fields = ("lead__name", "quote__quote_number", "subject", "message", "notes")
+    readonly_fields = ("id", "created_at", "updated_at")
 
 
 @admin.register(QuoteApproval)

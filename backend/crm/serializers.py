@@ -2,7 +2,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group, User
 from rest_framework import serializers
 
-from .models import AccommodationBlock, Client, ExperienceBlock, ItineraryStop, Lead, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
+from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceBlock, ItineraryStop, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
 
 
 CRM_GROUP_ROLE_MAP = {
@@ -204,6 +204,11 @@ class QuoteLineSerializer(serializers.ModelSerializer):
     totalCost = serializers.DecimalField(source="total_cost", max_digits=14, decimal_places=2, read_only=True)
     totalSell = serializers.DecimalField(source="total_sell", max_digits=14, decimal_places=2, read_only=True)
     margin = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    confirmationReference = serializers.CharField(source="confirmation_reference", required=False, allow_blank=True)
+    supplierDeadline = serializers.DateField(source="supplier_deadline", required=False, allow_null=True)
+    bookingOwner = serializers.CharField(source="booking_owner", required=False, allow_blank=True)
+    bookingNotes = serializers.CharField(source="booking_notes", required=False, allow_blank=True)
+    confirmedAt = serializers.DateTimeField(source="confirmed_at", required=False, allow_null=True)
 
     class Meta:
         model = QuoteLine
@@ -222,9 +227,111 @@ class QuoteLineSerializer(serializers.ModelSerializer):
             "totalSell",
             "margin",
             "status",
+            "confirmationReference",
+            "supplierDeadline",
+            "bookingOwner",
+            "bookingNotes",
+            "confirmedAt",
             "notes",
         ]
         read_only_fields = ["id", "createdAt", "updatedAt", "totalCost", "totalSell", "margin"]
+
+
+class PaymentRecordSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
+    leadName = serializers.CharField(source="lead.name", read_only=True)
+    quoteId = serializers.PrimaryKeyRelatedField(source="quote", queryset=Quote.objects.all(), required=False, allow_null=True)
+    quoteNumber = serializers.CharField(source="quote.quote_number", read_only=True)
+    paymentType = serializers.ChoiceField(source="payment_type", choices=PaymentRecord.PaymentType.choices, required=False)
+    amountExpected = serializers.DecimalField(source="amount_expected", max_digits=12, decimal_places=2, required=False)
+    amountReceived = serializers.DecimalField(source="amount_received", max_digits=12, decimal_places=2, required=False)
+    dueDate = serializers.DateField(source="due_date", required=False, allow_null=True)
+    receivedAt = serializers.DateTimeField(source="received_at", required=False, allow_null=True)
+    proofReceived = serializers.BooleanField(source="proof_received", required=False)
+    proofReference = serializers.CharField(source="proof_reference", required=False, allow_blank=True)
+
+    class Meta:
+        model = PaymentRecord
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "leadId",
+            "leadName",
+            "quoteId",
+            "quoteNumber",
+            "paymentType",
+            "status",
+            "currency",
+            "amountExpected",
+            "amountReceived",
+            "dueDate",
+            "receivedAt",
+            "proofReceived",
+            "proofReference",
+            "notes",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt", "leadName", "quoteNumber"]
+
+    def validate(self, attrs):
+        lead = attrs.get("lead", getattr(self.instance, "lead", None))
+        quote = attrs.get("quote", getattr(self.instance, "quote", None))
+        if lead and quote and quote.lead_id != lead.id:
+            raise serializers.ValidationError({"quoteId": "Quote must belong to the selected lead."})
+        return attrs
+
+
+class CommunicationRecordSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
+    leadName = serializers.CharField(source="lead.name", read_only=True)
+    quoteId = serializers.PrimaryKeyRelatedField(source="quote", queryset=Quote.objects.all(), required=False, allow_null=True)
+    quoteNumber = serializers.CharField(source="quote.quote_number", read_only=True)
+    sentBy = serializers.PrimaryKeyRelatedField(source="sent_by", queryset=User.objects.all(), required=False, allow_null=True)
+    sentByName = serializers.SerializerMethodField()
+    sentAt = serializers.DateTimeField(source="sent_at", required=False, allow_null=True)
+    followUpDue = serializers.DateTimeField(source="follow_up_due", required=False, allow_null=True)
+    responseStatus = serializers.ChoiceField(source="response_status", choices=CommunicationRecord.ResponseStatus.choices, required=False)
+
+    class Meta:
+        model = CommunicationRecord
+        fields = [
+            "id",
+            "createdAt",
+            "updatedAt",
+            "leadId",
+            "leadName",
+            "quoteId",
+            "quoteNumber",
+            "kind",
+            "channel",
+            "status",
+            "subject",
+            "message",
+            "sentBy",
+            "sentByName",
+            "sentAt",
+            "followUpDue",
+            "responseStatus",
+            "notes",
+        ]
+        read_only_fields = ["id", "createdAt", "updatedAt", "leadName", "quoteNumber", "sentByName"]
+
+    def validate(self, attrs):
+        lead = attrs.get("lead", getattr(self.instance, "lead", None))
+        quote = attrs.get("quote", getattr(self.instance, "quote", None))
+        if lead and quote and quote.lead_id != lead.id:
+            raise serializers.ValidationError({"quoteId": "Quote must belong to the selected lead."})
+        return attrs
+
+    def get_sentByName(self, obj: CommunicationRecord) -> str:
+        if not obj.sent_by:
+            return ""
+        full_name = f"{obj.sent_by.first_name} {obj.sent_by.last_name}".strip()
+        return full_name or obj.sent_by.username
 
 
 class QuoteApprovalSerializer(serializers.ModelSerializer):

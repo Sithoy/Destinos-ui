@@ -1,4 +1,25 @@
-import type { CrmClient, CrmLead, CrmManagedUser, CrmQuote, CrmQuoteLine, CrmSession, CrmTripItinerary, CrmUser, InquiryKind, LeadLifecycleStage, LeadStatus } from '../types';
+import type {
+  AccommodationType,
+  CrmAccommodationBlock,
+  CrmExperienceBlock,
+  CrmItineraryStop,
+  CrmClient,
+  CrmLead,
+  CrmManagedUser,
+  CrmQuote,
+  CrmQuoteLine,
+  CrmSession,
+  CrmTransportSegment,
+  CrmTripItinerary,
+  CrmUser,
+  InquiryKind,
+  ItineraryBookingStatus,
+  ItineraryStatus,
+  ItineraryStopPurpose,
+  LeadLifecycleStage,
+  LeadStatus,
+  TransportMode,
+} from '../types';
 
 const CRM_STORAGE_KEY = 'dpm.crm.leads.v1';
 const CRM_CLIENT_STORAGE_KEY = 'dpm.crm.clients.v1';
@@ -13,6 +34,61 @@ type CrmLeadCreateInput = Omit<CrmLead, 'id' | 'createdAt' | 'updatedAt' | 'stat
 type CrmQuoteCreateInput = Omit<CrmQuote, 'id' | 'createdAt' | 'updatedAt' | 'leadName' | 'subtotalCost' | 'subtotalSell' | 'margin' | 'lines' | 'approvals'>;
 type CrmQuoteLineCreateInput = Omit<CrmQuoteLine, 'id' | 'createdAt' | 'updatedAt' | 'totalCost' | 'totalSell' | 'margin'>;
 type CrmQuoteLineUpdateInput = Partial<Omit<CrmQuoteLine, 'id' | 'createdAt' | 'updatedAt' | 'quoteId' | 'totalCost' | 'totalSell' | 'margin'>>;
+type CrmTripItineraryCreateInput = {
+  leadId: string;
+  title: string;
+  status?: ItineraryStatus;
+  startDate?: string | null;
+  endDate?: string | null;
+  notes?: string;
+};
+type CrmItineraryStopCreateInput = {
+  itineraryId: string;
+  sequenceNumber: number;
+  city: string;
+  country?: string;
+  arrivalDate?: string | null;
+  departureDate?: string | null;
+  nights?: number;
+  purpose?: ItineraryStopPurpose;
+  notes?: string;
+};
+type CrmAccommodationBlockCreateInput = {
+  stopId: string;
+  name: string;
+  accommodationType?: AccommodationType;
+  roomType?: string;
+  boardBasis?: string;
+  checkIn?: string | null;
+  checkOut?: string | null;
+  rooms?: number;
+  supplier?: string;
+  bookingStatus?: ItineraryBookingStatus;
+  confirmationReference?: string;
+  notes?: string;
+};
+type CrmTransportSegmentCreateInput = {
+  itineraryId: string;
+  sequenceNumber: number;
+  mode?: TransportMode;
+  fromCity: string;
+  toCity: string;
+  departureAt?: string | null;
+  arrivalAt?: string | null;
+  supplier?: string;
+  bookingStatus?: ItineraryBookingStatus;
+  reference?: string;
+  notes?: string;
+};
+type CrmExperienceBlockCreateInput = {
+  stopId: string;
+  title: string;
+  category?: string;
+  startAt?: string | null;
+  supplier?: string;
+  status?: ItineraryBookingStatus;
+  notes?: string;
+};
 type CrmClientCreateInput = Omit<CrmClient, 'id' | 'createdAt' | 'updatedAt' | 'lastRequestAt' | 'activeRequestCount'>;
 type CrmManagedUserInput = {
   username: string;
@@ -806,6 +882,86 @@ export async function fetchCrmTripItineraries(session?: CrmSession | null, leadI
   return parseApiResponse<CrmTripItinerary[]>(
     await fetch(`${base}/api/trip-itineraries/${suffix}`, {
       headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function createCrmTripItineraryRecord(input: CrmTripItineraryCreateInput, session?: CrmSession | null): Promise<CrmTripItinerary> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for itinerary creation.');
+
+  return parseApiResponse<CrmTripItinerary>(
+    await fetch(`${base}/api/trip-itineraries/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCrmItineraryStopRecord(input: CrmItineraryStopCreateInput, session?: CrmSession | null): Promise<CrmItineraryStop> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for itinerary stop creation.');
+
+  return parseApiResponse<CrmItineraryStop>(
+    await fetch(`${base}/api/itinerary-stops/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCrmAccommodationBlockRecord(input: CrmAccommodationBlockCreateInput, session?: CrmSession | null): Promise<CrmAccommodationBlock> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for accommodation creation.');
+
+  return parseApiResponse<CrmAccommodationBlock>(
+    await fetch(`${base}/api/accommodation-blocks/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCrmTransportSegmentRecord(input: CrmTransportSegmentCreateInput, session?: CrmSession | null): Promise<CrmTransportSegment> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for transport creation.');
+
+  return parseApiResponse<CrmTransportSegment>(
+    await fetch(`${base}/api/transport-segments/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCrmExperienceBlockRecord(input: CrmExperienceBlockCreateInput, session?: CrmSession | null): Promise<CrmExperienceBlock> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for experience creation.');
+
+  return parseApiResponse<CrmExperienceBlock>(
+    await fetch(`${base}/api/experience-blocks/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(input),
     }),
   );
 }

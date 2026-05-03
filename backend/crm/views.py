@@ -5,14 +5,16 @@ from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import AccommodationBlock, Client, ExperienceBlock, ItineraryStop, Lead, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
+from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceBlock, ItineraryStop, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary
 from .serializers import (
     AccommodationBlockSerializer,
     ClientSerializer,
+    CommunicationRecordSerializer,
     ExperienceBlockSerializer,
     ItineraryStopSerializer,
     LeadSerializer,
     LoginSerializer,
+    PaymentRecordSerializer,
     PublicLeadSerializer,
     QuoteApprovalSerializer,
     QuoteLineSerializer,
@@ -166,6 +168,72 @@ class QuoteLineViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(status=status_value)
 
         return queryset
+
+
+class PaymentRecordViewSet(viewsets.ModelViewSet):
+    queryset = PaymentRecord.objects.select_related("lead", "quote")
+    serializer_class = PaymentRecordSerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["created_at", "updated_at", "due_date", "received_at", "status"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        lead_id = self.request.query_params.get("leadId")
+        quote_id = self.request.query_params.get("quoteId")
+        status_value = self.request.query_params.get("status")
+        payment_type = self.request.query_params.get("paymentType")
+
+        if lead_id:
+            queryset = queryset.filter(lead_id=lead_id)
+        if quote_id:
+            queryset = queryset.filter(quote_id=quote_id)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if payment_type:
+            queryset = queryset.filter(payment_type=payment_type)
+
+        return queryset
+
+
+class CommunicationRecordViewSet(viewsets.ModelViewSet):
+    queryset = CommunicationRecord.objects.select_related("lead", "quote", "sent_by")
+    serializer_class = CommunicationRecordSerializer
+    permission_classes = [HasCrmAccess]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["created_at", "updated_at", "sent_at", "follow_up_due", "status"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        lead_id = self.request.query_params.get("leadId")
+        quote_id = self.request.query_params.get("quoteId")
+        kind = self.request.query_params.get("kind")
+        channel = self.request.query_params.get("channel")
+        status_value = self.request.query_params.get("status")
+        response_status = self.request.query_params.get("responseStatus")
+
+        if lead_id:
+            queryset = queryset.filter(lead_id=lead_id)
+        if quote_id:
+            queryset = queryset.filter(quote_id=quote_id)
+        if kind:
+            queryset = queryset.filter(kind=kind)
+        if channel:
+            queryset = queryset.filter(channel=channel)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if response_status:
+            queryset = queryset.filter(response_status=response_status)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        if serializer.validated_data.get("sent_by"):
+            serializer.save()
+        else:
+            serializer.save(sent_by=self.request.user)
 
 
 class QuoteApprovalViewSet(viewsets.ModelViewSet):

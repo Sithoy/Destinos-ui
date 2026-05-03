@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LayoutDashboard, Mail } from 'lucide-react';
+import { Mail } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { InquiryModal } from './components/InquiryModal';
@@ -127,8 +127,6 @@ export default function DestinosPeloMundoUIConcept() {
           page={page}
           goHome={goHome}
           openPrestige={openPrestige}
-          openCrm={() => navigate(pageRoutes.crm)}
-          canOpenCrm={hasCrmApi() && canAccessCrm(crmSession?.user)}
           setPrestigePage={(nextPage) => {
             navigate(pageRoutes[nextPage]);
             setIsGatewayNavigating(false);
@@ -215,22 +213,6 @@ export default function DestinosPeloMundoUIConcept() {
               <div>{t('footer.luxury')}</div>
               <div>{t('footer.corporate')}</div>
             </div>
-            {hasCrmApi() ? (
-              <div className="mt-5">
-                <button
-                  type="button"
-                  onClick={() => navigate(pageRoutes.crm)}
-                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
-                    page === 'home'
-                      ? 'border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-400 hover:bg-slate-100'
-                      : 'border-white/15 bg-white/5 text-white/75 hover:bg-white/10 hover:text-white'
-                  }`}
-                >
-                  <LayoutDashboard className="h-4 w-4" />
-                  <span>{canEnterCrm ? 'Open CRM' : 'Staff Login'}</span>
-                </button>
-              </div>
-            ) : null}
           </div>
         </div>
         <div className={`border-t ${page === 'home' ? 'border-slate-200' : 'border-white/10'}`}>

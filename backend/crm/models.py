@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.db import models
 
 
@@ -196,6 +197,11 @@ class QuoteLine(models.Model):
     unit_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     unit_sell = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     status = models.CharField(max_length=30, choices=Status.choices, default=Status.RESEARCH)
+    confirmation_reference = models.CharField(max_length=120, blank=True)
+    supplier_deadline = models.DateField(null=True, blank=True)
+    booking_owner = models.CharField(max_length=120, blank=True)
+    booking_notes = models.TextField(blank=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -219,6 +225,104 @@ class QuoteLine(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_category_display()} - {self.description}"
+
+
+class PaymentRecord(models.Model):
+    class PaymentType(models.TextChoices):
+        DEPOSIT = "deposit", "Deposit"
+        BALANCE = "balance", "Balance"
+        FULL = "full", "Full Payment"
+        REFUND = "refund", "Refund"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        PARTIAL = "partial", "Partial"
+        PAID = "paid", "Paid"
+        FAILED = "failed", "Failed"
+        REFUNDED = "refunded", "Refunded"
+        CANCELLED = "cancelled", "Cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    lead = models.ForeignKey(Lead, related_name="payment_records", on_delete=models.CASCADE)
+    quote = models.ForeignKey(Quote, related_name="payment_records", on_delete=models.SET_NULL, null=True, blank=True)
+    payment_type = models.CharField(max_length=20, choices=PaymentType.choices, default=PaymentType.DEPOSIT)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    currency = models.CharField(max_length=3, default="USD")
+    amount_expected = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    amount_received = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    due_date = models.DateField(null=True, blank=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+    proof_received = models.BooleanField(default=False)
+    proof_reference = models.CharField(max_length=180, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["lead", "status"]),
+            models.Index(fields=["quote", "status"]),
+            models.Index(fields=["due_date"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.lead.name} - {self.get_payment_type_display()} - {self.get_status_display()}"
+
+
+class CommunicationRecord(models.Model):
+    class Kind(models.TextChoices):
+        PROPOSAL = "proposal", "Proposal"
+        PAYMENT = "payment", "Payment Request"
+        TRAVEL_PACK = "travel_pack", "Travel Pack"
+        FOLLOW_UP = "follow_up", "Follow-up"
+
+    class Channel(models.TextChoices):
+        EMAIL = "email", "Email"
+        WHATSAPP = "whatsapp", "WhatsApp"
+        PHONE = "phone", "Phone"
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        READY = "ready", "Ready"
+        SENT = "sent", "Sent"
+        FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    class ResponseStatus(models.TextChoices):
+        NONE = "none", "No Response Needed"
+        AWAITING = "awaiting", "Awaiting Response"
+        RESPONDED = "responded", "Responded"
+        ACTION_REQUIRED = "action_required", "Action Required"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    lead = models.ForeignKey(Lead, related_name="communications", on_delete=models.CASCADE)
+    quote = models.ForeignKey(Quote, related_name="communications", on_delete=models.SET_NULL, null=True, blank=True)
+    kind = models.CharField(max_length=30, choices=Kind.choices)
+    channel = models.CharField(max_length=20, choices=Channel.choices, default=Channel.EMAIL)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    subject = models.CharField(max_length=180, blank=True)
+    message = models.TextField()
+    sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="crm_communications", on_delete=models.SET_NULL, null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    follow_up_due = models.DateTimeField(null=True, blank=True)
+    response_status = models.CharField(max_length=30, choices=ResponseStatus.choices, default=ResponseStatus.AWAITING)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["lead", "kind"]),
+            models.Index(fields=["status", "response_status"]),
+            models.Index(fields=["follow_up_due"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()} - {self.lead.name}"
 
 
 class QuoteApproval(models.Model):
