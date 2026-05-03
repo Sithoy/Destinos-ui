@@ -166,6 +166,51 @@ export type CrmCommunicationRecord = {
   notes: string;
 };
 
+export type CrmWorkflowChecklistItem = {
+  key: string;
+  label: string;
+  ready: boolean;
+  detail: string;
+};
+
+export type CrmWorkflowStage = {
+  stage: LeadLifecycleStage;
+  label: string;
+  state: 'done' | 'current' | 'upcoming';
+};
+
+export type CrmWorkflowState = {
+  leadId: string;
+  workflowType: 'leisure' | 'corporate';
+  currentStage: LeadLifecycleStage;
+  currentStageLabel: string;
+  nextStage?: LeadLifecycleStage | null;
+  nextStageLabel: string;
+  canAdvance: boolean;
+  responsibleOwner: string;
+  checklist: CrmWorkflowChecklistItem[];
+  blockers: CrmWorkflowChecklistItem[];
+  stages: CrmWorkflowStage[];
+};
+
+export type CrmWorkflowReminder = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  leadId: string;
+  leadName: string;
+  communicationId?: string | null;
+  reminderType: 'blocker' | 'follow_up' | 'payment_due' | 'booking_deadline' | 'travel_pack';
+  status: 'pending' | 'done' | 'cancelled';
+  sourceStage: LeadLifecycleStage | '';
+  title: string;
+  message: string;
+  dueAt: string;
+  assignedTo: string;
+  createdBy?: number | null;
+  completedAt?: string | null;
+};
+
 export type CrmQuoteApproval = {
   id: string;
   createdAt: string;

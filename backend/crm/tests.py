@@ -5,7 +5,7 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from .models import Lead, Quote, WorkflowReminder
+from .models import ItineraryStop, Lead, Quote, TripItinerary, WorkflowReminder
 
 
 class LeadWorkflowApiTests(APITestCase):
@@ -107,3 +107,151 @@ class LeadWorkflowApiTests(APITestCase):
         reminder.refresh_from_db()
         self.assertEqual(reminder.status, WorkflowReminder.Status.DONE)
         self.assertIsNotNone(reminder.completed_at)
+
+    def test_generate_workflow_reminders_can_target_one_lead(self):
+        blocked_lead = self.make_lead(
+            lifecycle_stage=Lead.LifecycleStage.QUOTE_IN_PROGRESS,
+            status=Lead.Status.PLANNING,
+            name="Blocked Traveler",
+        )
+        self.make_lead(name="Ready Traveler")
+
+        response = self.client.post(reverse("workflow-reminder-generate"), {"leadId": str(blocked_lead.id)}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertGreaterEqual(response.data["created"], 1)
+        self.assertEqual(len(response.data["reminders"]), response.data["created"])
+        self.assertEqual(WorkflowReminder.objects.exclude(lead=blocked_lead).count(), 0)
+
+        second_response = self.client.post(reverse("workflow-reminder-generate"), {"leadId": str(blocked_lead.id)}, format="json")
+
+        self.assertEqual(second_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second_response.data["created"], 0)
+        self.assertGreaterEqual(len(second_response.data["reminders"]), 1)
+
+    def test_trip_itinerary_rejects_end_before_start(self):
+        lead = self.make_lead()
+
+        response = self.client.post(
+            reverse("trip-itinerary-list"),
+            {
+                "leadId": str(lead.id),
+                "title": "Portugal family trip",
+                "startDate": "2026-06-10",
+                "endDate": "2026-06-09",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("endDate", response.data)
+
+    def test_itinerary_stop_must_stay_inside_trip_dates(self):
+        lead = self.make_lead()
+        itinerary = TripItinerary.objects.create(
+            lead=lead,
+            title="Portugal family trip",
+            start_date="2026-06-10",
+            end_date="2026-06-20",
+        )
+
+        response = self.client.post(
+            reverse("itinerary-stop-list"),
+            {
+                "itineraryId": str(itinerary.id),
+                "sequenceNumber": 1,
+                "city": "Lisbon",
+                "arrivalDate": "2026-06-09",
+                "departureDate": "2026-06-12",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("arrivalDate", response.data)
+
+    def test_accommodation_must_stay_inside_stop_dates(self):
+        lead = self.make_lead()
+        itinerary = TripItinerary.objects.create(
+            lead=lead,
+            title="Portugal family trip",
+            start_date="2026-06-10",
+            end_date="2026-06-20",
+        )
+        stop = ItineraryStop.objects.create(
+            itinerary=itinerary,
+            sequence_number=1,
+            city="Lisbon",
+            arrival_date="2026-06-10",
+            departure_date="2026-06-14",
+        )
+
+        response = self.client.post(
+            reverse("accommodation-block-list"),
+            {
+                "stopId": str(stop.id),
+                "name": "Lisbon Hotel",
+                "checkIn": "2026-06-10",
+                "checkOut": "2026-06-15",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("checkOut", response.data)
+
+    def test_transport_arrival_cannot_be_before_departure(self):
+        lead = self.make_lead()
+        itinerary = TripItinerary.objects.create(
+            lead=lead,
+            title="Portugal family trip",
+            start_date="2026-06-10",
+            end_date="2026-06-20",
+        )
+
+        response = self.client.post(
+            reverse("transport-segment-list"),
+            {
+                "itineraryId": str(itinerary.id),
+                "sequenceNumber": 1,
+                "mode": "flight",
+                "fromCity": "Lisbon",
+                "toCity": "Porto",
+                "departureAt": "2026-06-12T15:00:00Z",
+                "arrivalAt": "2026-06-12T12:00:00Z",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("arrivalAt", response.data)
+
+    def test_experience_must_stay_inside_stop_dates(self):
+        lead = self.make_lead()
+        itinerary = TripItinerary.objects.create(
+            lead=lead,
+            title="Portugal family trip",
+            start_date="2026-06-10",
+            end_date="2026-06-20",
+        )
+        stop = ItineraryStop.objects.create(
+            itinerary=itinerary,
+            sequence_number=1,
+            city="Lisbon",
+            arrival_date="2026-06-10",
+            departure_date="2026-06-14",
+        )
+
+        response = self.client.post(
+            reverse("experience-block-list"),
+            {
+                "stopId": str(stop.id),
+                "title": "Fado dinner",
+                "category": "Dining",
+                "startAt": "2026-06-15T20:00:00Z",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("startAt", response.data)

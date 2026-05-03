@@ -65,6 +65,20 @@ def can_assign_user_role(actor: User, role: str) -> bool:
     return False
 
 
+def serializer_value(attrs, instance, field_name):
+    if field_name in attrs:
+        return attrs[field_name]
+    if instance is None:
+        return None
+    return getattr(instance, field_name, None)
+
+
+def datetime_date(value):
+    if value is None:
+        return None
+    return value.date()
+
+
 def assign_user_role(user: User, role: str) -> User:
     crm_groups = list(Group.objects.filter(name__in=CRM_GROUP_ROLE_MAP.keys()))
     if crm_groups:
@@ -504,6 +518,24 @@ class AccommodationBlockSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "createdAt", "updatedAt"]
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        stop = serializer_value(attrs, self.instance, "stop")
+        check_in = serializer_value(attrs, self.instance, "check_in")
+        check_out = serializer_value(attrs, self.instance, "check_out")
+        errors = {}
+
+        if check_in and check_out and check_out < check_in:
+            errors["checkOut"] = "Check-out date cannot be before check-in date."
+        if stop and stop.arrival_date and check_in and check_in < stop.arrival_date:
+            errors["checkIn"] = "Check-in date must be within the stop dates."
+        if stop and stop.departure_date and check_out and check_out > stop.departure_date:
+            errors["checkOut"] = "Check-out date must be within the stop dates."
+
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
 
 class ExperienceBlockSerializer(serializers.ModelSerializer):
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
@@ -526,6 +558,22 @@ class ExperienceBlockSerializer(serializers.ModelSerializer):
             "notes",
         ]
         read_only_fields = ["id", "createdAt", "updatedAt"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        stop = serializer_value(attrs, self.instance, "stop")
+        start_at = serializer_value(attrs, self.instance, "start_at")
+        start_date = datetime_date(start_at)
+        errors = {}
+
+        if stop and stop.arrival_date and start_date and start_date < stop.arrival_date:
+            errors["startAt"] = "Activity date must be within the stop dates."
+        if stop and stop.departure_date and start_date and start_date > stop.departure_date:
+            errors["startAt"] = "Activity date must be within the stop dates."
+
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
 
 class ItineraryStopSerializer(serializers.ModelSerializer):
@@ -557,6 +605,24 @@ class ItineraryStopSerializer(serializers.ModelSerializer):
             "experiences",
         ]
         read_only_fields = ["id", "createdAt", "updatedAt", "accommodations", "experiences"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        itinerary = serializer_value(attrs, self.instance, "itinerary")
+        arrival_date = serializer_value(attrs, self.instance, "arrival_date")
+        departure_date = serializer_value(attrs, self.instance, "departure_date")
+        errors = {}
+
+        if arrival_date and departure_date and departure_date < arrival_date:
+            errors["departureDate"] = "Stop departure date cannot be before arrival date."
+        if itinerary and itinerary.start_date and arrival_date and arrival_date < itinerary.start_date:
+            errors["arrivalDate"] = "Stop arrival date must be within the trip dates."
+        if itinerary and itinerary.end_date and departure_date and departure_date > itinerary.end_date:
+            errors["departureDate"] = "Stop departure date must be within the trip dates."
+
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
 
 class TransportSegmentSerializer(serializers.ModelSerializer):
@@ -590,6 +656,26 @@ class TransportSegmentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "createdAt", "updatedAt"]
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        itinerary = serializer_value(attrs, self.instance, "itinerary")
+        departure_at = serializer_value(attrs, self.instance, "departure_at")
+        arrival_at = serializer_value(attrs, self.instance, "arrival_at")
+        departure_date = datetime_date(departure_at)
+        arrival_date = datetime_date(arrival_at)
+        errors = {}
+
+        if departure_at and arrival_at and arrival_at < departure_at:
+            errors["arrivalAt"] = "Transport arrival time cannot be before departure time."
+        if itinerary and itinerary.start_date and departure_date and departure_date < itinerary.start_date:
+            errors["departureAt"] = "Transport departure must be within the trip dates."
+        if itinerary and itinerary.end_date and arrival_date and arrival_date > itinerary.end_date:
+            errors["arrivalAt"] = "Transport arrival must be within the trip dates."
+
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
 
 class TripItinerarySerializer(serializers.ModelSerializer):
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
@@ -618,6 +704,18 @@ class TripItinerarySerializer(serializers.ModelSerializer):
             "transports",
         ]
         read_only_fields = ["id", "createdAt", "updatedAt", "leadName", "stops", "transports"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        start_date = serializer_value(attrs, self.instance, "start_date")
+        end_date = serializer_value(attrs, self.instance, "end_date")
+
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError(
+                {"endDate": "Return/end date cannot be before departure/start date."}
+            )
+
+        return attrs
 
 
 class LoginSerializer(serializers.Serializer):

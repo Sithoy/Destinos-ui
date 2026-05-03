@@ -14,6 +14,8 @@ import type {
   CrmTransportSegment,
   CrmTripItinerary,
   CrmUser,
+  CrmWorkflowReminder,
+  CrmWorkflowState,
   InquiryKind,
   ItineraryBookingStatus,
   ItineraryStatus,
@@ -42,6 +44,7 @@ type CrmPaymentRecordCreateInput = Omit<CrmPaymentRecord, 'id' | 'createdAt' | '
 type CrmPaymentRecordUpdateInput = Partial<Omit<CrmPaymentRecord, 'id' | 'createdAt' | 'updatedAt' | 'leadId' | 'leadName' | 'quoteNumber'>>;
 type CrmCommunicationRecordCreateInput = Omit<CrmCommunicationRecord, 'id' | 'createdAt' | 'updatedAt' | 'leadName' | 'quoteNumber' | 'sentByName'>;
 type CrmCommunicationRecordUpdateInput = Partial<Omit<CrmCommunicationRecord, 'id' | 'createdAt' | 'updatedAt' | 'leadId' | 'leadName' | 'quoteNumber' | 'sentByName'>>;
+type CrmWorkflowReminderUpdateInput = Partial<Omit<CrmWorkflowReminder, 'id' | 'createdAt' | 'updatedAt' | 'leadId' | 'leadName'>>;
 type CrmTripItineraryCreateInput = {
   leadId: string;
   title: string;
@@ -984,6 +987,108 @@ export async function updateCrmCommunicationRecord(id: string, patch: CrmCommuni
         ...authHeaders(session),
       },
       body: JSON.stringify(patch),
+    }),
+  );
+}
+
+export async function fetchCrmWorkflowState(leadId: string, session?: CrmSession | null): Promise<CrmWorkflowState | null> {
+  const base = crmApiBase();
+  if (!base || !session?.token) return null;
+
+  return parseApiResponse<CrmWorkflowState>(
+    await fetch(`${base}/api/leads/${leadId}/workflow/`, {
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function advanceCrmWorkflow(leadId: string, session?: CrmSession | null, targetStage?: LeadLifecycleStage | null): Promise<CrmWorkflowState> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for workflow advancement.');
+
+  const response = await fetch(`${base}/api/leads/${leadId}/advance-workflow/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(session),
+    },
+    body: JSON.stringify(targetStage ? { targetStage } : {}),
+  });
+
+  if (response.status === 409) {
+    return response.json() as Promise<CrmWorkflowState>;
+  }
+
+  return parseApiResponse<CrmWorkflowState>(response);
+}
+
+export async function fetchCrmWorkflowReminders(session?: CrmSession | null, status?: CrmWorkflowReminder['status']): Promise<CrmWorkflowReminder[]> {
+  const base = crmApiBase();
+  if (!base || !session?.token) return [];
+
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+
+  return parseApiResponse<CrmWorkflowReminder[]>(
+    await fetch(`${base}/api/workflow-reminders/${suffix}`, {
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function updateCrmWorkflowReminder(id: string, patch: CrmWorkflowReminderUpdateInput, session?: CrmSession | null): Promise<CrmWorkflowReminder> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for workflow reminders.');
+
+  return parseApiResponse<CrmWorkflowReminder>(
+    await fetch(`${base}/api/workflow-reminders/${id}/`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(patch),
+    }),
+  );
+}
+
+export async function completeCrmWorkflowReminder(id: string, session?: CrmSession | null): Promise<CrmWorkflowReminder> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for workflow reminders.');
+
+  return parseApiResponse<CrmWorkflowReminder>(
+    await fetch(`${base}/api/workflow-reminders/${id}/complete/`, {
+      method: 'POST',
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function cancelCrmWorkflowReminder(id: string, session?: CrmSession | null): Promise<CrmWorkflowReminder> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for workflow reminders.');
+
+  return parseApiResponse<CrmWorkflowReminder>(
+    await fetch(`${base}/api/workflow-reminders/${id}/cancel/`, {
+      method: 'POST',
+      headers: authHeaders(session),
+    }),
+  );
+}
+
+export async function generateCrmWorkflowReminders(session?: CrmSession | null, leadId?: string): Promise<{ created: number; reminders: CrmWorkflowReminder[] }> {
+  const base = crmApiBase();
+  if (!base || !session?.token) throw new Error('CRM API URL is not configured for workflow reminders.');
+
+  return parseApiResponse<{ created: number; reminders: CrmWorkflowReminder[] }>(
+    await fetch(`${base}/api/workflow-reminders/generate/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(session),
+      },
+      body: JSON.stringify(leadId ? { leadId } : {}),
     }),
   );
 }

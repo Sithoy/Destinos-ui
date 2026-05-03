@@ -35,6 +35,9 @@ import {
   CRM_EVENT,
   CRM_AUTH_EVENT,
   CRM_CLIENT_EVENT,
+  advanceCrmWorkflow,
+  cancelCrmWorkflowReminder,
+  completeCrmWorkflowReminder,
   createCrmAccommodationBlockRecord,
   createCrmCommunicationRecord,
   createCrmExperienceBlockRecord,
@@ -56,6 +59,9 @@ import {
   fetchCrmQuotes,
   fetchCrmTripItineraries,
   fetchCrmUsers,
+  fetchCrmWorkflowReminders,
+  fetchCrmWorkflowState,
+  generateCrmWorkflowReminders,
   hasCrmApi,
   loginCrm,
   logoutCrm,
@@ -71,7 +77,7 @@ import {
 } from '../data/crm';
 import { classicLogo } from '../data/travel';
 import { BrandLockup } from '../components/ui';
-import type { CrmClient, CrmCommunicationRecord, CrmLead, CrmManagedUser, CrmPaymentRecord, CrmQuote, CrmQuoteLine, CrmRole, CrmSession, CrmTripItinerary, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus, QuoteLineCategory, QuoteLineStatus } from '../types';
+import type { CrmClient, CrmCommunicationRecord, CrmLead, CrmManagedUser, CrmPaymentRecord, CrmQuote, CrmQuoteLine, CrmRole, CrmSession, CrmTripItinerary, CrmWorkflowReminder, CrmWorkflowState, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus, QuoteLineCategory, QuoteLineStatus } from '../types';
 
 type LeadTypeFilter = 'all' | InquiryKind;
 type StatusFilter = 'all' | LeadStatus | 'confirmedGroup' | 'workflowGroup';
@@ -1836,6 +1842,8 @@ export function CrmPage() {
   const [quotes, setQuotes] = useState<CrmQuote[]>([]);
   const [paymentRecords, setPaymentRecords] = useState<CrmPaymentRecord[]>([]);
   const [communicationRecords, setCommunicationRecords] = useState<CrmCommunicationRecord[]>([]);
+  const [workflowStates, setWorkflowStates] = useState<Record<string, CrmWorkflowState>>({});
+  const [workflowReminders, setWorkflowReminders] = useState<CrmWorkflowReminder[]>([]);
   const [tripItineraries, setTripItineraries] = useState<CrmTripItinerary[]>([]);
   const [crmUsers, setCrmUsers] = useState<CrmManagedUser[]>([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
@@ -1897,15 +1905,17 @@ export function CrmPage() {
         fetchCrmQuotes(crmSession),
         fetchCrmPaymentRecords(crmSession),
         fetchCrmCommunicationRecords(crmSession),
+        fetchCrmWorkflowReminders(crmSession, 'pending'),
         fetchCrmTripItineraries(crmSession),
         canManageUsers(crmSession?.user) ? fetchCrmUsers(crmSession) : Promise.resolve([]),
       ])
-        .then(([nextLeads, nextClients, nextQuotes, nextPaymentRecords, nextCommunicationRecords, nextItineraries, nextUsers]) => {
+        .then(([nextLeads, nextClients, nextQuotes, nextPaymentRecords, nextCommunicationRecords, nextWorkflowReminders, nextItineraries, nextUsers]) => {
           setLeads(nextLeads);
           setClients(nextClients);
           setQuotes(nextQuotes);
           setPaymentRecords(nextPaymentRecords);
           setCommunicationRecords(nextCommunicationRecords);
+          setWorkflowReminders(nextWorkflowReminders);
           setTripItineraries(nextItineraries);
           setCrmUsers(nextUsers);
           setCrmError('');
@@ -2072,11 +2082,19 @@ export function CrmPage() {
   const selectedClient = filteredClients.find((client) => client.id === selectedClientId) ?? pageClients[0] ?? filteredClients[0] ?? null;
   const selectedQuotes = selectedLead ? quotes.filter((quote) => quote.leadId === selectedLead.id).sort((a, b) => b.version - a.version) : [];
   const selectedQuote = selectedQuotes[0] ?? null;
+  const selectedWorkflowState = selectedLead ? workflowStates[selectedLead.id] ?? null : null;
+  const selectedWorkflowReminders = selectedLead ? workflowReminders.filter((reminder) => String(reminder.leadId) === String(selectedLead.id)) : [];
   const selectedPaymentRecords = selectedLead ? paymentRecords.filter((record) => record.leadId === selectedLead.id) : [];
   const selectedCommunicationRecords = selectedLead ? communicationRecords.filter((record) => record.leadId === selectedLead.id) : [];
   const selectedItineraries = selectedLead ? tripItineraries.filter((itinerary) => itinerary.leadId === selectedLead.id).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) : [];
   const selectedItinerary = selectedItineraries[0] ?? null;
   const selectedProcess = selectedLead ? processForLead(selectedLead) : null;
+  const selectedPrimaryBlocker = selectedWorkflowState?.blockers[0]?.detail || (selectedLead ? leadPrimaryBlocker(selectedLead) : '');
+  const selectedNextAction = selectedWorkflowState
+    ? selectedWorkflowState.canAdvance
+      ? `Ready to advance to ${selectedWorkflowState.nextStageLabel || 'next stage'}.`
+      : selectedWorkflowState.blockers[0]?.detail || 'Resolve workflow blockers before advancing.'
+    : selectedProcess?.nextAction || '';
   const selectedDetailTabs = useMemo(() => {
     if (!selectedLead) return [];
     if (activeNav === 'leisureStudio') return leisureWorkbenchTabs.map((tab) => tab.id);
@@ -2144,6 +2162,22 @@ export function CrmPage() {
           ].filter((section) => section.leads.length > 0);
   const selectedClientLeads = selectedClient ? leads.filter((lead) => lead.clientId === selectedClient.id) : [];
   useEffect(() => {
+    if (!selectedLead || !apiEnabled || !crmSession?.token) return;
+    let isMounted = true;
+    fetchCrmWorkflowState(selectedLead.id, crmSession)
+      .then((state) => {
+        if (!isMounted || !state) return;
+        setWorkflowStates((current) => ({ ...current, [selectedLead.id]: state }));
+      })
+      .catch((error: Error) => {
+        if (isMounted) setCrmError(error.message);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [apiEnabled, crmSession, selectedLead]);
+
+  useEffect(() => {
     if (selectedLead && !selectedDetailTabs.includes(detailTab)) {
       setDetailTab(selectedDetailTabs[0] ?? 'overview');
     }
@@ -2170,7 +2204,7 @@ export function CrmPage() {
   const corporateFinanceCount = corporateLeads.filter((lead) => lead.status === 'won').length;
   const corporateFulfilmentCount = corporateLeads.filter((lead) => lead.status === 'execution' || lead.status === 'completed').length;
   const urgentNewCount = leads.filter((lead) => lead.status === 'new' && (fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high')).length;
-  const taskCount = leads.filter((lead) => fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high').length;
+  const taskCount = workflowReminders.length || leads.filter((lead) => fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high').length;
   const calendarCount = leads.filter((lead) => Boolean(lead.dates) && lead.status !== 'lost' && lead.status !== 'completed').length;
   const clientCount = clients.length;
   const activeUserCount = crmUsers.filter((user) => user.isActive).length;
@@ -2191,7 +2225,7 @@ export function CrmPage() {
     command: { title: 'Command Center', subtitle: 'Incoming requests from website forms and phone intake' },
     leisureStudio: { title: 'Leisure Studio', subtitle: 'Classic and luxury trip workspaces for proposal, payment, itinerary, and travel-pack delivery' },
     corporateDesk: { title: 'Corporate Desk', subtitle: 'Corporate request workspace for travelers, approvals, finance, documents, and fulfilment' },
-    tasks: { title: 'Priority Tasks', subtitle: 'High-attention requests that need action from the team' },
+    tasks: { title: 'Priority Tasks', subtitle: 'Backend workflow reminders and high-attention requests that need action from the team' },
     calendar: { title: 'Travel Calendar', subtitle: 'Requests with travel dates, useful for upcoming movement planning' },
     clients: { title: 'Clients', subtitle: 'Client and company requests captured in the CRM pipeline' },
     reports: { title: 'Reports', subtitle: 'Filtered CRM data ready for export and review' },
@@ -2219,6 +2253,13 @@ export function CrmPage() {
       meta: 'Operationally aligned to move',
       Icon: Bell,
       filter: 'confirmedGroup',
+    },
+    {
+      label: 'Reminders',
+      value: workflowReminders.length,
+      meta: 'Generated by workflow engine',
+      Icon: CheckSquare,
+      filter: 'all',
     },
     {
       label: 'Leisure',
@@ -2303,6 +2344,20 @@ export function CrmPage() {
     const nextCommunicationRecords = await fetchCrmCommunicationRecords(crmSession);
     setCommunicationRecords(nextCommunicationRecords);
     return nextCommunicationRecords;
+  }
+
+  async function reloadWorkflowState(leadId: string) {
+    const nextWorkflowState = await fetchCrmWorkflowState(leadId, crmSession);
+    if (nextWorkflowState) {
+      setWorkflowStates((current) => ({ ...current, [leadId]: nextWorkflowState }));
+    }
+    return nextWorkflowState;
+  }
+
+  async function reloadWorkflowReminders() {
+    const nextWorkflowReminders = await fetchCrmWorkflowReminders(crmSession, 'pending');
+    setWorkflowReminders(nextWorkflowReminders);
+    return nextWorkflowReminders;
   }
 
   async function reloadItineraries() {
@@ -2507,6 +2562,49 @@ export function CrmPage() {
     }
   }
 
+  async function generateWorkflowReminders() {
+    try {
+      const result = await generateCrmWorkflowReminders(crmSession, selectedLead?.id);
+      if (result.reminders.length > 0) {
+        setWorkflowReminders((current) => {
+          const nextById = new Map(current.map((reminder) => [reminder.id, reminder]));
+          result.reminders.forEach((reminder) => nextById.set(reminder.id, reminder));
+          return Array.from(nextById.values());
+        });
+      }
+      await reloadWorkflowReminders();
+      if (selectedLead) await reloadWorkflowState(selectedLead.id);
+      if (result.created === 0 && result.reminders.length === 0) {
+        setCrmError('No new reminders were generated for this request. Existing pending reminders may already cover the current blockers.');
+        return;
+      }
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not generate workflow reminders.');
+    }
+  }
+
+  async function completeWorkflowReminder(reminder: CrmWorkflowReminder) {
+    try {
+      await completeCrmWorkflowReminder(reminder.id, crmSession);
+      await reloadWorkflowReminders();
+      if (selectedLead) await reloadWorkflowState(selectedLead.id);
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not complete reminder.');
+    }
+  }
+
+  async function cancelWorkflowReminder(reminder: CrmWorkflowReminder) {
+    try {
+      await cancelCrmWorkflowReminder(reminder.id, crmSession);
+      await reloadWorkflowReminders();
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not cancel reminder.');
+    }
+  }
+
   async function refreshLead(id: string, patch: Partial<Pick<CrmLead, 'status' | 'lifecycleStage' | 'priority' | 'internalNotes'>>) {
     try {
       const updatedLead = await updateCrmLeadRecord(id, patch, crmSession);
@@ -2522,6 +2620,24 @@ export function CrmPage() {
   }
 
   async function advanceLeadLifecycle(lead: CrmLead) {
+    if (apiEnabled && crmSession?.token) {
+      try {
+        const nextWorkflowState = await advanceCrmWorkflow(lead.id, crmSession);
+        setWorkflowStates((current) => ({ ...current, [lead.id]: nextWorkflowState }));
+        if (!nextWorkflowState.canAdvance && nextWorkflowState.currentStage === lead.lifecycleStage) {
+          const blockerText = nextWorkflowState.blockers.map((blocker) => blocker.detail).join(' ');
+          setCrmError(blockerText || 'Workflow is blocked by backend gates.');
+          return;
+        }
+        await Promise.all([reloadLeads(), reloadWorkflowReminders()]);
+        setCrmError('');
+        return;
+      } catch (error) {
+        setCrmError(error instanceof Error ? error.message : 'Could not advance workflow.');
+        return;
+      }
+    }
+
     const nextStage = nextLifecycleStage(lead);
     if (!nextStage) return;
     await refreshLead(lead.id, {
@@ -4040,7 +4156,7 @@ export function CrmPage() {
                     </div>
                     <div className={`rounded-lg border px-3 py-3 sm:col-span-2 ${styles.panelSoft}`}>
                       <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Bottleneck</div>
-                      <div className="mt-1 text-sm font-semibold">{leadPrimaryBlocker(selectedLead)}</div>
+                      <div className="mt-1 text-sm font-semibold">{selectedPrimaryBlocker}</div>
                     </div>
                   </div>
                 </div>
@@ -4048,29 +4164,33 @@ export function CrmPage() {
                 <div className={`rounded-xl border p-4 ${styles.panel}`}>
                   <div className="flex items-center justify-between gap-3">
                     <div className="font-semibold">Value-chain progress</div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{managerMeta?.task || selectedProcess?.primaryAction || 'Review request'}</span>
+                    <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedWorkflowState?.responsibleOwner || managerMeta?.task || selectedProcess?.primaryAction || 'Review request'}</span>
                   </div>
                   {(() => {
                     const currentStage = leadLifecycleStage(selectedLead);
                     const nextStage = nextLifecycleStage(selectedLead);
-                    const steps = lifecycleWorkflowSteps;
-                    const activeIndex = currentStage === 'closed' ? -1 : steps.findIndex(([step]) => step === currentStage);
-                    const currentStep =
-                      activeIndex >= 0 ? steps[activeIndex] : null;
+                    const backendStages = selectedWorkflowState?.stages ?? [];
+                    const steps = backendStages.length > 0 ? backendStages : lifecycleWorkflowSteps.map(([stage, label]) => ({
+                      stage,
+                      label,
+                      state: stage === currentStage ? 'current' : lifecycleWorkflowSteps.findIndex(([item]) => item === stage) < lifecycleWorkflowSteps.findIndex(([item]) => item === currentStage) ? 'done' : 'upcoming',
+                    }));
+                    const currentStep = steps.find((step) => step.state === 'current') ?? null;
+                    const canAdvance = selectedWorkflowState ? selectedWorkflowState.canAdvance : Boolean(nextStage);
 
                     return (
                       <div className="mt-4 grid gap-3">
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                           <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Stage roadmap</div>
                           <div className="mt-3 grid grid-cols-4 gap-x-2 gap-y-3">
-                            {steps.map(([stage, label], index) => {
-                              const isDone = activeIndex >= 0 && index < activeIndex;
-                              const isCurrent = activeIndex === index;
-                              const isBlocked = (currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance') && isCurrent;
+                            {steps.map((step) => {
+                              const isDone = step.state === 'done';
+                              const isCurrent = step.state === 'current';
+                              const isBlocked = selectedWorkflowState ? selectedWorkflowState.blockers.length > 0 && isCurrent : (currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance') && isCurrent;
                               const StageIcon = isDone ? CheckSquare : isCurrent ? (isBlocked ? Bell : ClipboardCheck) : MoreHorizontal;
 
                               return (
-                                <div key={stage} className="flex min-w-0 flex-col items-center text-center">
+                                <div key={step.stage} className="flex min-w-0 flex-col items-center text-center">
                                   <span
                                     className={`flex h-9 w-9 items-center justify-center rounded-full border ${
                                       isDone
@@ -4085,7 +4205,7 @@ export function CrmPage() {
                                     <StageIcon className="h-4 w-4" />
                                   </span>
                                   <div className={`mt-1 max-w-full text-[11px] leading-4 ${isCurrent ? styles.soft : styles.muted}`}>
-                                    {label}
+                                    {step.label}
                                   </div>
                                 </div>
                               );
@@ -4102,7 +4222,7 @@ export function CrmPage() {
                             <div className="flex items-center justify-between gap-3">
                               <div>
                                 <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current stage</div>
-                                <div className="mt-1 text-sm font-semibold">{currentStep[1]}</div>
+                                <div className="mt-1 text-sm font-semibold">{currentStep.label}</div>
                               </div>
                               <span
                                 className={`rounded-full px-2 py-0.5 text-[11px] ${
@@ -4111,30 +4231,78 @@ export function CrmPage() {
                                     : 'bg-sky-500/15 text-sky-300'
                                 }`}
                               >
-                                {currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance' ? 'Current blocker' : 'In progress'}
+                                {selectedWorkflowState?.blockers.length || currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance' ? 'Current blocker' : 'In progress'}
                               </span>
                             </div>
                             <div className={`mt-3 text-sm leading-6 ${styles.soft}`}>
-                              {selectedProcess?.stageGate || 'Current operating checkpoint.'}
+                              {selectedWorkflowState?.blockers[0]?.detail || selectedProcess?.stageGate || 'Current operating checkpoint.'}
                             </div>
                             <div className={`mt-3 border-t pt-3 text-sm leading-6 ${styles.muted}`}>
                               <span className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Next move</span>
-                              <div className={`mt-1 ${styles.soft}`}>{selectedProcess?.nextAction || 'No active process note yet.'}</div>
+                              <div className={`mt-1 ${styles.soft}`}>{selectedNextAction || 'No active process note yet.'}</div>
                             </div>
+                            {selectedWorkflowState?.blockers.length ? (
+                              <div className="mt-3 grid gap-2">
+                                {selectedWorkflowState.blockers.map((blocker) => (
+                                  <div key={blocker.key} className="rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+                                    <span className="font-semibold">{blocker.label}:</span> {blocker.detail}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
                             <button
                               type="button"
                               onClick={() => advanceLeadLifecycle(selectedLead)}
-                              disabled={!nextStage}
+                              disabled={!canAdvance}
                               className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               <CheckSquare className="h-4 w-4" />
-                              {lifecycleStageActionLabel(nextStage)}
+                              {selectedWorkflowState?.nextStageLabel ? `Advance to ${selectedWorkflowState.nextStageLabel}` : lifecycleStageActionLabel(nextStage)}
                             </button>
                           </div>
                         ) : null}
                       </div>
                     );
                   })()}
+                </div>
+
+                <div className={`rounded-xl border p-4 ${styles.panel}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">Workflow reminders</div>
+                      <div className={`mt-1 text-xs ${styles.muted}`}>{selectedWorkflowReminders.length} pending for this request</div>
+                    </div>
+                    <button type="button" onClick={generateWorkflowReminders} className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>
+                      <Bell className="h-4 w-4" />
+                      Generate
+                    </button>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {selectedWorkflowReminders.length > 0 ? selectedWorkflowReminders.slice(0, 4).map((reminder) => (
+                      <div key={reminder.id} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">{reminder.title}</div>
+                            <div className={`mt-1 text-xs ${styles.muted}`}>{reminder.assignedTo || 'Unassigned'} - due {formatDate(reminder.dueAt)}</div>
+                          </div>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] ${reminder.reminderType === 'blocker' ? 'bg-red-500/15 text-red-200' : styles.buttonGhost}`}>
+                            {reminder.reminderType.replace('_', ' ')}
+                          </span>
+                        </div>
+                        {reminder.message ? <div className={`mt-2 line-clamp-2 text-xs ${styles.soft}`}>{reminder.message}</div> : null}
+                        <div className="mt-3 flex gap-2">
+                          <button type="button" onClick={() => completeWorkflowReminder(reminder)} className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
+                            Complete
+                          </button>
+                          <button type="button" onClick={() => cancelWorkflowReminder(reminder)} className={`h-8 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )) : (
+                      <div className={`rounded-lg border p-3 text-sm ${styles.panelSoft}`}>No pending backend reminders for this request.</div>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
@@ -4230,8 +4398,8 @@ export function CrmPage() {
                       </div>
                       <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                         <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Bottleneck</div>
-                        <div className="mt-1 text-sm font-semibold">{leadPrimaryBlocker(selectedLead)}</div>
-                        <div className={`mt-1 text-xs ${styles.muted}`}>{selectedProcess?.primaryAction || 'Review request'}</div>
+                        <div className="mt-1 text-sm font-semibold">{selectedPrimaryBlocker}</div>
+                        <div className={`mt-1 text-xs ${styles.muted}`}>{selectedWorkflowState?.responsibleOwner || selectedProcess?.primaryAction || 'Review request'}</div>
                       </div>
                     </div>
                   </div>
@@ -4269,16 +4437,16 @@ export function CrmPage() {
                     </div>
                     <div className={`mt-4 rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                       <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current control point</div>
-                      <div className="mt-1 text-sm font-semibold">{leadPrimaryBlocker(selectedLead)}</div>
-                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedProcess?.stageGate || 'Keep the current corporate checkpoint controlled before release.'}</p>
+                      <div className="mt-1 text-sm font-semibold">{selectedPrimaryBlocker}</div>
+                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedWorkflowState?.blockers[0]?.detail || selectedProcess?.stageGate || 'Keep the current corporate checkpoint controlled before release.'}</p>
                       <button
                         type="button"
                         onClick={() => advanceLeadLifecycle(selectedLead)}
-                        disabled={!nextStage}
+                        disabled={selectedWorkflowState ? !selectedWorkflowState.canAdvance : !nextStage}
                         className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         <CheckSquare className="h-4 w-4" />
-                        {lifecycleStageActionLabel(nextStage)}
+                        {selectedWorkflowState?.nextStageLabel ? `Advance to ${selectedWorkflowState.nextStageLabel}` : lifecycleStageActionLabel(nextStage)}
                       </button>
                     </div>
                   </div>
@@ -4334,9 +4502,9 @@ export function CrmPage() {
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
                         <div className="font-semibold">{currentCorporateLabel}</div>
-                        <div className={`mt-1 text-sm ${styles.muted}`}>{selectedProcess?.nextAction || 'Move the corporate request through the active checkpoint.'}</div>
+                        <div className={`mt-1 text-sm ${styles.muted}`}>{selectedNextAction || 'Move the corporate request through the active checkpoint.'}</div>
                       </div>
-                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedProcess?.primaryAction || 'Working stage'}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedWorkflowState?.currentStageLabel || selectedProcess?.primaryAction || 'Working stage'}</span>
                     </div>
 
                     {detailTab === 'itinerary' ? (
@@ -4550,13 +4718,13 @@ export function CrmPage() {
                         </div>
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                           <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current owner</div>
-                          <div className="mt-1 text-sm font-semibold">{leadOwner(selectedLead)}</div>
+                          <div className="mt-1 text-sm font-semibold">{selectedWorkflowState?.responsibleOwner || leadOwner(selectedLead)}</div>
                           <div className={`mt-1 text-xs ${styles.muted}`}>Studio work owner</div>
                         </div>
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                           <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current stage</div>
-                          <div className="mt-1 text-sm font-semibold">{currentWorkbenchLabel}</div>
-                          <div className={`mt-1 text-xs ${styles.muted}`}>{leadPrimaryBlocker(selectedLead)}</div>
+                          <div className="mt-1 text-sm font-semibold">{selectedWorkflowState?.currentStageLabel || currentWorkbenchLabel}</div>
+                          <div className={`mt-1 text-xs ${styles.muted}`}>{selectedPrimaryBlocker}</div>
                         </div>
                       </div>
                     </div>
@@ -4612,9 +4780,9 @@ export function CrmPage() {
                       <div className="mb-4 flex items-center justify-between gap-3">
                         <div>
                           <div className="font-semibold">{currentWorkbenchLabel}</div>
-                          <div className={`mt-1 text-sm ${styles.muted}`}>{selectedProcess?.stageGate || 'Use this space to move the trip through the active leisure checkpoint.'}</div>
+                          <div className={`mt-1 text-sm ${styles.muted}`}>{selectedWorkflowState?.blockers[0]?.detail || selectedProcess?.stageGate || 'Use this space to move the trip through the active leisure checkpoint.'}</div>
                         </div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedProcess?.primaryAction || 'Working stage'}</span>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedWorkflowState?.currentStageLabel || selectedProcess?.primaryAction || 'Working stage'}</span>
                       </div>
 
                       {detailTab === 'brief' ? (

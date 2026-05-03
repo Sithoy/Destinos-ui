@@ -313,8 +313,17 @@ class WorkflowReminderViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def generate(self, request):
-        created = generate_workflow_reminders(created_by=request.user)
-        serializer = self.get_serializer(created, many=True)
+        lead_id = request.data.get("leadId") or request.query_params.get("leadId")
+        lead_queryset = Lead.objects.filter(id=lead_id) if lead_id else None
+        created = generate_workflow_reminders(lead_queryset=lead_queryset, created_by=request.user)
+        if lead_id:
+            reminders = WorkflowReminder.objects.select_related("lead", "communication", "created_by").filter(
+                lead_id=lead_id,
+                status=WorkflowReminder.Status.PENDING,
+            )
+        else:
+            reminders = created
+        serializer = self.get_serializer(reminders, many=True)
         return Response({"created": len(created), "reminders": serializer.data}, status=status.HTTP_201_CREATED)
 
 
