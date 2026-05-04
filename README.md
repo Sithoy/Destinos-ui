@@ -159,3 +159,5 @@ python backend/manage.py test crm ctm
 The Django backend is the source of truth. The React frontend should consume backend APIs for CRM and CTM workflows instead of relying on long-lived mock state.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the current architecture, module boundaries, and proposed cleanup path.
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for deployment configuration, environment variables, and post-deploy checks.
