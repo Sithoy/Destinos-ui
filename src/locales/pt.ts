@@ -228,7 +228,7 @@ export const pt = {
       },
       supportDesk: {
         eyebrow: 'Apoio DPM',
-        text: 'Apoio dedicado para planeamento, reservas e assistência em viagem, com resposta em até 24 horas úteis nos dias úteis.',
+        text: 'Apoio dedicado para planeamento, reservas e assistência em viagem, com resposta dentro de 24 horas nos dias úteis de trabalho.',
         openWorkspace: 'Abrir Área da Equipa',
         teamAccess: 'Acesso da Equipa DPM',
       },
