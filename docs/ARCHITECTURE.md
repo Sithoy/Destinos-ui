@@ -25,84 +25,63 @@ Core domains:
 
 ```text
 dpmundo/
-├── src/
-│   ├── components/
-│   ├── data/
-│   ├── pages/
-│   ├── i18n/
-│   └── types.ts
-├── public/
-├── backend/
-│   ├── crm/
-│   │   ├── models.py
-│   │   ├── serializers.py
-│   │   ├── views.py
-│   │   └── workflow.py
-│   ├── ctm/
-│   │   ├── models.py
-│   │   ├── serializers.py
-│   │   └── views.py
-│   └── dpm_backend/
-├── docs/
-├── scripts/
-└── README.md
+|-- frontend/
+|   |-- src/
+|   |   |-- modules/
+|   |   |   |-- landing/
+|   |   |   |-- crm/
+|   |   |   `-- ctm/
+|   |   |-- components/
+|   |   |-- data/
+|   |   |-- pages/
+|   |   |-- locales/
+|   |   `-- types.ts
+|   |-- public/
+|   |-- package.json
+|   `-- vite.config.ts
+|-- backend/
+|   |-- crm/
+|   |   |-- models.py
+|   |   |-- serializers.py
+|   |   |-- views.py
+|   |   `-- workflow.py
+|   |-- ctm/
+|   |   |-- models.py
+|   |   |-- serializers.py
+|   |   `-- views.py
+|   `-- dpm_backend/
+|-- docs/
+|-- .github/workflows/
+|-- vercel.json
+`-- README.md
 ```
 
-This structure works, but the frontend module boundaries are not obvious from the top level. That makes the repo harder to review quickly on GitHub.
+## Frontend Boundaries
 
-## Proposed Structure
+The frontend lives under `frontend/`.
 
-```text
-dpmundo/
-├── frontend/
-│   ├── src/
-│   │   ├── modules/
-│   │   │   ├── landing/
-│   │   │   ├── crm/
-│   │   │   └── ctm/
-│   │   ├── components/
-│   │   ├── data/
-│   │   ├── hooks/
-│   │   └── types/
-│   ├── public/
-│   ├── package.json
-│   └── vite.config.ts
-├── backend/
-│   ├── crm/
-│   ├── ctm/
-│   ├── dpm_backend/
-│   ├── manage.py
-│   └── requirements.txt
-├── docs/
-├── scripts/
-├── .github/workflows/
-└── README.md
-```
+- `frontend/src/modules/landing/` documents and will gradually host landing-page features.
+- `frontend/src/modules/crm/` hosts extracted CRM modules, starting with the briefing gate.
+- `frontend/src/modules/ctm/` documents and will gradually host corporate travel features.
+- `frontend/src/components/` is for shared UI.
+- `frontend/src/data/` is for frontend API/data access helpers.
 
-## Recommended Migration Plan
+The current page-level files can be split further, but each extraction should preserve behavior and keep builds passing.
 
-1. **Documentation first**
-   - Keep this README and architecture document accurate.
-   - Add screenshots and workflow descriptions before moving code.
+## Backend Boundaries
 
-2. **Frontend module cleanup**
-   - Move landing, CRM, and CTM page logic under `frontend/src/modules/`.
-   - Keep shared UI under `frontend/src/components/`.
-   - Keep API/data clients under `frontend/src/data/`.
+The backend lives under `backend/`.
 
-3. **Repository layout migration**
-   - Move current frontend files into `frontend/`.
-   - Update Vite, TypeScript, ESLint, Vercel, and package scripts.
-   - Verify local dev and production build.
+- `backend/crm/` owns CRM leads, clients, workflow, trip design, quotes, payments, communications, reminders, and travel pack logic.
+- `backend/ctm/` owns company accounts, travelers, corporate trip requests, approvals, billing, documents, and messages.
+- `backend/dpm_backend/` owns Django settings, URL routing, CORS, auth, and deployment configuration.
 
-4. **Backend cleanup**
-   - Keep Django apps inside `backend/crm/` and `backend/ctm/`.
-   - Keep schema changes in Django migrations.
-   - Keep business rules close to DRF serializers, views, and workflow services.
+## CI and Deployment
 
-5. **CI and deployment readability**
-   - Add `.github/workflows/` for frontend build and backend checks.
-   - Keep deployment notes explicit for Vercel and Render.
+- Frontend GitHub Action runs from `frontend/`.
+- Backend GitHub Action runs from `backend/`.
+- Vercel is configured from the repository root with `frontend/dist` as output.
+- Render-compatible Django deployment remains under `backend/`.
 
 ## Recruiter Review Notes
 

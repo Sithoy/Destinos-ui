@@ -70,8 +70,11 @@ docs/screenshots/
 
 ```text
 dpmundo/
-|-- src/                  # React frontend application
-|-- public/               # Static frontend assets
+|-- frontend/             # React + Vite frontend application
+|   |-- src/              # Frontend source
+|   |-- public/           # Static frontend assets
+|   |-- package.json      # Frontend scripts and dependencies
+|   `-- vite.config.ts    # Vite configuration
 |-- backend/              # Django backend
 |   |-- crm/              # CRM backend domain
 |   |-- ctm/              # CTM backend domain
@@ -79,14 +82,13 @@ dpmundo/
 |-- docs/                 # Architecture and product documentation
 |-- scripts/              # Utility scripts
 |-- .github/workflows/    # CI checks
-|-- package.json          # Frontend scripts and dependencies
-|-- vite.config.ts        # Vite configuration
+|-- vercel.json           # Vercel build/output routing
 `-- README.md
 ```
 
 ## Target Structure
 
-The current repo is functional. The planned cleanup is to make the module boundaries clearer for maintainers and reviewers:
+The repo now uses the target top-level structure. Ongoing cleanup will continue inside `frontend/src/modules/`:
 
 ```text
 dpmundo/
@@ -113,31 +115,34 @@ dpmundo/
 `-- README.md
 ```
 
-This migration should be done in phases to avoid breaking imports, deployment settings, and environment configuration.
+Further cleanup should be done in small module-level phases to avoid mixing unrelated Landing, CRM, CTM, and backend changes.
 
 ## Local Development
 
 Install frontend dependencies:
 
 ```bash
+cd frontend
 npm install
 ```
 
 Run the frontend:
 
 ```bash
+cd frontend
 npm run dev
 ```
 
 Run the Django backend:
 
 ```bash
-npm run backend:dev
+python backend/manage.py runserver
 ```
 
 Run frontend checks:
 
 ```bash
+cd frontend
 npm run build
 npm run lint
 ```

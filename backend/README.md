@@ -36,9 +36,10 @@ Set the frontend API URL:
 copy .env.example .env
 ```
 
-Then keep `VITE_CRM_API_URL=http://localhost:8000` in `.env` and run the frontend with:
+Then keep `VITE_CRM_API_URL=http://localhost:8000` in the repository root `.env` and run the frontend with:
 
 ```bash
+cd frontend
 npm run dev
 ```
 

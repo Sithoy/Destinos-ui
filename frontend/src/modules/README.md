@@ -1,8 +1,8 @@
 # Frontend Modules
 
-This folder documents the intended frontend module boundaries for DPM.
+This folder contains and documents the frontend module boundaries for DPM.
 
-The current Vite app still uses the existing `src/` structure. The module folders are being introduced first as a readability layer before any import-moving refactor.
+The Vite app now lives under `frontend/`. Module extraction is incremental: new or extracted feature code should live under the relevant module folder while shared UI and API helpers remain in shared directories.
 
 ## Product Areas
 

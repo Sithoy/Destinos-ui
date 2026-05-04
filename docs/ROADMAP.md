@@ -41,7 +41,9 @@ Goal: keep Django as the source of truth and make backend domains easier to unde
 
 ## 4. Full Repository Layout Migration
 
-Goal: move to a cleaner top-level structure only after module boundaries are stable.
+Status: completed for the top-level frontend/backend split.
+
+Goal: keep the cleaner top-level structure stable while continuing module-level cleanup.
 
 Target:
 
@@ -55,7 +57,7 @@ dpmundo/
 `-- README.md
 ```
 
-Required updates:
+Completed updates:
 
 - Vite config
 - TypeScript config
@@ -63,6 +65,12 @@ Required updates:
 - Vercel settings
 - GitHub workflows
 - documentation links
+
+Remaining work:
+
+- Continue splitting large frontend pages into module components.
+- Add screenshots and demo data guidance.
+- Keep CI green after each module extraction.
 
 ## 5. Deployment Readiness
 

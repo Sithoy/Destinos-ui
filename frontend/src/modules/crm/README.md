@@ -11,7 +11,9 @@ The CRM module is the internal DPM workspace for managing travel requests and op
 
 ## Current Implementation
 
-CRM UI currently lives mainly in the existing `src/pages/CrmPage.tsx` file, with data/API helpers under `src/data/`.
+CRM UI currently lives mainly in `frontend/src/pages/CrmPage.tsx`, with data/API helpers under `frontend/src/data/`.
+
+The briefing gate has been extracted to `frontend/src/modules/crm/briefing/`.
 
 Future cleanup should split the CRM into smaller components and feature folders such as:
 
