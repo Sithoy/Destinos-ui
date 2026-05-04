@@ -142,6 +142,8 @@ type TripDesignDrafts = {
     stopId: string;
     name: string;
     roomType: string;
+    checkIn: string;
+    checkOut: string;
     rooms: string;
     supplier: string;
     bookingStatus: 'draft' | 'quoted' | 'held' | 'confirmed' | 'cancelled';
@@ -150,6 +152,8 @@ type TripDesignDrafts = {
     mode: 'flight' | 'train' | 'car' | 'ferry' | 'transfer' | 'other';
     fromCity: string;
     toCity: string;
+    departureAt: string;
+    arrivalAt: string;
     supplier: string;
     bookingStatus: 'draft' | 'quoted' | 'held' | 'confirmed' | 'cancelled';
   };
@@ -710,6 +714,121 @@ function formatDateRange(start?: string | null, end?: string | null) {
   if (!start && !end) return 'Dates pending';
   if (!end) return formatDateOnly(start);
   return `${formatDateOnly(start)} - ${formatDateOnly(end)}`;
+}
+
+function dateTimeValue(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseStoredTravelDates(value?: string | null) {
+  if (!value) return { startDate: null, endDate: null };
+  const matches = value.match(/\d{4}-\d{2}-\d{2}/g) ?? [];
+  return {
+    startDate: matches[0] ?? null,
+    endDate: matches[1] ?? null,
+  };
+}
+
+function currentDateInput() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function maxDateInput(...values: Array<string | null | undefined>) {
+  const cleanValues = values.filter(Boolean) as string[];
+  return cleanValues.length > 0 ? cleanValues.sort().at(-1) : undefined;
+}
+
+function localDateTimeToIso(value?: string | null) {
+  const date = dateTimeValue(value);
+  return date ? date.toISOString() : null;
+}
+
+function dateRangeError(start: string | null | undefined, end: string | null | undefined, label: string) {
+  const startDate = dateTimeValue(start);
+  const endDate = dateTimeValue(end);
+  if (startDate && endDate && endDate.getTime() < startDate.getTime()) {
+    return `${label} end date cannot be before start date.`;
+  }
+  return '';
+}
+
+function pastDateError(value: string | null | undefined, label: string) {
+  const today = currentDateInput();
+  if (value && value.slice(0, 10) < today) return `${label} cannot be before the current date.`;
+  return '';
+}
+
+function dateContainmentError(value: string | null | undefined, min: string | null | undefined, max: string | null | undefined, label: string, parentLabel: string) {
+  const date = dateTimeValue(value);
+  const minDate = dateTimeValue(min);
+  const maxDate = dateTimeValue(max);
+  if (date && minDate && date.getTime() < minDate.getTime()) return `${label} must be inside ${parentLabel}.`;
+  if (date && maxDate && date.getTime() > maxDate.getTime()) return `${label} must be inside ${parentLabel}.`;
+  return '';
+}
+
+function isDueBy(value: string | null | undefined, limit: Date) {
+  const date = dateTimeValue(value);
+  return Boolean(date && date.getTime() <= limit.getTime());
+}
+
+function workflowReminderGenerationAvailability(
+  lead: CrmLead | null,
+  workflowState: CrmWorkflowState | null,
+  pendingReminders: CrmWorkflowReminder[],
+  paymentRecords: CrmPaymentRecord[],
+  communicationRecords: CrmCommunicationRecord[],
+  leadQuotes: CrmQuote[],
+) {
+  if (!lead) return { available: false, reason: 'Select a request before generating reminders.' };
+  if (!workflowState) return { available: false, reason: 'Workflow state is still loading.' };
+
+  if (lead.status === 'completed' || lead.status === 'lost' || workflowState.currentStage === 'completed' || workflowState.currentStage === 'closed') {
+    return { available: false, reason: 'No reminders are needed for completed or closed requests.' };
+  }
+
+  if (pendingReminders.length > 0) {
+    return { available: false, reason: 'Pending reminders already exist for this request.' };
+  }
+
+  const now = new Date();
+  const twoDayLimit = new Date(now);
+  twoDayLimit.setDate(twoDayLimit.getDate() + 2);
+  const hasWorkflowBlocker = workflowState.blockers.length > 0;
+  const hasOverdueFollowUp = communicationRecords.some((record) => (
+    record.followUpDue
+    && isDueBy(record.followUpDue, now)
+    && record.status !== 'cancelled'
+    && record.status !== 'failed'
+  ));
+  const hasDuePayment = paymentRecords.some((record) => (
+    record.dueDate
+    && isDueBy(record.dueDate, twoDayLimit)
+    && !['paid', 'cancelled', 'refunded'].includes(record.status)
+  ));
+  const hasSupplierDeadline = leadQuotes.some((quote) => quote.lines.some((line) => (
+    line.supplierDeadline
+    && isDueBy(line.supplierDeadline, twoDayLimit)
+    && line.status !== 'confirmed'
+  )));
+  const hasTravelPack = communicationRecords.some((record) => (
+    record.kind === 'travel_pack' && (record.status === 'ready' || record.status === 'sent')
+  ));
+  const needsTravelPack = workflowState.currentStage === 'confirmed' && !hasTravelPack;
+
+  if (hasWorkflowBlocker) return { available: true, reason: 'Generate reminders for current workflow blockers.' };
+  if (hasOverdueFollowUp) return { available: true, reason: 'Generate reminders for overdue client follow-ups.' };
+  if (hasDuePayment) return { available: true, reason: 'Generate reminders for payment deadlines.' };
+  if (hasSupplierDeadline) return { available: true, reason: 'Generate reminders for supplier deadlines.' };
+  if (needsTravelPack) return { available: true, reason: 'Generate a reminder to prepare the travel pack.' };
+
+  return { available: false, reason: 'No reminder rule is active for this stage.' };
 }
 
 function moneyValue(value: string | number | null | undefined, currency = 'USD') {
@@ -1804,6 +1923,8 @@ function emptyTripDesignDrafts(): TripDesignDrafts {
       stopId: '',
       name: '',
       roomType: '',
+      checkIn: '',
+      checkOut: '',
       rooms: '1',
       supplier: '',
       bookingStatus: 'quoted',
@@ -1812,6 +1933,8 @@ function emptyTripDesignDrafts(): TripDesignDrafts {
       mode: 'flight',
       fromCity: '',
       toCity: '',
+      departureAt: '',
+      arrivalAt: '',
       supplier: '',
       bookingStatus: 'quoted',
     },
@@ -2122,6 +2245,21 @@ export function CrmPage() {
   const isCommunicationReady = selectedCommunicationReadinessItems.every((item) => item.ready);
   const selectedCommunicationMessage = selectedLead ? communicationDraft.message || communicationTemplate(communicationDraft.kind, selectedLead, selectedQuote, selectedPaymentSummary, isTravelPackReady) : '';
   const selectedCommunicationLog = selectedLead ? communicationLogItems(selectedLead, selectedQuote, isTravelPackReady, selectedCommunicationRecords) : [];
+  const selectedStoredTravelDates = selectedLead ? parseStoredTravelDates(selectedLead.dates) : { startDate: null, endDate: null };
+  const selectedTripDateRange = {
+    startDate: selectedItinerary?.startDate ?? selectedStoredTravelDates.startDate,
+    endDate: selectedItinerary?.endDate ?? selectedStoredTravelDates.endDate,
+  };
+  const selectedReminderGeneration = workflowReminderGenerationAvailability(
+    selectedLead,
+    selectedWorkflowState,
+    selectedWorkflowReminders,
+    selectedPaymentRecords,
+    selectedCommunicationRecords,
+    selectedQuotes,
+  );
+  const selectedStayStopId = tripDesignDrafts.stay.stopId || selectedItinerary?.stops[0]?.id || '';
+  const selectedStayStop = selectedItinerary?.stops.find((stop) => stop.id === selectedStayStopId) ?? null;
   const selectedLeisureRows = selectedLead ? leisureWorkbenchRows(selectedLead) : [];
   const selectedLeisurePackages = selectedLead ? leisurePackageOptions(selectedLead) : [];
   const managerMeta = selectedLead ? extractManagerBoardMeta(selectedLead.internalNotes) : null;
@@ -2382,12 +2520,15 @@ export function CrmPage() {
 
   async function ensureTripItineraryForLead(lead: CrmLead) {
     if (selectedItinerary) return selectedItinerary;
+    const storedDates = parseStoredTravelDates(lead.dates);
 
     const itinerary = await createCrmTripItineraryRecord(
       {
         leadId: lead.id,
         title: `${lead.destination || lead.name} trip design`,
         status: 'draft',
+        startDate: storedDates.startDate,
+        endDate: storedDates.endDate,
         notes: 'Created from the CRM Trip Design workspace.',
       },
       crmSession,
@@ -2563,6 +2704,11 @@ export function CrmPage() {
   }
 
   async function generateWorkflowReminders() {
+    if (!selectedReminderGeneration.available) {
+      setCrmError(selectedReminderGeneration.reason);
+      return;
+    }
+
     try {
       const result = await generateCrmWorkflowReminders(crmSession, selectedLead?.id);
       if (result.reminders.length > 0) {
@@ -2883,6 +3029,18 @@ export function CrmPage() {
       setCrmError('City is required before adding a trip stop.');
       return;
     }
+    const hasStopDates = Boolean(tripDesignDrafts.stop.arrivalDate || tripDesignDrafts.stop.departureDate);
+    const stopDateError =
+      (hasStopDates && (!selectedTripDateRange.startDate || !selectedTripDateRange.endDate) ? 'Set the trip departure and return dates before adding dated city stops.' : '')
+      || pastDateError(tripDesignDrafts.stop.arrivalDate, 'Stop arrival date')
+      || pastDateError(tripDesignDrafts.stop.departureDate, 'Stop departure date')
+      || dateRangeError(tripDesignDrafts.stop.arrivalDate, tripDesignDrafts.stop.departureDate, 'Stop')
+      || dateContainmentError(tripDesignDrafts.stop.arrivalDate, selectedTripDateRange.startDate, selectedTripDateRange.endDate, 'Stop arrival date', 'the trip dates')
+      || dateContainmentError(tripDesignDrafts.stop.departureDate, selectedTripDateRange.startDate, selectedTripDateRange.endDate, 'Stop departure date', 'the trip dates');
+    if (stopDateError) {
+      setCrmError(stopDateError);
+      return;
+    }
 
     try {
       const itinerary = await ensureTripItineraryForLead(selectedLead);
@@ -2910,12 +3068,25 @@ export function CrmPage() {
 
   async function submitTripDesignStay() {
     const stopId = tripDesignDrafts.stay.stopId || selectedItinerary?.stops[0]?.id || '';
+    const stop = selectedItinerary?.stops.find((item) => item.id === stopId) ?? null;
     if (!stopId) {
       setCrmError('Add a trip stop before adding a stay.');
       return;
     }
     if (!tripDesignDrafts.stay.name.trim()) {
       setCrmError('Stay name is required.');
+      return;
+    }
+    const hasStayDates = Boolean(tripDesignDrafts.stay.checkIn || tripDesignDrafts.stay.checkOut);
+    const stayDateError =
+      (hasStayDates && (!stop?.arrivalDate || !stop?.departureDate) ? 'Set stop arrival and departure dates before adding stay dates.' : '')
+      || pastDateError(tripDesignDrafts.stay.checkIn, 'Check-in date')
+      || pastDateError(tripDesignDrafts.stay.checkOut, 'Check-out date')
+      || dateRangeError(tripDesignDrafts.stay.checkIn, tripDesignDrafts.stay.checkOut, 'Stay')
+      || dateContainmentError(tripDesignDrafts.stay.checkIn, stop?.arrivalDate, stop?.departureDate, 'Check-in date', 'the stop dates')
+      || dateContainmentError(tripDesignDrafts.stay.checkOut, stop?.arrivalDate, stop?.departureDate, 'Check-out date', 'the stop dates');
+    if (stayDateError) {
+      setCrmError(stayDateError);
       return;
     }
 
@@ -2926,6 +3097,8 @@ export function CrmPage() {
           name: tripDesignDrafts.stay.name.trim(),
           accommodationType: 'hotel',
           roomType: tripDesignDrafts.stay.roomType,
+          checkIn: tripDesignDrafts.stay.checkIn || null,
+          checkOut: tripDesignDrafts.stay.checkOut || null,
           rooms: Number(tripDesignDrafts.stay.rooms) || 1,
           supplier: tripDesignDrafts.stay.supplier,
           bookingStatus: tripDesignDrafts.stay.bookingStatus,
@@ -2946,6 +3119,20 @@ export function CrmPage() {
       setCrmError('Movement origin and destination are required.');
       return;
     }
+    const hasMovementDates = Boolean(tripDesignDrafts.movement.departureAt || tripDesignDrafts.movement.arrivalAt);
+    const tripStartDateTime = selectedTripDateRange.startDate ? `${selectedTripDateRange.startDate}T00:00` : null;
+    const tripEndDateTime = selectedTripDateRange.endDate ? `${selectedTripDateRange.endDate}T23:59` : null;
+    const movementDateError =
+      (hasMovementDates && (!selectedTripDateRange.startDate || !selectedTripDateRange.endDate) ? 'Set the trip departure and return dates before adding dated movements.' : '')
+      || pastDateError(tripDesignDrafts.movement.departureAt, 'Movement departure')
+      || pastDateError(tripDesignDrafts.movement.arrivalAt, 'Movement arrival')
+      || dateRangeError(tripDesignDrafts.movement.departureAt, tripDesignDrafts.movement.arrivalAt, 'Movement')
+      || dateContainmentError(tripDesignDrafts.movement.departureAt, tripStartDateTime, tripEndDateTime, 'Movement departure', 'the trip dates')
+      || dateContainmentError(tripDesignDrafts.movement.arrivalAt, tripStartDateTime, tripEndDateTime, 'Movement arrival', 'the trip dates');
+    if (movementDateError) {
+      setCrmError(movementDateError);
+      return;
+    }
 
     try {
       const itinerary = await ensureTripItineraryForLead(selectedLead);
@@ -2956,6 +3143,8 @@ export function CrmPage() {
           mode: tripDesignDrafts.movement.mode,
           fromCity: tripDesignDrafts.movement.fromCity.trim(),
           toCity: tripDesignDrafts.movement.toCity.trim(),
+          departureAt: localDateTimeToIso(tripDesignDrafts.movement.departureAt),
+          arrivalAt: localDateTimeToIso(tripDesignDrafts.movement.arrivalAt),
           supplier: tripDesignDrafts.movement.supplier,
           bookingStatus: tripDesignDrafts.movement.bookingStatus,
         },
@@ -3004,6 +3193,14 @@ export function CrmPage() {
     const serviceKey = manualRequest.serviceKey as InquiryKind;
     if (serviceKey === 'corporate') {
       setCrmError('Corporate requests must come from CTM. Use phone intake here for Classic or Luxury only.');
+      return;
+    }
+    const manualDateError =
+      pastDateError(manualRequest.startDate, 'Trip departure date')
+      || pastDateError(manualRequest.endDate, 'Trip return date')
+      || dateRangeError(manualRequest.startDate, manualRequest.endDate, 'Trip');
+    if (manualDateError) {
+      setCrmError(manualDateError);
       return;
     }
     const dates = [manualRequest.startDate, manualRequest.endDate].filter(Boolean).join(' - ');
@@ -4272,7 +4469,17 @@ export function CrmPage() {
                       <div className="font-semibold">Workflow reminders</div>
                       <div className={`mt-1 text-xs ${styles.muted}`}>{selectedWorkflowReminders.length} pending for this request</div>
                     </div>
-                    <button type="button" onClick={generateWorkflowReminders} className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>
+                    <button
+                      type="button"
+                      onClick={generateWorkflowReminders}
+                      disabled={!selectedReminderGeneration.available}
+                      title={selectedReminderGeneration.reason}
+                      className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium transition ${
+                        selectedReminderGeneration.available
+                          ? 'bg-[#12305a] text-white hover:bg-[#173d72]'
+                          : 'cursor-not-allowed bg-slate-500/20 text-slate-400'
+                      }`}
+                    >
                       <Bell className="h-4 w-4" />
                       Generate
                     </button>
@@ -5092,8 +5299,8 @@ export function CrmPage() {
                                       <input value={tripDesignDrafts.stop.nights} onChange={(event) => updateTripDesignDraft('stop', 'nights', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Nights" />
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
-                                      <input type="date" value={tripDesignDrafts.stop.arrivalDate} onChange={(event) => updateTripDesignDraft('stop', 'arrivalDate', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
-                                      <input type="date" value={tripDesignDrafts.stop.departureDate} onChange={(event) => updateTripDesignDraft('stop', 'departureDate', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                                      <input type="date" value={tripDesignDrafts.stop.arrivalDate} min={maxDateInput(currentDateInput(), selectedTripDateRange.startDate)} max={selectedTripDateRange.endDate ?? undefined} onChange={(event) => updateTripDesignDraft('stop', 'arrivalDate', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                                      <input type="date" value={tripDesignDrafts.stop.departureDate} min={maxDateInput(currentDateInput(), tripDesignDrafts.stop.arrivalDate, selectedTripDateRange.startDate)} max={selectedTripDateRange.endDate ?? undefined} onChange={(event) => updateTripDesignDraft('stop', 'departureDate', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
                                     </div>
                                     <select value={tripDesignDrafts.stop.purpose} onChange={(event) => updateTripDesignDraft('stop', 'purpose', event.target.value as TripDesignDrafts['stop']['purpose'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
                                       {['leisure', 'business', 'transit', 'event', 'extension'].map((purpose) => (
@@ -5117,6 +5324,10 @@ export function CrmPage() {
                                     </select>
                                     <input value={tripDesignDrafts.stay.name} onChange={(event) => updateTripDesignDraft('stay', 'name', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Hotel / accommodation" />
                                     <input value={tripDesignDrafts.stay.roomType} onChange={(event) => updateTripDesignDraft('stay', 'roomType', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Room type" />
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <input type="date" value={tripDesignDrafts.stay.checkIn} min={maxDateInput(currentDateInput(), selectedStayStop?.arrivalDate)} max={selectedStayStop?.departureDate ?? undefined} onChange={(event) => updateTripDesignDraft('stay', 'checkIn', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                                      <input type="date" value={tripDesignDrafts.stay.checkOut} min={maxDateInput(currentDateInput(), tripDesignDrafts.stay.checkIn, selectedStayStop?.arrivalDate)} max={selectedStayStop?.departureDate ?? undefined} onChange={(event) => updateTripDesignDraft('stay', 'checkOut', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                                    </div>
                                     <div className="grid grid-cols-2 gap-2">
                                       <input value={tripDesignDrafts.stay.rooms} onChange={(event) => updateTripDesignDraft('stay', 'rooms', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Rooms" />
                                       <select value={tripDesignDrafts.stay.bookingStatus} onChange={(event) => updateTripDesignDraft('stay', 'bookingStatus', event.target.value as TripDesignDrafts['stay']['bookingStatus'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
@@ -5150,6 +5361,10 @@ export function CrmPage() {
                                           <option key={status} value={status}>{itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels]}</option>
                                         ))}
                                       </select>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <input type="datetime-local" value={tripDesignDrafts.movement.departureAt} min={`${maxDateInput(currentDateInput(), selectedTripDateRange.startDate) ?? currentDateInput()}T00:00`} max={selectedTripDateRange.endDate ? `${selectedTripDateRange.endDate}T23:59` : undefined} onChange={(event) => updateTripDesignDraft('movement', 'departureAt', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                                      <input type="datetime-local" value={tripDesignDrafts.movement.arrivalAt} min={tripDesignDrafts.movement.departureAt || `${maxDateInput(currentDateInput(), selectedTripDateRange.startDate) ?? currentDateInput()}T00:00`} max={selectedTripDateRange.endDate ? `${selectedTripDateRange.endDate}T23:59` : undefined} onChange={(event) => updateTripDesignDraft('movement', 'arrivalAt', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
                                     </div>
                                     <input value={tripDesignDrafts.movement.supplier} onChange={(event) => updateTripDesignDraft('movement', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Supplier" />
                                     <button type="button" onClick={submitTripDesignMovement} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
@@ -6861,6 +7076,7 @@ export function CrmPage() {
                   onChange={(event) => updateManualField('startDate', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
                   type="date"
+                  min={currentDateInput()}
                 />
               </label>
               <label className="text-sm font-medium">
@@ -6870,6 +7086,7 @@ export function CrmPage() {
                   onChange={(event) => updateManualField('endDate', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
                   type="date"
+                  min={maxDateInput(currentDateInput(), manualRequest.startDate)}
                 />
               </label>
               <label className="text-sm font-medium">

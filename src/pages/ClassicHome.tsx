@@ -90,8 +90,8 @@ export function ClassicHome({
               <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-white/55">DPM support desk</div>
-                    <div className="mt-2 text-sm leading-6 text-white/78">Dedicated support for planning, bookings, and travel assistance, with replies within 24 business hours on working days.</div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-white/55">{t('home.hero.supportDesk.eyebrow')}</div>
+                    <div className="mt-2 text-sm leading-6 text-white/78">{t('home.hero.supportDesk.text')}</div>
                   </div>
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-white">
                     <Headphones className="h-4 w-4" />
@@ -105,7 +105,7 @@ export function ClassicHome({
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#d4af37] text-[#241f1b]">
                     {canOpenCrm ? <ShieldCheck className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
                   </span>
-                  <span>{canOpenCrm ? 'Open Team Workspace' : 'DPM Team Access'}</span>
+                  <span>{canOpenCrm ? t('home.hero.supportDesk.openWorkspace') : t('home.hero.supportDesk.teamAccess')}</span>
                 </button>
               </div>
             </div>

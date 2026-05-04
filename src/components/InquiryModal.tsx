@@ -7,35 +7,8 @@ import { inquiryLabelKeys } from '../data/travel';
 import type { InquiryKind } from '../types';
 import { Badge, Button } from './ui';
 
-type ServiceOption =
-  | 'flights'
-  | 'visa'
-  | 'hotel'
-  | 'transfers'
-  | 'insurance'
-  | 'experiences'
-  | 'packages'
-  | 'corporate'
-  | 'concierge'
-  | 'events'
-  | 'other';
-
 type TripTypeOption = 'leisure' | 'luxury' | 'honeymoon' | 'family' | 'corporate' | 'group' | 'other';
 type BudgetOption = 'notSure' | 'under1500' | '1500to3000' | '3000to6000' | '6000plus' | 'corporate';
-
-type ExtraField = {
-  name: string;
-  labelKey: string;
-  placeholderKey?: string;
-  type: 'text' | 'select';
-  options?: string[];
-};
-
-const serviceOptionsByKind: Record<InquiryKind, ServiceOption[]> = {
-  classic: ['flights', 'visa', 'hotel', 'transfers', 'insurance', 'experiences', 'packages', 'other'],
-  luxury: ['hotel', 'transfers', 'experiences', 'packages', 'concierge', 'insurance', 'visa', 'other'],
-  corporate: ['flights', 'visa', 'hotel', 'transfers', 'insurance', 'corporate', 'events', 'other'],
-};
 
 const tripTypeOptionsByKind: Record<InquiryKind, TripTypeOption[]> = {
   classic: ['leisure', 'family', 'group', 'other'],
@@ -56,12 +29,11 @@ const formProfiles: Record<
     introKey: string;
     nameLabelKey: string;
     destinationLabelKey: string;
-    departureLabelKey: string;
+    travelWindowLabelKey: string;
     travelersLabelKey: string;
     notesLabelKey: string;
     defaultTripType: TripTypeOption;
     defaultBudget: BudgetOption;
-    extraFields: ExtraField[];
   }
 > = {
   classic: {
@@ -69,93 +41,33 @@ const formProfiles: Record<
     introKey: 'inquiry.profiles.classic.intro',
     nameLabelKey: 'inquiry.fields.name',
     destinationLabelKey: 'inquiry.fields.destination',
-    departureLabelKey: 'inquiry.fields.departureCity',
+    travelWindowLabelKey: 'inquiry.fields.travelWindow',
     travelersLabelKey: 'inquiry.fields.travelers',
     notesLabelKey: 'inquiry.fields.notes',
     defaultTripType: 'leisure',
     defaultBudget: 'notSure',
-    extraFields: [
-      {
-        name: 'accommodationStyle',
-        labelKey: 'inquiry.fields.accommodationStyle',
-        type: 'select',
-        options: ['simple', 'comfort', 'premium', 'notSure'],
-      },
-      {
-        name: 'dateFlexibility',
-        labelKey: 'inquiry.fields.dateFlexibility',
-        type: 'select',
-        options: ['fixed', 'fewDays', 'flexible'],
-      },
-    ],
   },
   luxury: {
     titleKey: 'inquiry.profiles.luxury.title',
     introKey: 'inquiry.profiles.luxury.intro',
     nameLabelKey: 'inquiry.fields.name',
     destinationLabelKey: 'inquiry.fields.luxuryDestination',
-    departureLabelKey: 'inquiry.fields.departureCity',
+    travelWindowLabelKey: 'inquiry.fields.travelWindow',
     travelersLabelKey: 'inquiry.fields.guests',
     notesLabelKey: 'inquiry.fields.luxuryNotes',
     defaultTripType: 'luxury',
     defaultBudget: '6000plus',
-    extraFields: [
-      {
-        name: 'occasion',
-        labelKey: 'inquiry.fields.occasion',
-        type: 'select',
-        options: ['escape', 'honeymoon', 'anniversary', 'wellness', 'safari', 'other'],
-      },
-      {
-        name: 'luxuryStyle',
-        labelKey: 'inquiry.fields.luxuryStyle',
-        type: 'select',
-        options: ['boutique', 'resort', 'villa', 'safariLodge', 'notSure'],
-      },
-      {
-        name: 'conciergePriority',
-        labelKey: 'inquiry.fields.conciergePriority',
-        type: 'select',
-        options: ['privacy', 'fineDining', 'experiences', 'familyComfort', 'seamlessLogistics'],
-      },
-    ],
   },
   corporate: {
     titleKey: 'inquiry.profiles.corporate.title',
     introKey: 'inquiry.profiles.corporate.intro',
     nameLabelKey: 'inquiry.fields.corporateName',
     destinationLabelKey: 'inquiry.fields.businessDestination',
-    departureLabelKey: 'inquiry.fields.departureCity',
+    travelWindowLabelKey: 'inquiry.fields.travelWindow',
     travelersLabelKey: 'inquiry.fields.teamSize',
     notesLabelKey: 'inquiry.fields.corporateNotes',
     defaultTripType: 'corporate',
     defaultBudget: 'corporate',
-    extraFields: [
-      {
-        name: 'companyName',
-        labelKey: 'inquiry.fields.companyName',
-        placeholderKey: 'inquiry.placeholders.companyName',
-        type: 'text',
-      },
-      {
-        name: 'approvalFlow',
-        labelKey: 'inquiry.fields.approvalFlow',
-        type: 'select',
-        options: ['owner', 'finance', 'procurement', 'notSure'],
-      },
-      {
-        name: 'travelerListStatus',
-        labelKey: 'inquiry.fields.travelerListStatus',
-        type: 'select',
-        options: ['ready', 'partial', 'pending'],
-      },
-      {
-        name: 'costCenter',
-        labelKey: 'inquiry.fields.costCenter',
-        placeholderKey: 'inquiry.placeholders.costCenter',
-        type: 'text',
-      },
-    ],
   },
 };
 
@@ -171,7 +83,6 @@ export function InquiryModal({
   const [formError, setFormError] = React.useState('');
   const label = kind ? t(inquiryLabelKeys[kind]) : '';
   const formProfile = kind ? formProfiles[kind] : formProfiles.classic;
-  const activeServiceOptions = kind ? serviceOptionsByKind[kind] : serviceOptionsByKind.classic;
   const activeTripTypeOptions = kind ? tripTypeOptionsByKind[kind] : tripTypeOptionsByKind.classic;
   const activeBudgetOptions = kind ? budgetOptionsByKind[kind] : budgetOptionsByKind.classic;
   const isSending = submitState === 'sending';
@@ -208,22 +119,12 @@ export function InquiryModal({
     const name = fieldValue('name') || t('inquiry.emailFallbackName');
     const email = fieldValue('email');
     const whatsapp = fieldValue('whatsapp');
-    const preferredContactValue = fieldValue('preferredContact') || 'either';
     const tripTypeValue = fieldValue('tripType') || formProfile.defaultTripType;
     const budgetValue = fieldValue('budget') || formProfile.defaultBudget;
-    const urgencyValue = fieldValue('urgency') || 'flexible';
-    const preferredContact = optionLabel('preferredContact', preferredContactValue);
+    const preferredContact = whatsapp ? optionLabel('preferredContact', 'whatsapp') : email ? optionLabel('preferredContact', 'email') : optionLabel('preferredContact', 'either');
     const tripType = optionLabel('tripType', tripTypeValue);
     const budget = optionLabel('budget', budgetValue);
-    const urgency = optionLabel('urgency', urgencyValue);
-    const priority =
-      urgencyValue === 'thisWeek' ? 'urgent' : urgencyValue === 'thisMonth' ? 'high' : urgencyValue === 'researching' ? 'low' : 'normal';
-    const requestedServices = data
-      .getAll('services')
-      .map((value) => value.toString())
-      .filter(Boolean)
-      .map((value) => optionLabel('services', value));
-    const requestedServicesText = requestedServices.join(', ');
+    const requestedServicesText = kind === 'luxury' ? 'Luxury trip planning' : kind === 'corporate' ? 'Corporate travel coordination' : 'Trip planning';
     const contact = [email, whatsapp].filter(Boolean).join(' / ');
 
     setFormError('');
@@ -234,46 +135,10 @@ export function InquiryModal({
       return;
     }
 
-    if (preferredContactValue === 'email' && !email) {
-      setFormError(t('inquiry.validation.emailRequired'));
-      return;
-    }
-
-    if (preferredContactValue === 'whatsapp' && !whatsapp) {
-      setFormError(t('inquiry.validation.whatsappRequired'));
-      return;
-    }
-
-    if (requestedServices.length === 0) {
-      setFormError(t('inquiry.validation.servicesRequired'));
-      return;
-    }
-
-    const extraDetails = formProfile.extraFields
-      .map((field) => {
-        const value = fieldValue(field.name);
-        if (!value) return null;
-        const renderedValue = field.type === 'select' ? t(`inquiry.options.extra.${value}`) : value;
-        return {
-          name: field.name,
-          label: t(field.labelKey),
-          value: renderedValue,
-        };
-      })
-      .filter((item): item is { name: string; label: string; value: string } => Boolean(item));
-    const extraDetailsText = extraDetails.map((item) => `${item.label}: ${item.value}`).join('\n');
     const destination = fieldValue('destination');
-    const departureCity = fieldValue('departureCity');
-    const startDate = fieldValue('startDate');
-    const endDate = fieldValue('endDate');
-    const dates = [startDate, endDate].filter(Boolean).join(' - ');
+    const travelWindow = fieldValue('travelWindow');
     const travelers = fieldValue('travelers');
     const notes = fieldValue('notes');
-
-    if (startDate && endDate && endDate < startDate) {
-      setFormError(t('inquiry.validation.dateOrder'));
-      return;
-    }
 
     const details = [
       `${t('inquiry.emailBody.service')}: ${label}`,
@@ -283,15 +148,10 @@ export function InquiryModal({
       `${t('inquiry.emailBody.preferredContact')}: ${preferredContact}`,
       `${t('inquiry.emailBody.requestedServices')}: ${requestedServicesText}`,
       `${t('inquiry.emailBody.tripType')}: ${tripType}`,
-      `${t('inquiry.emailBody.departureCity')}: ${departureCity}`,
       `${t('inquiry.emailBody.destination')}: ${destination}`,
-      `${t('inquiry.emailBody.startDate')}: ${startDate}`,
-      `${t('inquiry.emailBody.endDate')}: ${endDate}`,
-      `${t('inquiry.emailBody.dates')}: ${dates}`,
+      `${t('inquiry.emailBody.dates')}: ${travelWindow}`,
       `${t('inquiry.emailBody.travelers')}: ${travelers}`,
       `${t('inquiry.emailBody.budget')}: ${budget}`,
-      `${t('inquiry.emailBody.urgency')}: ${urgency}`,
-      extraDetailsText,
       '',
       `${t('inquiry.emailBody.notes')}:`,
       notes,
@@ -309,16 +169,11 @@ export function InquiryModal({
       preferredContact,
       requestedServices: requestedServicesText,
       tripType,
-      departureCity,
       destination,
-      startDate,
-      endDate,
-      dates,
+      dates: travelWindow,
       travelers,
       budget,
-      urgency,
-      priority,
-      extraDetails: extraDetailsText,
+      priority: 'normal',
       notes,
       message: details.join('\n'),
     };
@@ -340,14 +195,14 @@ export function InquiryModal({
         preferredContact,
         requestedServices: requestedServicesText,
         tripType,
-        departureCity,
+        departureCity: '',
         destination,
-        dates,
+        dates: travelWindow,
         travelers,
         budget,
-        urgency,
-        priority,
-        notes: [notes, extraDetailsText].filter(Boolean).join('\n\n'),
+        urgency: travelWindow || 'Flexible timing',
+        priority: 'normal',
+        notes,
       });
       leadId = lead.id;
       const response = await fetch('https://formsubmit.co/ajax/contact@dpmundo.com', {
@@ -390,7 +245,7 @@ export function InquiryModal({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ duration: 0.25 }}
-            className="relative my-0 w-full max-w-3xl rounded-[24px] bg-white p-5 text-slate-900 shadow-2xl sm:rounded-[28px] sm:p-6 md:p-8"
+            className="relative my-0 w-full max-w-2xl rounded-[24px] bg-white p-5 text-slate-900 shadow-2xl sm:rounded-[28px] sm:p-6 md:p-8"
           >
             <div className="flex items-start justify-between gap-6">
               <div>
@@ -422,40 +277,12 @@ export function InquiryModal({
                   <input name="name" className={inputClass} placeholder={t('inquiry.placeholders.name')} required />
                 </label>
                 <label className="text-sm font-medium text-slate-700">
-                  {t('inquiry.fields.email')}
-                  <input name="email" type="email" className={inputClass} placeholder={t('inquiry.placeholders.email')} />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
                   {t('inquiry.fields.whatsapp')}
                   <input name="whatsapp" type="tel" className={inputClass} placeholder={t('inquiry.placeholders.whatsapp')} />
                 </label>
                 <label className="text-sm font-medium text-slate-700">
-                  {t('inquiry.fields.preferredContact')}
-                  <select name="preferredContact" className={selectClass} defaultValue="either">
-                    <option value="either">{t('inquiry.options.preferredContact.either')}</option>
-                    <option value="whatsapp">{t('inquiry.options.preferredContact.whatsapp')}</option>
-                    <option value="email">{t('inquiry.options.preferredContact.email')}</option>
-                  </select>
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t(formProfile.destinationLabelKey)}
-                  <input name="destination" className={inputClass} placeholder={t('inquiry.placeholders.destination')} />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t(formProfile.departureLabelKey)}
-                  <input name="departureCity" className={inputClass} placeholder={t('inquiry.placeholders.departureCity')} />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t('inquiry.fields.startDate')}
-                  <input name="startDate" type="date" className={inputClass} />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t('inquiry.fields.endDate')}
-                  <input name="endDate" type="date" className={inputClass} />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t(formProfile.travelersLabelKey)}
-                  <input name="travelers" className={inputClass} placeholder={t('inquiry.placeholders.travelers')} />
+                  {t('inquiry.fields.emailOptional')}
+                  <input name="email" type="email" className={inputClass} placeholder={t('inquiry.placeholders.email')} />
                 </label>
                 <label className="text-sm font-medium text-slate-700">
                   {t('inquiry.fields.tripType')}
@@ -468,6 +295,18 @@ export function InquiryModal({
                   </select>
                 </label>
                 <label className="text-sm font-medium text-slate-700">
+                  {t(formProfile.destinationLabelKey)}
+                  <input name="destination" className={inputClass} placeholder={t('inquiry.placeholders.destination')} required />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  {t(formProfile.travelWindowLabelKey)}
+                  <input name="travelWindow" className={inputClass} placeholder={t('inquiry.placeholders.travelWindow')} required />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  {t(formProfile.travelersLabelKey)}
+                  <input name="travelers" className={inputClass} placeholder={t('inquiry.placeholders.travelers')} required />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
                   {t('inquiry.fields.budget')}
                   <select name="budget" className={selectClass} defaultValue={formProfile.defaultBudget}>
                     {activeBudgetOptions.map((option) => (
@@ -477,56 +316,7 @@ export function InquiryModal({
                     ))}
                   </select>
                 </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t('inquiry.fields.urgency')}
-                  <select name="urgency" className={selectClass} defaultValue="flexible">
-                    <option value="thisWeek">{t('inquiry.options.urgency.thisWeek')}</option>
-                    <option value="thisMonth">{t('inquiry.options.urgency.thisMonth')}</option>
-                    <option value="flexible">{t('inquiry.options.urgency.flexible')}</option>
-                    <option value="researching">{t('inquiry.options.urgency.researching')}</option>
-                  </select>
-                </label>
               </div>
-              <fieldset className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <legend className="px-1 text-sm font-medium text-slate-700">{t(`inquiry.profiles.${kind}.detailsLegend`)}</legend>
-                <div className="mt-4 grid gap-5 md:grid-cols-2">
-                  {formProfile.extraFields.map((field) => (
-                    <label key={field.name} className="text-sm font-medium text-slate-700">
-                      {t(field.labelKey)}
-                      {field.type === 'select' ? (
-                        <select name={field.name} className={selectClass} defaultValue={field.options?.[0]}>
-                          {field.options?.map((option) => (
-                            <option key={option} value={option}>
-                              {t(`inquiry.options.extra.${option}`)}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input name={field.name} className={inputClass} placeholder={field.placeholderKey ? t(field.placeholderKey) : ''} />
-                      )}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <legend className="px-1 text-sm font-medium text-slate-700">{t('inquiry.fields.services')}</legend>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {activeServiceOptions.map((service) => (
-                    <label
-                      key={service}
-                      className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-[#d4af37]/55 hover:bg-[#d4af37]/8"
-                    >
-                      <input
-                        type="checkbox"
-                        name="services"
-                        value={service}
-                        className="h-4 w-4 rounded border-slate-300 accent-[#d4af37]"
-                      />
-                      <span>{t(`inquiry.options.services.${service}`)}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
               <label className="text-sm font-medium text-slate-700">
                 {t(formProfile.notesLabelKey)}
                 <textarea

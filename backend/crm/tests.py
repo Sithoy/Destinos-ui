@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth.models import Group, User
 from django.urls import reverse
 from django.utils import timezone
@@ -5,7 +7,7 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from .models import ItineraryStop, Lead, Quote, TripItinerary, WorkflowReminder
+from .models import AccommodationBlock, ItineraryStop, Lead, Quote, TransportSegment, TripItinerary, WorkflowReminder
 
 
 class LeadWorkflowApiTests(APITestCase):
@@ -146,6 +148,25 @@ class LeadWorkflowApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("endDate", response.data)
 
+    def test_trip_itinerary_rejects_dates_before_current_date(self):
+        lead = self.make_lead()
+        yesterday = timezone.localdate() - timedelta(days=1)
+        tomorrow = timezone.localdate() + timedelta(days=1)
+
+        response = self.client.post(
+            reverse("trip-itinerary-list"),
+            {
+                "leadId": str(lead.id),
+                "title": "Past trip",
+                "startDate": yesterday.isoformat(),
+                "endDate": tomorrow.isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("startDate", response.data)
+
     def test_itinerary_stop_must_stay_inside_trip_dates(self):
         lead = self.make_lead()
         itinerary = TripItinerary.objects.create(
@@ -163,6 +184,28 @@ class LeadWorkflowApiTests(APITestCase):
                 "city": "Lisbon",
                 "arrivalDate": "2026-06-09",
                 "departureDate": "2026-06-12",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("arrivalDate", response.data)
+
+    def test_dated_stop_requires_trip_date_range(self):
+        lead = self.make_lead()
+        itinerary = TripItinerary.objects.create(
+            lead=lead,
+            title="Undated trip",
+        )
+        tomorrow = timezone.localdate() + timedelta(days=1)
+
+        response = self.client.post(
+            reverse("itinerary-stop-list"),
+            {
+                "itineraryId": str(itinerary.id),
+                "sequenceNumber": 1,
+                "city": "Lisbon",
+                "arrivalDate": tomorrow.isoformat(),
             },
             format="json",
         )
@@ -200,6 +243,33 @@ class LeadWorkflowApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("checkOut", response.data)
 
+    def test_dated_accommodation_requires_stop_date_range(self):
+        lead = self.make_lead()
+        itinerary = TripItinerary.objects.create(
+            lead=lead,
+            title="Portugal family trip",
+            start_date=timezone.localdate() + timedelta(days=1),
+            end_date=timezone.localdate() + timedelta(days=5),
+        )
+        stop = ItineraryStop.objects.create(
+            itinerary=itinerary,
+            sequence_number=1,
+            city="Lisbon",
+        )
+
+        response = self.client.post(
+            reverse("accommodation-block-list"),
+            {
+                "stopId": str(stop.id),
+                "name": "Lisbon Hotel",
+                "checkIn": (timezone.localdate() + timedelta(days=2)).isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("checkIn", response.data)
+
     def test_transport_arrival_cannot_be_before_departure(self):
         lead = self.make_lead()
         itinerary = TripItinerary.objects.create(
@@ -226,7 +296,88 @@ class LeadWorkflowApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("arrivalAt", response.data)
 
-    def test_experience_must_stay_inside_stop_dates(self):
+    def test_dated_transport_requires_trip_date_range(self):
+        lead = self.make_lead()
+        itinerary = TripItinerary.objects.create(
+            lead=lead,
+            title="Undated trip",
+        )
+        tomorrow = timezone.localdate() + timedelta(days=1)
+
+        response = self.client.post(
+            reverse("transport-segment-list"),
+            {
+                "itineraryId": str(itinerary.id),
+                "sequenceNumber": 1,
+                "mode": "flight",
+                "fromCity": "Lisbon",
+                "toCity": "Porto",
+                "departureAt": f"{tomorrow.isoformat()}T15:00:00Z",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("departureAt", response.data)
+
+    def test_itinerary_update_cannot_exclude_existing_stop_or_transport(self):
+        lead = self.make_lead()
+        itinerary = TripItinerary.objects.create(
+            lead=lead,
+            title="Portugal family trip",
+            start_date="2026-06-10",
+            end_date="2026-06-20",
+        )
+        stop = ItineraryStop.objects.create(
+            itinerary=itinerary,
+            sequence_number=1,
+            city="Lisbon",
+            arrival_date="2026-06-10",
+            departure_date="2026-06-14",
+        )
+        TransportSegment.objects.create(
+            itinerary=itinerary,
+            sequence_number=1,
+            mode="flight",
+            from_city="Lisbon",
+            to_city="Porto",
+            departure_at="2026-06-12T10:00:00Z",
+            arrival_at="2026-06-12T12:00:00Z",
+        )
+
+        response = self.client.patch(reverse("trip-itinerary-detail", args=[itinerary.id]), {"endDate": "2026-06-11"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("endDate", response.data)
+
+    def test_stop_update_cannot_exclude_existing_accommodation(self):
+        lead = self.make_lead()
+        itinerary = TripItinerary.objects.create(
+            lead=lead,
+            title="Portugal family trip",
+            start_date="2026-06-10",
+            end_date="2026-06-20",
+        )
+        stop = ItineraryStop.objects.create(
+            itinerary=itinerary,
+            sequence_number=1,
+            city="Lisbon",
+            arrival_date="2026-06-10",
+            departure_date="2026-06-14",
+        )
+        AccommodationBlock.objects.create(
+            stop=stop,
+            name="Lisbon Hotel",
+            check_in="2026-06-10",
+            check_out="2026-06-14",
+        )
+
+        response = self.client.patch(reverse("itinerary-stop-detail", args=[stop.id]), {"departureDate": "2026-06-13"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("departureDate", response.data)
+
+    def test_experience_dates_are_not_restricted_yet(self):
         lead = self.make_lead()
         itinerary = TripItinerary.objects.create(
             lead=lead,
@@ -253,5 +404,4 @@ class LeadWorkflowApiTests(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("startAt", response.data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)

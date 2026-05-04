@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group, User
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceBlock, ItineraryStop, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary, WorkflowReminder
@@ -77,6 +78,11 @@ def datetime_date(value):
     if value is None:
         return None
     return value.date()
+
+
+def add_past_date_error(errors, field_name, value, label):
+    if value and value < timezone.localdate():
+        errors[field_name] = f"{label} cannot be before the current date."
 
 
 def assign_user_role(user: User, role: str) -> User:
@@ -525,8 +531,12 @@ class AccommodationBlockSerializer(serializers.ModelSerializer):
         check_out = serializer_value(attrs, self.instance, "check_out")
         errors = {}
 
+        add_past_date_error(errors, "checkIn", check_in, "Check-in date")
+        add_past_date_error(errors, "checkOut", check_out, "Check-out date")
         if check_in and check_out and check_out < check_in:
             errors["checkOut"] = "Check-out date cannot be before check-in date."
+        if stop and (check_in or check_out) and not (stop.arrival_date and stop.departure_date):
+            errors["checkIn"] = "Set stop arrival and departure dates before adding stay dates."
         if stop and stop.arrival_date and check_in and check_in < stop.arrival_date:
             errors["checkIn"] = "Check-in date must be within the stop dates."
         if stop and stop.departure_date and check_out and check_out > stop.departure_date:
@@ -558,22 +568,6 @@ class ExperienceBlockSerializer(serializers.ModelSerializer):
             "notes",
         ]
         read_only_fields = ["id", "createdAt", "updatedAt"]
-
-    def validate(self, attrs):
-        attrs = super().validate(attrs)
-        stop = serializer_value(attrs, self.instance, "stop")
-        start_at = serializer_value(attrs, self.instance, "start_at")
-        start_date = datetime_date(start_at)
-        errors = {}
-
-        if stop and stop.arrival_date and start_date and start_date < stop.arrival_date:
-            errors["startAt"] = "Activity date must be within the stop dates."
-        if stop and stop.departure_date and start_date and start_date > stop.departure_date:
-            errors["startAt"] = "Activity date must be within the stop dates."
-
-        if errors:
-            raise serializers.ValidationError(errors)
-        return attrs
 
 
 class ItineraryStopSerializer(serializers.ModelSerializer):
@@ -613,12 +607,24 @@ class ItineraryStopSerializer(serializers.ModelSerializer):
         departure_date = serializer_value(attrs, self.instance, "departure_date")
         errors = {}
 
+        add_past_date_error(errors, "arrivalDate", arrival_date, "Stop arrival date")
+        add_past_date_error(errors, "departureDate", departure_date, "Stop departure date")
         if arrival_date and departure_date and departure_date < arrival_date:
             errors["departureDate"] = "Stop departure date cannot be before arrival date."
+        if itinerary and (arrival_date or departure_date) and not (itinerary.start_date and itinerary.end_date):
+            errors["arrivalDate"] = "Set trip departure and return dates before adding dated stops."
         if itinerary and itinerary.start_date and arrival_date and arrival_date < itinerary.start_date:
             errors["arrivalDate"] = "Stop arrival date must be within the trip dates."
         if itinerary and itinerary.end_date and departure_date and departure_date > itinerary.end_date:
             errors["departureDate"] = "Stop departure date must be within the trip dates."
+        if self.instance:
+            for accommodation in self.instance.accommodations.all():
+                if arrival_date and accommodation.check_in and accommodation.check_in < arrival_date:
+                    errors["arrivalDate"] = "Stop arrival date cannot move after existing accommodation check-in."
+                    break
+                if departure_date and accommodation.check_out and accommodation.check_out > departure_date:
+                    errors["departureDate"] = "Stop departure date cannot move before existing accommodation check-out."
+                    break
 
         if errors:
             raise serializers.ValidationError(errors)
@@ -665,8 +671,12 @@ class TransportSegmentSerializer(serializers.ModelSerializer):
         arrival_date = datetime_date(arrival_at)
         errors = {}
 
+        add_past_date_error(errors, "departureAt", departure_date, "Transport departure date")
+        add_past_date_error(errors, "arrivalAt", arrival_date, "Transport arrival date")
         if departure_at and arrival_at and arrival_at < departure_at:
             errors["arrivalAt"] = "Transport arrival time cannot be before departure time."
+        if itinerary and (departure_at or arrival_at) and not (itinerary.start_date and itinerary.end_date):
+            errors["departureAt"] = "Set trip departure and return dates before adding dated movements."
         if itinerary and itinerary.start_date and departure_date and departure_date < itinerary.start_date:
             errors["departureAt"] = "Transport departure must be within the trip dates."
         if itinerary and itinerary.end_date and arrival_date and arrival_date > itinerary.end_date:
@@ -709,11 +719,32 @@ class TripItinerarySerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         start_date = serializer_value(attrs, self.instance, "start_date")
         end_date = serializer_value(attrs, self.instance, "end_date")
+        errors = {}
 
+        add_past_date_error(errors, "startDate", start_date, "Trip departure date")
+        add_past_date_error(errors, "endDate", end_date, "Trip return date")
         if start_date and end_date and end_date < start_date:
-            raise serializers.ValidationError(
-                {"endDate": "Return/end date cannot be before departure/start date."}
-            )
+            errors["endDate"] = "Return/end date cannot be before departure/start date."
+        if self.instance:
+            for stop in self.instance.stops.all():
+                if start_date and stop.arrival_date and stop.arrival_date < start_date:
+                    errors["startDate"] = "Trip start date cannot move after existing stop arrival dates."
+                    break
+                if end_date and stop.departure_date and stop.departure_date > end_date:
+                    errors["endDate"] = "Trip end date cannot move before existing stop departure dates."
+                    break
+            for transport in self.instance.transports.all():
+                departure_date = datetime_date(transport.departure_at)
+                arrival_date = datetime_date(transport.arrival_at)
+                if start_date and departure_date and departure_date < start_date:
+                    errors["startDate"] = "Trip start date cannot move after existing transport departures."
+                    break
+                if end_date and arrival_date and arrival_date > end_date:
+                    errors["endDate"] = "Trip end date cannot move before existing transport arrivals."
+                    break
+
+        if errors:
+            raise serializers.ValidationError(errors)
 
         return attrs
 
