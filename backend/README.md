@@ -1,6 +1,24 @@
-# DPM CRM Backend MVP
+# DPM Backend
 
-This Django backend powers the first operational CRM stage.
+This Django backend powers the DPM CRM and CTM domains.
+
+Django is the source of truth for operational data. The React frontend should consume these APIs rather than keeping long-lived mock state for CRM or CTM workflows.
+
+## Backend Apps
+
+- `crm/` - CRM leads, clients, quotes, payments, communications, trip itineraries, workflow gates, reminders, and staff access rules.
+- `ctm/` - company accounts, company users, travelers, trip requests, approvals, timeline/events, quotes, bookings, billing, tasks, documents, and messages.
+- `dpm_backend/` - Django project settings, URL routing, WSGI/ASGI entry points, auth, CORS, static files, and deployment configuration.
+
+## Architecture Rules
+
+- Use Django ORM only.
+- Do not introduce Prisma.
+- Use Django migrations for schema changes.
+- Use DRF serializers, views, and viewsets for APIs.
+- Keep PostgreSQL compatibility in mind, even when local development uses SQLite.
+- Keep CRM and CTM process logic separated unless a task explicitly asks for shared behavior.
+- Keep workflow/business rules testable and close to backend services.
 
 ## Local Setup
 
@@ -32,6 +50,25 @@ npm run dev
 - `GET /api/auth/me/` returns the signed-in user.
 - `GET/POST/PATCH/DELETE /api/leads/` manages CRM leads for authenticated users.
 - `GET/POST/PATCH/DELETE /api/clients/` manages registered CRM clients for authenticated CRM users.
+
+See app-level documentation for domain responsibilities:
+
+- [crm/README.md](crm/README.md)
+- [ctm/README.md](ctm/README.md)
+
+## Checks and Tests
+
+Run system checks:
+
+```bash
+python backend/manage.py check
+```
+
+Run app tests:
+
+```bash
+python backend/manage.py test crm ctm
+```
 
 ## Roles
 
