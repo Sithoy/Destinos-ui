@@ -6,14 +6,25 @@ import type {
   CorporateTravelerProfile,
   CorporateTravelerProfileInput,
   CorporatePortalUser,
+  CorporateTripBooking,
+  CorporateTripBookingInput,
   CorporateTripCreateInput,
+  CorporateTripDocument,
+  CorporateTripDocumentInput,
   CorporateTripInvoice,
+  CorporateTripInvoiceInput,
+  CorporateTripMessage,
+  CorporateTripMessageInput,
   CorporateTripPayment,
+  CorporateTripPaymentInput,
+  CorporateTripQuote,
+  CorporateTripQuoteInput,
   CorporateTripRequest,
 } from '../types/corporatePortal';
 
 const CTM_AUTH_STORAGE_KEY = 'dpm.ctm.auth.v1';
 const CTM_AUTH_EVENT = 'dpm-ctm-auth-updated';
+type CtmAuthSession = Pick<CorporatePortalSession, 'token'> | null | undefined;
 
 function ctmApiBase() {
   const raw = import.meta.env.VITE_CRM_API_URL?.toString().trim();
@@ -49,7 +60,7 @@ function notifyCtmAuthUpdated() {
   }
 }
 
-function authHeaders(session?: CorporatePortalSession | null): Record<string, string> {
+function authHeaders(session?: CtmAuthSession): Record<string, string> {
   return session?.token ? { Authorization: `Token ${session.token}` } : {};
 }
 
@@ -169,7 +180,7 @@ export async function fetchCtmContext(session?: CorporatePortalSession | null): 
   );
 }
 
-export async function fetchCtmTripRequests(session?: CorporatePortalSession | null): Promise<CorporateTripRequest[]> {
+export async function fetchCtmTripRequests(session?: CtmAuthSession): Promise<CorporateTripRequest[]> {
   const base = ctmApiBase();
   if (!base) throw new Error('CTM API URL is not configured.');
   if (!session?.token) throw new Error('CTM session is required.');
@@ -294,6 +305,132 @@ export async function createCtmTripRequest(input: CorporateTripCreateInput, sess
 
   return parseApiResponse(
     await fetch(`${base}/api/ctm/trip-requests/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCtmTripQuote(referenceCode: string, input: CorporateTripQuoteInput, session?: CtmAuthSession): Promise<CorporateTripQuote> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/trip-requests/${referenceCode}/quote/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCtmTripQuote(referenceCode: string, input: Partial<CorporateTripQuoteInput>, session?: CtmAuthSession): Promise<CorporateTripQuote> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/trip-requests/${referenceCode}/quote/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCtmTripBooking(referenceCode: string, input: CorporateTripBookingInput, session?: CtmAuthSession): Promise<CorporateTripBooking> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/trip-requests/${referenceCode}/booking/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCtmTripBooking(referenceCode: string, input: Partial<CorporateTripBookingInput>, session?: CtmAuthSession): Promise<CorporateTripBooking> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/trip-requests/${referenceCode}/booking/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCtmTripInvoice(referenceCode: string, input: CorporateTripInvoiceInput, session?: CtmAuthSession): Promise<CorporateTripInvoice> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/trip-requests/${referenceCode}/invoice/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCtmTripInvoice(referenceCode: string, input: Partial<CorporateTripInvoiceInput>, session?: CtmAuthSession): Promise<CorporateTripInvoice> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/trip-requests/${referenceCode}/invoice/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCtmTripPayment(referenceCode: string, input: CorporateTripPaymentInput, session?: CtmAuthSession): Promise<CorporateTripPayment> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/trip-requests/${referenceCode}/payments/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCtmTripDocument(referenceCode: string, input: CorporateTripDocumentInput, session?: CorporatePortalSession | null): Promise<CorporateTripDocument> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/trip-requests/${referenceCode}/documents/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function createCtmTripMessage(referenceCode: string, input: CorporateTripMessageInput, session?: CorporatePortalSession | null): Promise<CorporateTripMessage> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/trip-requests/${referenceCode}/messages/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
       body: JSON.stringify(input),

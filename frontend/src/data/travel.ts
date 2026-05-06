@@ -119,8 +119,11 @@ export const pageRoutes: Record<Page, string> = {
   luxury: '/prestige/luxury',
   corporate: '/prestige/corporate',
   crm: '/crm',
-  corporatePortal: '/corporate-portal',
+  corporatePortal: '/ctm',
 };
+
+export const ctmPrimaryRoute = '/ctm';
+export const ctmLegacyRoute = '/corporate-portal';
 
 export const inquiryLabelKeys: Record<InquiryKind, string> = {
   classic: 'inquiry.labels.classic',
@@ -129,7 +132,13 @@ export const inquiryLabelKeys: Record<InquiryKind, string> = {
 };
 
 export function getPageFromPathname(pathname: string): Page {
-  if (pathname.startsWith(pageRoutes.corporatePortal)) return 'corporatePortal';
+  const normalizedPathname = pathname.toLowerCase();
+  if (
+    normalizedPathname === ctmPrimaryRoute ||
+    normalizedPathname.startsWith(`${ctmPrimaryRoute}/`) ||
+    normalizedPathname === ctmLegacyRoute ||
+    normalizedPathname.startsWith(`${ctmLegacyRoute}/`)
+  ) return 'corporatePortal';
   if (pathname === pageRoutes.crm) return 'crm';
   if (pathname === pageRoutes.luxury) return 'luxury';
   if (pathname === pageRoutes.corporate) return 'corporate';

@@ -103,6 +103,14 @@ class Lead(models.Model):
     lifecycle_stage = models.CharField(max_length=40, choices=LifecycleStage.choices, default=LifecycleStage.NEW_REQUEST)
     email_status = models.CharField(max_length=20, choices=EmailStatus.choices, default=EmailStatus.PENDING)
     internal_notes = models.TextField(blank=True)
+    ctm_request_reference = models.CharField(max_length=24, blank=True, db_index=True)
+    company_account = models.ForeignKey(
+        "ctm.CompanyAccount",
+        related_name="crm_leads",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     client = models.ForeignKey(Client, related_name="leads", on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
@@ -111,6 +119,7 @@ class Lead(models.Model):
             models.Index(fields=["status", "priority"]),
             models.Index(fields=["lifecycle_stage", "service_key"]),
             models.Index(fields=["service_key", "created_at"]),
+            models.Index(fields=["company_account", "service_key"]),
             models.Index(fields=["destination"]),
         ]
 

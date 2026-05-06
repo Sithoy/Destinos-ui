@@ -75,10 +75,21 @@ import {
   updateCrmClientRecord,
   updateCrmUserRecord,
 } from '../data/crm';
+import {
+  createCtmTripBooking,
+  createCtmTripInvoice,
+  createCtmTripPayment,
+  createCtmTripQuote,
+  fetchCtmTripRequests,
+  updateCtmTripBooking,
+  updateCtmTripInvoice,
+  updateCtmTripQuote,
+} from '../data/ctm';
 import { classicLogo } from '../data/travel';
 import { BrandLockup } from '../components/ui';
 import { BriefingGate, appendBriefingDecisionNote, briefingChecklistItems, briefingReadiness, type BriefingDecision } from '../modules/crm/briefing';
 import type { CrmClient, CrmCommunicationRecord, CrmLead, CrmManagedUser, CrmPaymentRecord, CrmQuote, CrmQuoteLine, CrmRole, CrmSession, CrmTripItinerary, CrmWorkflowReminder, CrmWorkflowState, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus, QuoteLineCategory, QuoteLineStatus } from '../types';
+import type { CorporateBookingStatus, CorporateInvoiceStatus, CorporatePaymentMethod, CorporatePaymentStatus, CorporateQuoteStatus, CorporateTripRequest } from '../types/corporatePortal';
 
 type LeadTypeFilter = 'all' | InquiryKind;
 type StatusFilter = 'all' | LeadStatus | 'confirmedGroup' | 'workflowGroup';
@@ -108,6 +119,13 @@ type CrmNavId = 'command' | 'leisureStudio' | 'corporateDesk' | 'tasks' | 'calen
 type ProcessTaskTone = 'urgent' | 'normal' | 'upcoming';
 type CommunicationKind = 'proposal' | 'payment' | 'travel_pack' | 'follow_up';
 type CommunicationChannel = 'email' | 'whatsapp' | 'phone';
+type CorporateDeskSignalTone = 'success' | 'warning' | 'danger' | 'info';
+type CorporateDeskSignal = {
+  label: string;
+  value: string;
+  meta: string;
+  tone: CorporateDeskSignalTone;
+};
 type UserFormState = {
   username: string;
   email: string;
@@ -127,6 +145,30 @@ type QuoteLineDraft = {
   unitSell: string;
   status: QuoteLineStatus;
   notes: string;
+};
+
+type CorporateOutputDraft = {
+  quoteAmount: string;
+  quoteCurrency: string;
+  quoteValidUntil: string;
+  quoteStatus: CorporateQuoteStatus;
+  quoteNotes: string;
+  bookingReference: string;
+  bookingSupplierSummary: string;
+  bookingTotalCost: string;
+  bookingCurrency: string;
+  bookingStatus: CorporateBookingStatus;
+  invoiceAmount: string;
+  invoiceCurrency: string;
+  invoiceStatus: CorporateInvoiceStatus;
+  invoiceDueDate: string;
+  invoiceNotes: string;
+  paymentAmount: string;
+  paymentCurrency: string;
+  paymentMethod: CorporatePaymentMethod;
+  paymentStatus: CorporatePaymentStatus;
+  paymentReference: string;
+  paymentNotes: string;
 };
 
 type TripDesignDrafts = {
@@ -353,6 +395,46 @@ const quoteStatusLabels: Record<CrmQuote['status'], string> = {
   expired: 'Expired',
 };
 
+const corporateQuoteStatusLabels: Record<CorporateQuoteStatus, string> = {
+  draft: 'Draft',
+  sent: 'Shared with CTM',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  expired: 'Expired',
+};
+
+const corporateBookingStatusLabels: Record<CorporateBookingStatus, string> = {
+  pending: 'Pending',
+  confirmed: 'Confirmed',
+  ticketed: 'Ticketed',
+  cancelled: 'Cancelled',
+  completed: 'Completed',
+};
+
+const corporateInvoiceStatusLabels: Record<CorporateInvoiceStatus, string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  partially_paid: 'Partially paid',
+  paid: 'Paid',
+  void: 'Void',
+  overdue: 'Overdue',
+};
+
+const corporatePaymentStatusLabels: Record<CorporatePaymentStatus, string> = {
+  pending: 'Pending',
+  received: 'Received',
+  reconciled: 'Reconciled',
+  failed: 'Failed',
+  refunded: 'Refunded',
+};
+
+const corporatePaymentMethodLabels: Record<CorporatePaymentMethod, string> = {
+  bank_transfer: 'Bank transfer',
+  card: 'Card',
+  cash: 'Cash',
+  other: 'Other',
+};
+
 const quoteApprovalLabels: Record<CrmQuote['approvals'][number]['decision'], string> = {
   pending: 'Pending',
   approved: 'Approved',
@@ -397,6 +479,11 @@ const itineraryBookingStatusLabels = {
 
 const quoteLineCategories = Object.keys(quoteLineCategoryLabels) as QuoteLineCategory[];
 const quoteLineStatuses = Object.keys(quoteLineStatusLabels) as QuoteLineStatus[];
+const corporateQuoteStatuses = Object.keys(corporateQuoteStatusLabels) as CorporateQuoteStatus[];
+const corporateBookingStatuses = Object.keys(corporateBookingStatusLabels) as CorporateBookingStatus[];
+const corporateInvoiceStatuses = Object.keys(corporateInvoiceStatusLabels) as CorporateInvoiceStatus[];
+const corporatePaymentStatuses = Object.keys(corporatePaymentStatusLabels) as CorporatePaymentStatus[];
+const corporatePaymentMethods = Object.keys(corporatePaymentMethodLabels) as CorporatePaymentMethod[];
 const communicationKindLabels: Record<CommunicationKind, string> = {
   proposal: 'Proposal',
   payment: 'Payment request',
@@ -840,6 +927,93 @@ function moneyValue(value: string | number | null | undefined, currency = 'USD')
     currency,
     maximumFractionDigits: 0,
   }).format(Number.isFinite(numeric) ? numeric : 0);
+}
+
+function latestByDate<T>(items: T[] | undefined, getDate: (item: T) => string | null | undefined): T | null {
+  return (items ?? [])
+    .slice()
+    .sort((a, b) => new Date(getDate(b) ?? 0).getTime() - new Date(getDate(a) ?? 0).getTime())[0] ?? null;
+}
+
+function approvalValue(trip: CorporateTripRequest, stage: 'Travel need' | 'Final cost') {
+  return trip.approvals.find((approval) => approval.stage === stage)?.status ?? 'Pending';
+}
+
+function hasCtmDocumentBlocker(trip: CorporateTripRequest) {
+  return trip.travelers.some((traveler) => traveler.readiness.passport === 'Missing' || traveler.readiness.visa === 'Required')
+    || (trip.documents ?? []).some((document) => document.status === 'missing' || document.status === 'requested');
+}
+
+function ctmSignalToneClass(tone: CorporateDeskSignalTone) {
+  if (tone === 'success') return 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200';
+  if (tone === 'danger') return 'border-rose-400/25 bg-rose-500/10 text-rose-100';
+  if (tone === 'warning') return 'border-amber-400/25 bg-amber-500/10 text-amber-100';
+  return 'border-sky-400/25 bg-sky-500/10 text-sky-200';
+}
+
+function buildCorporateDeskSignals(trip: CorporateTripRequest): CorporateDeskSignal[] {
+  const travelNeed = approvalValue(trip, 'Travel need');
+  const finalCost = approvalValue(trip, 'Final cost');
+  const latestDocument = latestByDate(trip.documents, (document) => document.updatedAt);
+  const latestMessage = latestByDate(trip.messages, (message) => message.createdAt);
+  const latestPayment = latestByDate(trip.payments, (payment) => payment.updatedAt || payment.createdAt);
+  const documentBlocker = hasCtmDocumentBlocker(trip);
+
+  return [
+    {
+      label: 'Company approval',
+      value: travelNeed === 'Rejected' || finalCost === 'Rejected' ? 'Rejected' : finalCost === 'Approved' ? 'Final cost approved' : travelNeed === 'Approved' ? 'Need approved' : 'Waiting',
+      meta: `Travel need: ${travelNeed} - Final cost: ${finalCost}`,
+      tone: travelNeed === 'Rejected' || finalCost === 'Rejected' ? 'danger' : finalCost === 'Approved' ? 'success' : travelNeed === 'Approved' ? 'info' : 'warning',
+    },
+    {
+      label: 'Documents',
+      value: documentBlocker ? 'Action needed' : 'Ready',
+      meta: latestDocument ? `${latestDocument.title} - ${latestDocument.status}` : 'No shared document updates',
+      tone: documentBlocker ? 'danger' : 'success',
+    },
+    {
+      label: 'Client message',
+      value: latestMessage ? latestMessage.sender : 'No message',
+      meta: latestMessage ? latestMessage.body : 'No CTM message posted yet',
+      tone: latestMessage?.senderType === 'company' ? 'warning' : 'info',
+    },
+    {
+      label: 'Commercial state',
+      value: trip.invoice ? corporateInvoiceStatusLabels[trip.invoice.status] : trip.quote ? corporateQuoteStatusLabels[trip.quote.status] : 'Quote pending',
+      meta: trip.invoice ? moneyValue(trip.invoice.amount, trip.invoice.currency) : trip.quote ? moneyValue(trip.quote.amount, trip.quote.currency) : 'Prepare quote in CRM',
+      tone: trip.invoice?.status === 'overdue' ? 'danger' : trip.quote || trip.invoice ? 'info' : 'warning',
+    },
+    {
+      label: 'Booking',
+      value: trip.booking ? corporateBookingStatusLabels[trip.booking.status] : 'Not released',
+      meta: trip.booking?.bookingReference || 'Release after final approval',
+      tone: trip.booking?.status === 'cancelled' ? 'danger' : trip.booking ? 'success' : 'warning',
+    },
+    {
+      label: 'Payment',
+      value: latestPayment ? corporatePaymentStatusLabels[latestPayment.status] : 'No payment',
+      meta: latestPayment ? moneyValue(latestPayment.amount, latestPayment.currency) : 'Payment not recorded',
+      tone: latestPayment?.status === 'failed' ? 'danger' : latestPayment?.status === 'received' || latestPayment?.status === 'reconciled' ? 'success' : 'warning',
+    },
+  ];
+}
+
+function getCorporateDeskNextAction(trip: CorporateTripRequest) {
+  const travelNeed = approvalValue(trip, 'Travel need');
+  const finalCost = approvalValue(trip, 'Final cost');
+  const latestCompanyMessage = latestByDate((trip.messages ?? []).filter((message) => message.senderType === 'company'), (message) => message.createdAt);
+
+  if (travelNeed === 'Rejected' || finalCost === 'Rejected') return 'Hold movement and contact the company decision-maker before changing commercial output.';
+  if (travelNeed === 'Pending') return 'Wait for travel-need approval or follow up with the company manager from CTM.';
+  if (!trip.quote) return 'Prepare and share the corporate quote from CRM.';
+  if (trip.quote.status === 'sent' && finalCost === 'Pending') return 'Monitor final-cost approval and respond to any CTM questions.';
+  if (finalCost === 'Approved' && !trip.booking) return 'Proceed with supplier booking and update CTM booking status.';
+  if (hasCtmDocumentBlocker(trip)) return 'Request or verify traveler documents before final travel pack release.';
+  if (trip.invoice && !['paid', 'void'].includes(trip.invoice.status)) return 'Follow up with finance until invoice/payment is cleared.';
+  if (latestCompanyMessage) return 'Reply to the latest company message in CTM.';
+  if (trip.booking) return 'Prepare execution notes and final travel pack.';
+  return 'Keep monitoring CTM signals.';
 }
 
 function csvEscape(value: unknown) {
@@ -1910,6 +2084,61 @@ function emptyQuoteLineDraft(): QuoteLineDraft {
   };
 }
 
+function emptyCorporateOutputDraft(): CorporateOutputDraft {
+  return {
+    quoteAmount: '',
+    quoteCurrency: 'USD',
+    quoteValidUntil: '',
+    quoteStatus: 'draft',
+    quoteNotes: '',
+    bookingReference: '',
+    bookingSupplierSummary: '',
+    bookingTotalCost: '',
+    bookingCurrency: 'USD',
+    bookingStatus: 'pending',
+    invoiceAmount: '',
+    invoiceCurrency: 'USD',
+    invoiceStatus: 'draft',
+    invoiceDueDate: '',
+    invoiceNotes: '',
+    paymentAmount: '',
+    paymentCurrency: 'USD',
+    paymentMethod: 'bank_transfer',
+    paymentStatus: 'pending',
+    paymentReference: '',
+    paymentNotes: '',
+  };
+}
+
+function corporateOutputDraftFromTrip(trip: CorporateTripRequest | null): CorporateOutputDraft {
+  const fallbackAmount = trip?.finalCost ?? trip?.quotedCost ?? '';
+  const fallbackCurrency = trip?.invoice?.currency || trip?.booking?.currency || trip?.quote?.currency || 'USD';
+
+  return {
+    quoteAmount: trip?.quote?.amount ? String(trip.quote.amount) : fallbackAmount ? String(fallbackAmount) : '',
+    quoteCurrency: trip?.quote?.currency || fallbackCurrency,
+    quoteValidUntil: trip?.quote?.validUntil || '',
+    quoteStatus: trip?.quote?.status || 'draft',
+    quoteNotes: trip?.quote?.notes || '',
+    bookingReference: trip?.booking?.bookingReference || '',
+    bookingSupplierSummary: trip?.booking?.supplierSummary || '',
+    bookingTotalCost: trip?.booking?.totalCost ? String(trip.booking.totalCost) : fallbackAmount ? String(fallbackAmount) : '',
+    bookingCurrency: trip?.booking?.currency || fallbackCurrency,
+    bookingStatus: trip?.booking?.status || 'pending',
+    invoiceAmount: trip?.invoice?.amount ? String(trip.invoice.amount) : fallbackAmount ? String(fallbackAmount) : '',
+    invoiceCurrency: trip?.invoice?.currency || fallbackCurrency,
+    invoiceStatus: trip?.invoice?.status || 'draft',
+    invoiceDueDate: trip?.invoice?.dueDate || '',
+    invoiceNotes: trip?.invoice?.notes || '',
+    paymentAmount: '',
+    paymentCurrency: fallbackCurrency,
+    paymentMethod: 'bank_transfer',
+    paymentStatus: 'pending',
+    paymentReference: '',
+    paymentNotes: '',
+  };
+}
+
 function emptyTripDesignDrafts(): TripDesignDrafts {
   return {
     stop: {
@@ -1970,6 +2199,7 @@ export function CrmPage() {
   const [workflowStates, setWorkflowStates] = useState<Record<string, CrmWorkflowState>>({});
   const [workflowReminders, setWorkflowReminders] = useState<CrmWorkflowReminder[]>([]);
   const [tripItineraries, setTripItineraries] = useState<CrmTripItinerary[]>([]);
+  const [ctmTripRequests, setCtmTripRequests] = useState<CorporateTripRequest[]>([]);
   const [crmUsers, setCrmUsers] = useState<CrmManagedUser[]>([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [crmError, setCrmError] = useState('');
@@ -1997,6 +2227,9 @@ export function CrmPage() {
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [userForm, setUserForm] = useState<UserFormState>(() => emptyUserForm());
   const [quoteLineDraft, setQuoteLineDraft] = useState<QuoteLineDraft>(() => emptyQuoteLineDraft());
+  const [selectedCtmReferencesByLead, setSelectedCtmReferencesByLead] = useState<Record<string, string>>({});
+  const [corporateOutputDraft, setCorporateOutputDraft] = useState<CorporateOutputDraft>(() => emptyCorporateOutputDraft());
+  const [isSavingCorporateOutput, setIsSavingCorporateOutput] = useState(false);
   const [tripDesignDrafts, setTripDesignDrafts] = useState<TripDesignDrafts>(() => emptyTripDesignDrafts());
   const [activeTripDesignEditor, setActiveTripDesignEditor] = useState<TripDesignEditor>('stop');
   const [communicationDraft, setCommunicationDraft] = useState<CommunicationDraft>(() => emptyCommunicationDraft());
@@ -2032,9 +2265,10 @@ export function CrmPage() {
         fetchCrmCommunicationRecords(crmSession),
         fetchCrmWorkflowReminders(crmSession, 'pending'),
         fetchCrmTripItineraries(crmSession),
+        fetchCtmTripRequests(crmSession),
         canManageUsers(crmSession?.user) ? fetchCrmUsers(crmSession) : Promise.resolve([]),
       ])
-        .then(([nextLeads, nextClients, nextQuotes, nextPaymentRecords, nextCommunicationRecords, nextWorkflowReminders, nextItineraries, nextUsers]) => {
+        .then(([nextLeads, nextClients, nextQuotes, nextPaymentRecords, nextCommunicationRecords, nextWorkflowReminders, nextItineraries, nextCtmTripRequests, nextUsers]) => {
           setLeads(nextLeads);
           setClients(nextClients);
           setQuotes(nextQuotes);
@@ -2042,6 +2276,7 @@ export function CrmPage() {
           setCommunicationRecords(nextCommunicationRecords);
           setWorkflowReminders(nextWorkflowReminders);
           setTripItineraries(nextItineraries);
+          setCtmTripRequests(nextCtmTripRequests);
           setCrmUsers(nextUsers);
           setCrmError('');
         })
@@ -2205,6 +2440,21 @@ export function CrmPage() {
   const pageUsers = filteredUsers.slice(pageStart, pageStart + PAGE_SIZE);
   const selectedLead = leadSource.find((lead) => lead.id === selectedLeadId) ?? pageLeads[0] ?? leadSource[0] ?? null;
   const selectedClient = filteredClients.find((client) => client.id === selectedClientId) ?? pageClients[0] ?? filteredClients[0] ?? null;
+  const selectedCtmReference = selectedLead
+    ? selectedCtmReferencesByLead[selectedLead.id] ?? selectedLead.ctmRequestId ?? ctmTripRequests[0]?.id ?? null
+    : ctmTripRequests[0]?.id ?? null;
+  const selectedCtmTrip = ctmTripRequests.find((trip) => trip.id === selectedCtmReference) ?? ctmTripRequests[0] ?? null;
+  const selectedCtmSignals = selectedCtmTrip ? buildCorporateDeskSignals(selectedCtmTrip) : [];
+  const selectedCtmNextAction = selectedCtmTrip ? getCorporateDeskNextAction(selectedCtmTrip) : 'Link a CTM request before processing corporate workflow actions.';
+  const selectedCtmOutputSignature = selectedCtmTrip
+    ? [
+        selectedCtmTrip.id,
+        selectedCtmTrip.quote?.updatedAt ?? '',
+        selectedCtmTrip.booking?.updatedAt ?? '',
+        selectedCtmTrip.invoice?.updatedAt ?? '',
+        selectedCtmTrip.payments[0]?.updatedAt ?? '',
+      ].join('|')
+    : '';
   const selectedQuotes = selectedLead ? quotes.filter((quote) => quote.leadId === selectedLead.id).sort((a, b) => b.version - a.version) : [];
   const selectedQuote = selectedQuotes[0] ?? null;
   const selectedWorkflowState = selectedLead ? workflowStates[selectedLead.id] ?? null : null;
@@ -2302,6 +2552,10 @@ export function CrmPage() {
             },
           ].filter((section) => section.leads.length > 0);
   const selectedClientLeads = selectedClient ? leads.filter((lead) => lead.clientId === selectedClient.id) : [];
+  useEffect(() => {
+    setCorporateOutputDraft(corporateOutputDraftFromTrip(selectedCtmTrip));
+  }, [selectedCtmOutputSignature, selectedCtmTrip]);
+
   useEffect(() => {
     if (!selectedLead || !apiEnabled || !crmSession?.token) return;
     let isMounted = true;
@@ -2500,6 +2754,12 @@ export function CrmPage() {
     const nextWorkflowReminders = await fetchCrmWorkflowReminders(crmSession, 'pending');
     setWorkflowReminders(nextWorkflowReminders);
     return nextWorkflowReminders;
+  }
+
+  async function reloadCtmTripRequests() {
+    const nextTripRequests = await fetchCtmTripRequests(crmSession);
+    setCtmTripRequests(nextTripRequests);
+    return nextTripRequests;
   }
 
   async function reloadItineraries() {
@@ -2755,7 +3015,7 @@ export function CrmPage() {
     }
   }
 
-  async function refreshLead(id: string, patch: Partial<Pick<CrmLead, 'status' | 'lifecycleStage' | 'priority' | 'internalNotes'>>) {
+  async function refreshLead(id: string, patch: Partial<Pick<CrmLead, 'status' | 'lifecycleStage' | 'priority' | 'internalNotes' | 'ctmRequestId'>>) {
     try {
       const updatedLead = await updateCrmLeadRecord(id, patch, crmSession);
       if (updatedLead) {
@@ -2767,6 +3027,13 @@ export function CrmPage() {
     } catch (error) {
       setCrmError(error instanceof Error ? error.message : 'Could not update CRM lead.');
     }
+  }
+
+  async function linkCtmRequestToLead(reference: string) {
+    if (!selectedLead) return;
+    setSelectedCtmReferencesByLead((current) => ({ ...current, [selectedLead.id]: reference }));
+    if (selectedLead.ctmRequestId === reference) return;
+    await refreshLead(selectedLead.id, { ctmRequestId: reference });
   }
 
   async function advanceLeadLifecycle(lead: CrmLead) {
@@ -3014,6 +3281,138 @@ export function CrmPage() {
 
   function updateQuoteLineDraft<K extends keyof QuoteLineDraft>(field: K, value: QuoteLineDraft[K]) {
     setQuoteLineDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateCorporateOutputDraft<K extends keyof CorporateOutputDraft>(field: K, value: CorporateOutputDraft[K]) {
+    setCorporateOutputDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  async function saveCorporateQuoteOutput() {
+    if (!selectedCtmTrip) return;
+    if (!corporateOutputDraft.quoteAmount.trim()) {
+      setCrmError('Quote amount is required before sharing CTM commercial output.');
+      return;
+    }
+
+    setIsSavingCorporateOutput(true);
+    try {
+      const payload = {
+        amount: corporateOutputDraft.quoteAmount,
+        currency: corporateOutputDraft.quoteCurrency || 'USD',
+        validUntil: corporateOutputDraft.quoteValidUntil || null,
+        notes: corporateOutputDraft.quoteNotes,
+        status: corporateOutputDraft.quoteStatus,
+      };
+      if (selectedCtmTrip.quote) {
+        await updateCtmTripQuote(selectedCtmTrip.id, payload, crmSession);
+      } else {
+        await createCtmTripQuote(selectedCtmTrip.id, payload, crmSession);
+      }
+      await reloadCtmTripRequests();
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not save CTM quote output.');
+    } finally {
+      setIsSavingCorporateOutput(false);
+    }
+  }
+
+  async function saveCorporateBookingOutput() {
+    if (!selectedCtmTrip) return;
+    setIsSavingCorporateOutput(true);
+    try {
+      const payload = {
+        bookingReference: corporateOutputDraft.bookingReference,
+        supplierSummary: corporateOutputDraft.bookingSupplierSummary,
+        totalCost: corporateOutputDraft.bookingTotalCost || null,
+        currency: corporateOutputDraft.bookingCurrency || 'USD',
+        status: corporateOutputDraft.bookingStatus,
+        bookedAt: null,
+      };
+      if (selectedCtmTrip.booking) {
+        await updateCtmTripBooking(selectedCtmTrip.id, payload, crmSession);
+      } else {
+        await createCtmTripBooking(selectedCtmTrip.id, payload, crmSession);
+      }
+      await reloadCtmTripRequests();
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not save CTM booking output.');
+    } finally {
+      setIsSavingCorporateOutput(false);
+    }
+  }
+
+  async function saveCorporateInvoiceOutput() {
+    if (!selectedCtmTrip) return;
+    if (!corporateOutputDraft.invoiceAmount.trim()) {
+      setCrmError('Invoice amount is required before sharing CTM billing output.');
+      return;
+    }
+
+    setIsSavingCorporateOutput(true);
+    try {
+      const payload = {
+        amount: corporateOutputDraft.invoiceAmount,
+        currency: corporateOutputDraft.invoiceCurrency || 'USD',
+        status: corporateOutputDraft.invoiceStatus,
+        issuedAt: null,
+        dueDate: corporateOutputDraft.invoiceDueDate || null,
+        notes: corporateOutputDraft.invoiceNotes,
+      };
+      if (selectedCtmTrip.invoice) {
+        await updateCtmTripInvoice(selectedCtmTrip.id, payload, crmSession);
+      } else {
+        await createCtmTripInvoice(selectedCtmTrip.id, payload, crmSession);
+      }
+      await reloadCtmTripRequests();
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not save CTM invoice output.');
+    } finally {
+      setIsSavingCorporateOutput(false);
+    }
+  }
+
+  async function recordCorporatePaymentOutput() {
+    if (!selectedCtmTrip) return;
+    if (!selectedCtmTrip.invoice) {
+      setCrmError('Create an invoice before recording CTM payment output.');
+      return;
+    }
+    if (!corporateOutputDraft.paymentAmount.trim()) {
+      setCrmError('Payment amount is required.');
+      return;
+    }
+
+    setIsSavingCorporateOutput(true);
+    try {
+      await createCtmTripPayment(
+        selectedCtmTrip.id,
+        {
+          amount: corporateOutputDraft.paymentAmount,
+          currency: corporateOutputDraft.paymentCurrency || selectedCtmTrip.invoice.currency || 'USD',
+          paymentMethod: corporateOutputDraft.paymentMethod,
+          status: corporateOutputDraft.paymentStatus,
+          reference: corporateOutputDraft.paymentReference,
+          receivedAt: null,
+          notes: corporateOutputDraft.paymentNotes,
+        },
+        crmSession,
+      );
+      await reloadCtmTripRequests();
+      setCorporateOutputDraft((current) => ({
+        ...current,
+        paymentAmount: '',
+        paymentReference: '',
+        paymentNotes: '',
+      }));
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not record CTM payment output.');
+    } finally {
+      setIsSavingCorporateOutput(false);
+    }
   }
 
   async function saveQuoteLine(line: CrmQuoteLine, patch: Partial<Pick<CrmQuoteLine, 'category' | 'supplier' | 'description' | 'quantity' | 'unitCost' | 'unitSell' | 'status' | 'confirmationReference' | 'supplierDeadline' | 'bookingOwner' | 'bookingNotes' | 'confirmedAt' | 'notes'>>) {
@@ -4663,6 +5062,117 @@ export function CrmPage() {
                         <div className={`mt-1 text-xs ${styles.muted}`}>{selectedWorkflowState?.responsibleOwner || selectedProcess?.primaryAction || 'Review request'}</div>
                       </div>
                     </div>
+                  </div>
+
+                  <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Linked CTM request</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <select
+                            value={selectedCtmTrip?.id ?? ''}
+                            onChange={(event) => linkCtmRequestToLead(event.target.value)}
+                            className={`h-10 min-w-[260px] rounded-lg border px-3 text-sm ${styles.select}`}
+                          >
+                            {ctmTripRequests.length > 0 ? ctmTripRequests.map((trip) => (
+                              <option key={trip.id} value={trip.id}>{trip.id} - {trip.route}</option>
+                            )) : (
+                              <option value="">No CTM requests loaded</option>
+                            )}
+                          </select>
+                          <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
+                            {selectedLead.ctmRequestId === selectedCtmTrip?.id ? 'Saved link' : 'Link pending'}
+                          </span>
+                          {selectedCtmTrip ? (
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>{selectedCtmTrip.status}</span>
+                          ) : null}
+                        </div>
+                        <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+                          {selectedCtmTrip
+                            ? `${selectedCtmTrip.requestedBy} from ${selectedCtmTrip.department} requested ${selectedCtmTrip.route} for ${selectedCtmTrip.travelDate}.`
+                            : 'Corporate work should be attached to a CTM request before quote, booking, billing, or shared client updates are processed.'}
+                        </p>
+                      </div>
+                      {selectedCtmTrip ? (
+                        <button
+                          type="button"
+                          onClick={() => setDetailTab('finance')}
+                          className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
+                        >
+                          <FileText className="h-4 w-4" />
+                          Commercial output
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {selectedCtmTrip ? (
+                      <>
+                        <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                          {[
+                            { label: 'Travelers', value: String(selectedCtmTrip.travelers.length), meta: selectedCtmTrip.travelers[0]?.name || 'Traveler list pending' },
+                            {
+                              label: 'Approvals',
+                              value: `${selectedCtmTrip.approvals.filter((approval) => approval.status === 'Approved').length}/${selectedCtmTrip.approvals.length}`,
+                              meta: selectedCtmTrip.approvals.find((approval) => approval.status === 'Pending')?.stage || 'No pending approval',
+                            },
+                            {
+                              label: 'Quote',
+                              value: selectedCtmTrip.quote ? corporateQuoteStatusLabels[selectedCtmTrip.quote.status] : 'Not created',
+                              meta: selectedCtmTrip.quote ? moneyValue(selectedCtmTrip.quote.amount, selectedCtmTrip.quote.currency) : 'Prepare in CRM',
+                            },
+                            {
+                              label: 'Booking',
+                              value: selectedCtmTrip.booking ? corporateBookingStatusLabels[selectedCtmTrip.booking.status] : 'Not created',
+                              meta: selectedCtmTrip.booking?.bookingReference || 'Supplier release pending',
+                            },
+                            {
+                              label: 'Invoice',
+                              value: selectedCtmTrip.invoice ? corporateInvoiceStatusLabels[selectedCtmTrip.invoice.status] : 'Not created',
+                              meta: selectedCtmTrip.invoice ? moneyValue(selectedCtmTrip.invoice.amount, selectedCtmTrip.invoice.currency) : 'Billing pending',
+                            },
+                            {
+                              label: 'Payments',
+                              value: String(selectedCtmTrip.payments.length),
+                              meta: selectedCtmTrip.payments[0] ? corporatePaymentStatusLabels[selectedCtmTrip.payments[0].status] : 'No payment records',
+                            },
+                          ].map((card) => (
+                            <div key={card.label} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                              <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{card.label}</div>
+                              <div className="mt-1 truncate text-sm font-semibold">{card.value}</div>
+                              <div className={`mt-1 truncate text-xs ${styles.muted}`}>{card.meta}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className={`mt-4 rounded-lg border p-4 ${styles.panelSoft}`}>
+                          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                            <div>
+                              <div className="font-semibold">CTM response loop</div>
+                              <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>
+                                Client portal actions translated into DPM operating signals for the Corporate Desk.
+                              </p>
+                            </div>
+                            <div className={`rounded-lg border px-3 py-2 text-sm ${styles.panel}`}>
+                              <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Next DPM action</div>
+                              <div className="mt-1 max-w-xl font-semibold">{selectedCtmNextAction}</div>
+                            </div>
+                          </div>
+                          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            {selectedCtmSignals.map((signal) => (
+                              <div key={signal.label} className={`rounded-lg border px-3 py-3 ${ctmSignalToneClass(signal.tone)}`}>
+                                <div className="text-[10px] uppercase tracking-[0.14em] opacity-75">{signal.label}</div>
+                                <div className="mt-1 truncate text-sm font-semibold">{signal.value}</div>
+                                <div className="mt-1 line-clamp-2 text-xs opacity-75">{signal.meta}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className={`mt-4 rounded-lg border p-4 text-sm ${styles.panelSoft}`}>
+                        No CTM request is available. Ask the company to submit the request in CTM, then process it from this Corporate Desk.
+                      </div>
+                    )}
                   </div>
 
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
@@ -6775,6 +7285,120 @@ export function CrmPage() {
                         Use this lane for PO, invoice approval, or account-credit coordination before booking is released.
                       </p>
                     </div>
+                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                      <div className={`text-sm ${styles.muted}`}>CTM source request</div>
+                      <select
+                        value={selectedCtmTrip?.id ?? ''}
+                        onChange={(event) => linkCtmRequestToLead(event.target.value)}
+                        className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm ${styles.select}`}
+                      >
+                        {ctmTripRequests.length > 0 ? ctmTripRequests.map((trip) => (
+                          <option key={trip.id} value={trip.id}>{trip.id} - {trip.route}</option>
+                        )) : (
+                          <option value="">No CTM requests loaded</option>
+                        )}
+                      </select>
+                      <div className={`mt-2 text-xs ${styles.muted}`}>
+                        {selectedCtmTrip ? `${selectedCtmTrip.department} - ${selectedCtmTrip.travelDate} - ${selectedCtmTrip.status}` : 'Corporate requests must originate from CTM.'}
+                      </div>
+                    </div>
+                    {selectedCtmTrip ? (
+                      <div className={`rounded-lg border p-4 md:col-span-2 ${styles.panelSoft}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="font-semibold">CTM shared commercial output</div>
+                            <div className={`mt-1 text-sm ${styles.muted}`}>DPM controls these outputs in CRM. CTM users only see the shared state.</div>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedCtmTrip.id}</span>
+                        </div>
+                        <div className="mt-4 grid gap-4 xl:grid-cols-4">
+                          <div className={`rounded-lg border p-3 ${styles.panel}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold">Quote</div>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.quote ? corporateQuoteStatusLabels[selectedCtmTrip.quote.status] : 'Not created'}</span>
+                            </div>
+                            <div className="mt-3 grid grid-cols-[1fr_74px] gap-2">
+                              <input value={corporateOutputDraft.quoteAmount} onChange={(event) => updateCorporateOutputDraft('quoteAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Amount" />
+                              <input value={corporateOutputDraft.quoteCurrency} onChange={(event) => updateCorporateOutputDraft('quoteCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="USD" />
+                            </div>
+                            <div className="mt-2 grid grid-cols-[1fr_1fr] gap-2">
+                              <input type="date" value={corporateOutputDraft.quoteValidUntil} onChange={(event) => updateCorporateOutputDraft('quoteValidUntil', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <select value={corporateOutputDraft.quoteStatus} onChange={(event) => updateCorporateOutputDraft('quoteStatus', event.target.value as CorporateQuoteStatus)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                {corporateQuoteStatuses.map((status) => <option key={status} value={status}>{corporateQuoteStatusLabels[status]}</option>)}
+                              </select>
+                            </div>
+                            <textarea value={corporateOutputDraft.quoteNotes} onChange={(event) => updateCorporateOutputDraft('quoteNotes', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder="Quote note visible to CTM when shared" />
+                            <button type="button" disabled={isSavingCorporateOutput} onClick={saveCorporateQuoteOutput} className="mt-3 h-9 w-full rounded-lg bg-sky-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                              {selectedCtmTrip.quote ? 'Update quote' : 'Create quote'}
+                            </button>
+                          </div>
+
+                          <div className={`rounded-lg border p-3 ${styles.panel}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold">Booking</div>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.booking ? corporateBookingStatusLabels[selectedCtmTrip.booking.status] : 'Not created'}</span>
+                            </div>
+                            <input value={corporateOutputDraft.bookingReference} onChange={(event) => updateCorporateOutputDraft('bookingReference', event.target.value)} className={`mt-3 h-9 w-full rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Booking reference" />
+                            <div className="mt-2 grid grid-cols-[1fr_74px] gap-2">
+                              <input value={corporateOutputDraft.bookingTotalCost} onChange={(event) => updateCorporateOutputDraft('bookingTotalCost', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Total cost" />
+                              <input value={corporateOutputDraft.bookingCurrency} onChange={(event) => updateCorporateOutputDraft('bookingCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="USD" />
+                            </div>
+                            <select value={corporateOutputDraft.bookingStatus} onChange={(event) => updateCorporateOutputDraft('bookingStatus', event.target.value as CorporateBookingStatus)} className={`mt-2 h-9 w-full rounded-lg border px-2 text-xs ${styles.select}`}>
+                              {corporateBookingStatuses.map((status) => <option key={status} value={status}>{corporateBookingStatusLabels[status]}</option>)}
+                            </select>
+                            <textarea value={corporateOutputDraft.bookingSupplierSummary} onChange={(event) => updateCorporateOutputDraft('bookingSupplierSummary', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder="Flights, hotels, transfers, supplier holds" />
+                            <button type="button" disabled={isSavingCorporateOutput} onClick={saveCorporateBookingOutput} className="mt-3 h-9 w-full rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                              {selectedCtmTrip.booking ? 'Update booking' : 'Create booking'}
+                            </button>
+                          </div>
+
+                          <div className={`rounded-lg border p-3 ${styles.panel}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold">Invoice</div>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.invoice ? corporateInvoiceStatusLabels[selectedCtmTrip.invoice.status] : 'Not created'}</span>
+                            </div>
+                            <div className="mt-3 grid grid-cols-[1fr_74px] gap-2">
+                              <input value={corporateOutputDraft.invoiceAmount} onChange={(event) => updateCorporateOutputDraft('invoiceAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Amount" />
+                              <input value={corporateOutputDraft.invoiceCurrency} onChange={(event) => updateCorporateOutputDraft('invoiceCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="USD" />
+                            </div>
+                            <div className="mt-2 grid grid-cols-[1fr_1fr] gap-2">
+                              <input type="date" value={corporateOutputDraft.invoiceDueDate} onChange={(event) => updateCorporateOutputDraft('invoiceDueDate', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <select value={corporateOutputDraft.invoiceStatus} onChange={(event) => updateCorporateOutputDraft('invoiceStatus', event.target.value as CorporateInvoiceStatus)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                {corporateInvoiceStatuses.map((status) => <option key={status} value={status}>{corporateInvoiceStatusLabels[status]}</option>)}
+                              </select>
+                            </div>
+                            <textarea value={corporateOutputDraft.invoiceNotes} onChange={(event) => updateCorporateOutputDraft('invoiceNotes', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder="PO, due date, billing instructions" />
+                            <button type="button" disabled={isSavingCorporateOutput} onClick={saveCorporateInvoiceOutput} className="mt-3 h-9 w-full rounded-lg bg-amber-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                              {selectedCtmTrip.invoice ? 'Update invoice' : 'Create invoice'}
+                            </button>
+                          </div>
+
+                          <div className={`rounded-lg border p-3 ${styles.panel}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold">Payment</div>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.payments.length} records</span>
+                            </div>
+                            <div className="mt-3 grid grid-cols-[1fr_74px] gap-2">
+                              <input value={corporateOutputDraft.paymentAmount} onChange={(event) => updateCorporateOutputDraft('paymentAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Amount" />
+                              <input value={corporateOutputDraft.paymentCurrency} onChange={(event) => updateCorporateOutputDraft('paymentCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="USD" />
+                            </div>
+                            <div className="mt-2 grid grid-cols-[1fr_1fr] gap-2">
+                              <select value={corporateOutputDraft.paymentMethod} onChange={(event) => updateCorporateOutputDraft('paymentMethod', event.target.value as CorporatePaymentMethod)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                {corporatePaymentMethods.map((method) => <option key={method} value={method}>{corporatePaymentMethodLabels[method]}</option>)}
+                              </select>
+                              <select value={corporateOutputDraft.paymentStatus} onChange={(event) => updateCorporateOutputDraft('paymentStatus', event.target.value as CorporatePaymentStatus)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                                {corporatePaymentStatuses.map((status) => <option key={status} value={status}>{corporatePaymentStatusLabels[status]}</option>)}
+                              </select>
+                            </div>
+                            <input value={corporateOutputDraft.paymentReference} onChange={(event) => updateCorporateOutputDraft('paymentReference', event.target.value)} className={`mt-2 h-9 w-full rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Payment reference" />
+                            <textarea value={corporateOutputDraft.paymentNotes} onChange={(event) => updateCorporateOutputDraft('paymentNotes', event.target.value)} className={`mt-2 h-14 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder="Payment note" />
+                            <button type="button" disabled={isSavingCorporateOutput || !selectedCtmTrip.invoice} onClick={recordCorporatePaymentOutput} className="mt-3 h-9 w-full rounded-lg bg-fuchsia-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                              Record payment
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                       <div className={`text-sm ${styles.muted}`}>Commercial shape</div>
                       <div className="mt-2 text-lg font-semibold">{selectedQuote ? moneyValue(selectedQuote.subtotalSell, selectedQuote.currency) : selectedLead.budget || 'Policy-based / budget pending'}</div>

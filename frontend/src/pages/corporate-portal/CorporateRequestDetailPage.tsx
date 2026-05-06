@@ -1,14 +1,341 @@
-import { Building2, CheckCircle2, PlaneTakeoff } from 'lucide-react';
+import { AlertTriangle, Building2, CheckCircle2, CircleDot, ClipboardList, Clock3, CreditCard, FileText, MessageSquare, PlaneTakeoff, Plus, Receipt, Route, Send, ShieldCheck, UploadCloud, XCircle } from 'lucide-react';
+import { type FormEvent, useState } from 'react';
 import { CostLifecycleCard } from '../../components/corporate-portal/CostLifecycleCard';
 import { ServiceChipList } from '../../components/corporate-portal/ServiceChipList';
-import { TimelinePanel } from '../../components/corporate-portal/TimelinePanel';
+import { TimelinePanel, type TimelineSource, type UnifiedTimelineEvent } from '../../components/corporate-portal/TimelinePanel';
 import { TravelerReadinessList } from '../../components/corporate-portal/TravelerReadinessList';
 import { TripStatusBadge } from '../../components/corporate-portal/TripStatusBadge';
-import type { CorporatePortalTheme, CorporateTripRequest } from '../../types/corporatePortal';
+import type { CorporateApprovalStage, CorporateDocumentStatus, CorporateDocumentType, CorporatePortalTheme, CorporateTripDocumentInput, CorporateTripMessageInput, CorporateTripRequest } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from './portalTheme';
 
-export function CorporateRequestDetailPage({ trip, theme }: { trip: CorporateTripRequest | null; theme: CorporatePortalTheme }) {
+type WorkbenchTab = 'documents' | 'messages' | 'tasks';
+type ProcessingStageState = 'done' | 'active' | 'blocked' | 'pending';
+
+type ProcessingStage = {
+  id: string;
+  label: string;
+  state: ProcessingStageState;
+  detail: string;
+  Icon: typeof CheckCircle2;
+};
+
+const documentTypes: Array<{ value: CorporateDocumentType; label: string }> = [
+  { value: 'passport', label: 'Passport' },
+  { value: 'visa', label: 'Visa' },
+  { value: 'itinerary', label: 'Itinerary' },
+  { value: 'approval', label: 'Approval' },
+  { value: 'invoice', label: 'Invoice' },
+  { value: 'other', label: 'Other' },
+];
+
+const documentStatuses: Array<{ value: CorporateDocumentStatus; label: string }> = [
+  { value: 'requested', label: 'Requested' },
+  { value: 'received', label: 'Received' },
+  { value: 'verified', label: 'Verified' },
+  { value: 'issued', label: 'Issued' },
+  { value: 'missing', label: 'Missing' },
+];
+
+function labelize(value: string) {
+  return value.replace(/_/g, ' ');
+}
+
+function statusTone(status: string, theme: CorporatePortalTheme) {
+  if (['verified', 'issued', 'done', 'confirmed', 'ticketed', 'completed', 'approved', 'paid'].includes(status)) {
+    return 'bg-emerald-500/12 text-emerald-200';
+  }
+  if (['missing', 'blocked', 'cancelled', 'rejected', 'overdue'].includes(status)) {
+    return 'bg-rose-500/12 text-rose-200';
+  }
+  if (['requested', 'in_progress', 'sent', 'partially_paid'].includes(status)) {
+    return 'bg-amber-500/12 text-amber-100';
+  }
+  return theme === 'dark' ? 'bg-sky-500/12 text-sky-200' : 'bg-sky-50 text-sky-800';
+}
+
+function formatMoney(amount: number | null | undefined, currency = 'USD') {
+  if (amount === null || amount === undefined) return 'Pending';
+  return `${currency} ${amount.toLocaleString('en-US')}`;
+}
+
+function stageClass(state: ProcessingStageState, theme: CorporatePortalTheme) {
+  if (state === 'done') return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200';
+  if (state === 'active') return 'border-sky-400/35 bg-sky-500/10 text-sky-200';
+  if (state === 'blocked') return 'border-rose-400/35 bg-rose-500/10 text-rose-100';
+  return theme === 'dark' ? 'border-white/10 bg-white/[0.03] text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500';
+}
+
+function stageConnectorClass(state: ProcessingStageState) {
+  if (state === 'done') return 'bg-emerald-400/50';
+  if (state === 'active') return 'bg-sky-400/50';
+  if (state === 'blocked') return 'bg-rose-400/50';
+  return 'bg-white/10';
+}
+
+function approvalStatus(trip: CorporateTripRequest, stage: 'Travel need' | 'Final cost') {
+  return trip.approvals.find((approval) => approval.stage === stage)?.status ?? 'Pending';
+}
+
+function hasDocumentBlocker(trip: CorporateTripRequest) {
+  return trip.travelers.some((traveler) => traveler.readiness.passport !== 'OK' || traveler.readiness.visa === 'Required')
+    || (trip.documents ?? []).some((document) => document.status === 'missing' || document.status === 'requested');
+}
+
+function buildProcessingStages(trip: CorporateTripRequest): ProcessingStage[] {
+  const travelNeed = approvalStatus(trip, 'Travel need');
+  const finalCost = approvalStatus(trip, 'Final cost');
+  const quoteReady = Boolean(trip.quote) || trip.status === 'Quote ready' || trip.status === 'Final approval';
+  const bookingReady = Boolean(trip.booking) || trip.status === 'Booked' || trip.status === 'Completed';
+  const invoiceReady = Boolean(trip.invoice);
+  const paid = trip.invoice?.status === 'paid' || trip.payments.some((payment) => payment.status === 'received' || payment.status === 'reconciled');
+  const blockedByApproval = travelNeed === 'Rejected' || finalCost === 'Rejected';
+  const blockedByDocuments = hasDocumentBlocker(trip) && (trip.status === 'Needs documents' || bookingReady);
+
+  return [
+    {
+      id: 'received',
+      label: 'Received',
+      state: 'done',
+      detail: 'CTM request is registered and visible to DPM.',
+      Icon: ClipboardList,
+    },
+    {
+      id: 'qualification',
+      label: 'Qualification',
+      state: blockedByApproval ? 'blocked' : travelNeed === 'Approved' || quoteReady || bookingReady ? 'done' : 'active',
+      detail: travelNeed === 'Approved' ? 'Business need is approved.' : travelNeed === 'Rejected' ? 'Travel need was rejected.' : 'Waiting for travel need approval.',
+      Icon: ShieldCheck,
+    },
+    {
+      id: 'quote',
+      label: 'Quote',
+      state: quoteReady ? (trip.quote?.status === 'rejected' ? 'blocked' : trip.quote?.status === 'approved' || finalCost === 'Approved' || bookingReady ? 'done' : 'active') : travelNeed === 'Approved' ? 'active' : 'pending',
+      detail: trip.quote ? `${labelize(trip.quote.status)} - ${formatMoney(trip.quote.amount, trip.quote.currency)}` : 'DPM has not shared a quote yet.',
+      Icon: Receipt,
+    },
+    {
+      id: 'approval',
+      label: 'Approval',
+      state: finalCost === 'Rejected' ? 'blocked' : finalCost === 'Approved' || bookingReady ? 'done' : quoteReady ? 'active' : 'pending',
+      detail: finalCost === 'Approved' ? 'Final cost is approved.' : finalCost === 'Rejected' ? 'Final cost was rejected.' : 'Waiting for company final approval.',
+      Icon: CheckCircle2,
+    },
+    {
+      id: 'booking',
+      label: 'Booking',
+      state: trip.booking?.status === 'cancelled' ? 'blocked' : bookingReady ? (trip.booking?.status === 'ticketed' || trip.booking?.status === 'completed' ? 'done' : 'active') : finalCost === 'Approved' ? 'active' : 'pending',
+      detail: trip.booking ? `${labelize(trip.booking.status)} - ${trip.booking.bookingReference || 'reference pending'}` : 'Supplier booking has not been released.',
+      Icon: PlaneTakeoff,
+    },
+    {
+      id: 'billing',
+      label: 'Billing',
+      state: paid ? 'done' : invoiceReady ? (trip.invoice?.status === 'overdue' ? 'blocked' : 'active') : bookingReady ? 'active' : 'pending',
+      detail: trip.invoice ? `${labelize(trip.invoice.status)} - ${formatMoney(trip.invoice.amount, trip.invoice.currency)}` : 'Invoice is not issued yet.',
+      Icon: CreditCard,
+    },
+    {
+      id: 'travel-ready',
+      label: 'Travel ready',
+      state: blockedByDocuments ? 'blocked' : trip.status === 'Completed' ? 'done' : bookingReady ? 'active' : 'pending',
+      detail: blockedByDocuments ? 'Traveler documents need attention.' : bookingReady ? 'DPM is preparing final travel pack.' : 'Unlocked after booking.',
+      Icon: Route,
+    },
+  ];
+}
+
+function currentProcessingStage(stages: ProcessingStage[]) {
+  return stages.find((stage) => stage.state === 'blocked') ?? stages.find((stage) => stage.state === 'active') ?? stages[stages.length - 1];
+}
+
+function clientNextAction(trip: CorporateTripRequest) {
+  const travelNeed = approvalStatus(trip, 'Travel need');
+  const finalCost = approvalStatus(trip, 'Final cost');
+
+  if (travelNeed === 'Pending') return 'Approve the travel need so DPM can qualify the request.';
+  if (trip.quote && finalCost === 'Pending') return 'Review the shared quote and approve or reject the final cost.';
+  if (hasDocumentBlocker(trip)) return 'Upload or validate missing traveler documents.';
+  if (trip.invoice && trip.invoice.status !== 'paid') return 'Coordinate payment or invoice approval with finance.';
+  if (trip.booking) return 'Review booking details and wait for the final travel pack.';
+  return 'No client action is required right now. DPM is processing the request.';
+}
+
+function formatTimelineDate(value: string | null | undefined) {
+  if (!value) return 'Latest';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+}
+
+function inferTimelineSource(title: string, meta: string): TimelineSource {
+  const text = `${title} ${meta}`.toLowerCase();
+  if (text.includes('invoice') || text.includes('payment') || text.includes('quote')) return 'Finance';
+  if (text.includes('document') || text.includes('passport') || text.includes('visa')) return 'Documents';
+  if (text.includes('message')) return 'Messages';
+  if (text.includes('approved') || text.includes('rejected') || text.includes('company')) return 'Company';
+  if (text.includes('dpm') || text.includes('booking')) return 'DPM';
+  return 'System';
+}
+
+function hasTimelineMention(events: UnifiedTimelineEvent[], terms: string[]) {
+  return events.some((event) => {
+    const text = `${event.title} ${event.meta}`.toLowerCase();
+    return terms.some((term) => text.includes(term));
+  });
+}
+
+function buildUnifiedTimeline(trip: CorporateTripRequest): UnifiedTimelineEvent[] {
+  const baseEvents: UnifiedTimelineEvent[] = trip.timeline.map((event) => ({
+    ...event,
+    source: inferTimelineSource(event.title, event.meta),
+  }));
+  const events = [...baseEvents];
+
+  const addEvent = (event: UnifiedTimelineEvent, terms: string[]) => {
+    const cleanTerms = terms.map((term) => term.trim()).filter(Boolean);
+    if (cleanTerms.length > 0 && hasTimelineMention(events, cleanTerms)) return;
+    events.push(event);
+  };
+
+  const travelNeed = approvalStatus(trip, 'Travel need');
+  const finalCost = approvalStatus(trip, 'Final cost');
+
+  if (!hasTimelineMention(events, ['request submitted', 'created'])) {
+    events.push({
+      id: `${trip.id}-request-created`,
+      title: 'Request submitted',
+      meta: `${trip.requestedBy} opened ${trip.route} for DPM review.`,
+      time: trip.travelDate,
+      type: 'done',
+      source: 'Company',
+    });
+  }
+
+  addEvent({
+    id: `${trip.id}-travel-need-${travelNeed}`,
+    title: `Travel need ${travelNeed.toLowerCase()}`,
+    meta: 'Company approval path for the business need.',
+    time: 'Approval',
+    type: travelNeed === 'Rejected' ? 'alert' : travelNeed === 'Approved' ? 'done' : 'pending',
+    source: 'Company',
+  }, ['travel need']);
+
+  if (trip.quote) {
+    addEvent({
+      id: `${trip.id}-quote-${trip.quote.id}`,
+      title: `Quote ${labelize(trip.quote.status)}`,
+      meta: `${formatMoney(trip.quote.amount, trip.quote.currency)}${trip.quote.validUntil ? ` valid until ${trip.quote.validUntil}` : ''}`,
+      time: formatTimelineDate(trip.quote.updatedAt || trip.quote.createdAt),
+      type: trip.quote.status === 'rejected' ? 'alert' : trip.quote.status === 'approved' || trip.quote.status === 'sent' ? 'done' : 'pending',
+      source: 'Finance',
+      sortAt: trip.quote.updatedAt || trip.quote.createdAt,
+    }, ['quote']);
+  }
+
+  addEvent({
+    id: `${trip.id}-final-cost-${finalCost}`,
+    title: `Final cost ${finalCost.toLowerCase()}`,
+    meta: 'Company approval for commercial release.',
+    time: 'Approval',
+    type: finalCost === 'Rejected' ? 'alert' : finalCost === 'Approved' ? 'done' : 'pending',
+    source: 'Company',
+  }, ['final cost']);
+
+  if (trip.booking) {
+    addEvent({
+      id: `${trip.id}-booking-${trip.booking.id}`,
+      title: `Booking ${labelize(trip.booking.status)}`,
+      meta: trip.booking.bookingReference || trip.booking.supplierSummary || 'Supplier booking updated.',
+      time: formatTimelineDate(trip.booking.updatedAt || trip.booking.createdAt),
+      type: trip.booking.status === 'cancelled' ? 'alert' : ['confirmed', 'ticketed', 'completed'].includes(trip.booking.status) ? 'done' : 'pending',
+      source: 'DPM',
+      sortAt: trip.booking.updatedAt || trip.booking.createdAt,
+    }, ['booking']);
+  }
+
+  if (trip.invoice) {
+    addEvent({
+      id: `${trip.id}-invoice-${trip.invoice.id}`,
+      title: `Invoice ${labelize(trip.invoice.status)}`,
+      meta: `${trip.invoice.invoiceNumber} - ${formatMoney(trip.invoice.amount, trip.invoice.currency)}`,
+      time: formatTimelineDate(trip.invoice.updatedAt || trip.invoice.createdAt),
+      type: trip.invoice.status === 'overdue' ? 'alert' : trip.invoice.status === 'paid' ? 'done' : 'pending',
+      source: 'Finance',
+      sortAt: trip.invoice.updatedAt || trip.invoice.createdAt,
+    }, ['invoice']);
+  }
+
+  trip.payments.slice(0, 3).forEach((payment) => {
+    addEvent({
+      id: `${trip.id}-payment-${payment.id}`,
+      title: `Payment ${labelize(payment.status)}`,
+      meta: `${formatMoney(payment.amount, payment.currency)}${payment.reference ? ` - ${payment.reference}` : ''}`,
+      time: formatTimelineDate(payment.updatedAt || payment.createdAt),
+      type: ['received', 'reconciled'].includes(payment.status) ? 'done' : payment.status === 'failed' ? 'alert' : 'pending',
+      source: 'Finance',
+      sortAt: payment.updatedAt || payment.createdAt,
+    }, [`payment ${payment.status}`, payment.reference]);
+  });
+
+  (trip.documents ?? []).slice(0, 3).forEach((document) => {
+    addEvent({
+      id: `${trip.id}-document-${document.id}`,
+      title: `Document ${labelize(document.status)}`,
+      meta: `${document.title}${document.traveler ? ` - ${document.traveler.name}` : ''}`,
+      time: formatTimelineDate(document.updatedAt),
+      type: document.status === 'missing' ? 'alert' : ['verified', 'issued', 'received'].includes(document.status) ? 'done' : 'pending',
+      source: 'Documents',
+      sortAt: document.updatedAt,
+    }, [document.title.toLowerCase()]);
+  });
+
+  (trip.messages ?? []).slice(0, 3).forEach((message) => {
+    addEvent({
+      id: `${trip.id}-message-${message.id}`,
+      title: message.senderType === 'dpm' ? 'DPM message posted' : 'Company message posted',
+      meta: message.body.length > 96 ? `${message.body.slice(0, 96)}...` : message.body,
+      time: formatTimelineDate(message.createdAt),
+      type: 'pending',
+      source: 'Messages',
+      sortAt: message.createdAt,
+    }, [message.body.slice(0, 36).toLowerCase()]);
+  });
+
+  return events.sort((a, b) => {
+    const aTime = a.sortAt ? new Date(a.sortAt).getTime() : 0;
+    const bTime = b.sortAt ? new Date(b.sortAt).getTime() : 0;
+    return bTime - aTime;
+  });
+}
+
+export function CorporateRequestDetailPage({
+  trip,
+  theme,
+  onCreateDocument,
+  onCreateMessage,
+  onApprove,
+  onReject,
+}: {
+  trip: CorporateTripRequest | null;
+  theme: CorporatePortalTheme;
+  onCreateDocument: (tripId: string, input: CorporateTripDocumentInput) => Promise<void>;
+  onCreateMessage: (tripId: string, input: CorporateTripMessageInput) => Promise<void>;
+  onApprove: (tripId: string, stage: CorporateApprovalStage) => Promise<void>;
+  onReject: (tripId: string, stage: CorporateApprovalStage) => Promise<void>;
+}) {
   const styles = corporatePortalThemeStyles[theme];
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>('documents');
+  const [documentTitle, setDocumentTitle] = useState('');
+  const [documentType, setDocumentType] = useState<CorporateDocumentType>('passport');
+  const [documentStatus, setDocumentStatus] = useState<CorporateDocumentStatus>('requested');
+  const [documentTravelerId, setDocumentTravelerId] = useState('');
+  const [documentFileUrl, setDocumentFileUrl] = useState('');
+  const [documentNotes, setDocumentNotes] = useState('');
+  const [messageBody, setMessageBody] = useState('');
+  const [isSavingDocument, setIsSavingDocument] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isSavingApproval, setIsSavingApproval] = useState(false);
+  const [workbenchError, setWorkbenchError] = useState('');
 
   if (!trip) {
     return (
@@ -18,6 +345,85 @@ export function CorporateRequestDetailPage({ trip, theme }: { trip: CorporateTri
       </section>
     );
   }
+
+  const documents = trip.documents ?? [];
+  const messages = trip.messages ?? [];
+  const tasks = trip.tasks ?? [];
+  const processingStages = buildProcessingStages(trip);
+  const activeProcessingStage = currentProcessingStage(processingStages);
+  const nextClientAction = clientNextAction(trip);
+  const unifiedTimeline = buildUnifiedTimeline(trip);
+  const pendingApprovals = trip.approvals.filter((approval) => approval.status === 'Pending');
+  const tabItems: Array<{ id: WorkbenchTab; label: string; count: number; Icon: typeof FileText }> = [
+    { id: 'documents', label: 'Documents', count: documents.length, Icon: FileText },
+    { id: 'messages', label: 'Messages', count: messages.length, Icon: MessageSquare },
+    { id: 'tasks', label: 'Tasks', count: tasks.length, Icon: ClipboardList },
+  ];
+
+  const submitDocument = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!documentTitle.trim()) {
+      setWorkbenchError('Add a document title before saving.');
+      return;
+    }
+    setIsSavingDocument(true);
+    setWorkbenchError('');
+    try {
+      await onCreateDocument(trip.id, {
+        title: documentTitle.trim(),
+        documentType,
+        status: documentStatus,
+        visibility: 'shared',
+        fileUrl: documentFileUrl.trim(),
+        notes: documentNotes.trim(),
+        travelerId: documentTravelerId || null,
+      });
+      setDocumentTitle('');
+      setDocumentType('passport');
+      setDocumentStatus('requested');
+      setDocumentTravelerId('');
+      setDocumentFileUrl('');
+      setDocumentNotes('');
+    } catch (error) {
+      setWorkbenchError(error instanceof Error ? error.message : 'Could not save document.');
+    } finally {
+      setIsSavingDocument(false);
+    }
+  };
+
+  const submitMessage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!messageBody.trim()) {
+      setWorkbenchError('Write a message before sending.');
+      return;
+    }
+    setIsSendingMessage(true);
+    setWorkbenchError('');
+    try {
+      await onCreateMessage(trip.id, { body: messageBody.trim(), visibility: 'shared' });
+      setMessageBody('');
+    } catch (error) {
+      setWorkbenchError(error instanceof Error ? error.message : 'Could not send message.');
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
+
+  const submitApprovalDecision = async (stage: CorporateApprovalStage, decision: 'Approved' | 'Rejected') => {
+    setIsSavingApproval(true);
+    setWorkbenchError('');
+    try {
+      if (decision === 'Approved') {
+        await onApprove(trip.id, stage);
+      } else {
+        await onReject(trip.id, stage);
+      }
+    } catch (error) {
+      setWorkbenchError(error instanceof Error ? error.message : 'Could not update approval.');
+    } finally {
+      setIsSavingApproval(false);
+    }
+  };
 
   return (
     <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.82fr]">
@@ -64,6 +470,123 @@ export function CorporateRequestDetailPage({ trip, theme }: { trip: CorporateTri
               <div className={`mt-2 text-sm leading-6 ${styles.soft}`}>{trip.internalSummary}</div>
             </div>
           </div>
+
+          <div className={`mt-4 rounded-xl border p-4 ${styles.surface}`}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-base font-semibold">
+                  <CircleDot className="h-4 w-4 text-[#d9b46f]" />
+                  DPM processing track
+                </div>
+                <p className={`mt-1 text-sm ${styles.muted}`}>Client-facing status from the shared CRM and CTM workflow.</p>
+              </div>
+              <div className={`rounded-lg border px-3 py-2 text-sm ${stageClass(activeProcessingStage.state, theme)}`}>
+                <div className="text-xs uppercase tracking-[0.12em] opacity-75">Current stage</div>
+                <div className="mt-1 font-semibold">{activeProcessingStage.label}</div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2 md:grid-cols-7">
+              {processingStages.map((stage, index) => {
+                const Icon = stage.Icon;
+                return (
+                  <div key={stage.id} className="relative min-w-0">
+                    {index > 0 ? <div className={`absolute -left-1 top-5 hidden h-px w-2 md:block ${stageConnectorClass(stage.state)}`} /> : null}
+                    <div className={`flex h-full min-h-[86px] flex-col items-center justify-center rounded-xl border px-2 py-3 text-center ${stageClass(stage.state, theme)}`}>
+                      <Icon className="h-5 w-5" />
+                      <div className="mt-2 truncate text-xs font-semibold">{stage.label}</div>
+                      <div className="mt-1 text-[10px] capitalize opacity-75">{stage.state}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+              <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                <div className={`flex items-center gap-2 text-xs uppercase tracking-[0.12em] ${styles.muted}`}>
+                  <Clock3 className="h-3.5 w-3.5" />
+                  DPM status detail
+                </div>
+                <div className="mt-2 text-sm leading-6">{activeProcessingStage.detail}</div>
+              </div>
+              <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                <div className={`flex items-center gap-2 text-xs uppercase tracking-[0.12em] ${styles.muted}`}>
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Client next action
+                </div>
+                <div className="mt-2 text-sm leading-6">{nextClientAction}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className={`mt-4 rounded-xl border p-4 ${styles.surface}`}>
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <div className="text-base font-semibold">Client actions</div>
+                <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>
+                  Approve decisions, upload missing information, or message DPM from the same request record.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('documents')}
+                  className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm ${styles.buttonGhost}`}
+                >
+                  <UploadCloud className="h-4 w-4" />
+                  Documents
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('messages')}
+                  className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm ${styles.buttonGhost}`}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  Message DPM
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {pendingApprovals.length > 0 ? pendingApprovals.map((approval) => (
+                <div key={`${approval.stage}-${approval.approver}-action`} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">{approval.stage} approval</div>
+                      <div className={`mt-1 text-xs ${styles.muted}`}>Responsible: {approval.approver}</div>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] ${statusTone('in_progress', theme)}`}>Pending</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={isSavingApproval}
+                      onClick={() => submitApprovalDecision(approval.stage, 'Approved')}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSavingApproval}
+                      onClick={() => submitApprovalDecision(approval.stage, 'Rejected')}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              )) : (
+                <div className={`rounded-lg border px-3 py-3 text-sm lg:col-span-2 ${styles.panelSoft}`}>
+                  <div className="font-semibold">No pending approvals</div>
+                  <div className={`mt-1 ${styles.muted}`}>Approval actions will appear here when travel need or final cost review is required.</div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
@@ -103,20 +626,222 @@ export function CorporateRequestDetailPage({ trip, theme }: { trip: CorporateTri
           </div>
         </div>
 
-        <TimelinePanel events={trip.timeline} theme={theme} />
+        <div className={`rounded-xl border shadow-2xl ${styles.panel}`}>
+          <div className="flex flex-col gap-3 border-b border-inherit px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-base font-semibold">Request workbench</h3>
+              <p className={`mt-1 text-sm ${styles.muted}`}>Exchange documents, messages, and operational tasks for this trip.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {tabItems.map(({ id, label, count, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(id);
+                    setWorkbenchError('');
+                  }}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+                    activeTab === id ? 'border-[#d9b46f]/35 bg-[#d9b46f]/10 text-[#d9b46f]' : styles.buttonGhost
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                  <span className="rounded-full bg-black/15 px-2 py-0.5 text-xs">{count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {workbenchError ? (
+            <div className="mx-4 mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {workbenchError}
+            </div>
+          ) : null}
+
+          {activeTab === 'documents' ? (
+            <div className="grid gap-4 p-4 xl:grid-cols-[0.95fr_1.05fr]">
+              <form onSubmit={submitDocument} className={`rounded-xl border p-4 ${styles.surface}`}>
+                <div className="mb-3 flex items-center gap-2 font-semibold">
+                  <Plus className="h-4 w-4 text-[#d9b46f]" />
+                  Add document record
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-sm">
+                    <div className={`mb-2 ${styles.muted}`}>Title</div>
+                    <input value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`} placeholder="Passport scan, visa letter..." />
+                  </label>
+                  <label className="text-sm">
+                    <div className={`mb-2 ${styles.muted}`}>Traveler</div>
+                    <select value={documentTravelerId} onChange={(event) => setDocumentTravelerId(event.target.value)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`}>
+                      <option value="" className="bg-[#07111f]">Request level</option>
+                      {trip.travelers.map((traveler) => (
+                        <option key={traveler.id} value={traveler.id} className="bg-[#07111f]">{traveler.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm">
+                    <div className={`mb-2 ${styles.muted}`}>Type</div>
+                    <select value={documentType} onChange={(event) => setDocumentType(event.target.value as CorporateDocumentType)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`}>
+                      {documentTypes.map((item) => (
+                        <option key={item.value} value={item.value} className="bg-[#07111f]">{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm">
+                    <div className={`mb-2 ${styles.muted}`}>Status</div>
+                    <select value={documentStatus} onChange={(event) => setDocumentStatus(event.target.value as CorporateDocumentStatus)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`}>
+                      {documentStatuses.map((item) => (
+                        <option key={item.value} value={item.value} className="bg-[#07111f]">{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="mt-3 block text-sm">
+                  <div className={`mb-2 ${styles.muted}`}>File URL</div>
+                  <input value={documentFileUrl} onChange={(event) => setDocumentFileUrl(event.target.value)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`} placeholder="Optional shared document link" />
+                </label>
+                <label className="mt-3 block text-sm">
+                  <div className={`mb-2 ${styles.muted}`}>Notes</div>
+                  <textarea value={documentNotes} onChange={(event) => setDocumentNotes(event.target.value)} rows={3} className={`w-full rounded-lg border px-3 py-3 outline-none ${styles.input}`} placeholder="What is needed, received, or verified?" />
+                </label>
+                <button type="submit" disabled={isSavingDocument} className={`mt-4 inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold ${styles.buttonPrimary} disabled:opacity-55`}>
+                  <FileText className="h-4 w-4" />
+                  {isSavingDocument ? 'Saving...' : 'Save document'}
+                </button>
+              </form>
+
+              <div className="grid gap-3">
+                {documents.length === 0 ? (
+                  <div className={`rounded-xl border p-5 text-sm ${styles.surface} ${styles.muted}`}>
+                    No document records yet. Add missing passports, visa letters, approvals, or issued itineraries here.
+                  </div>
+                ) : documents.map((document) => (
+                  <div key={document.id} className={`rounded-xl border p-4 ${styles.surface}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">{document.title}</div>
+                        <div className={`mt-1 text-xs capitalize ${styles.muted}`}>
+                          {labelize(document.documentType)}{document.traveler ? ` - ${document.traveler.name}` : ' - request level'}
+                        </div>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] capitalize ${statusTone(document.status, theme)}`}>
+                        {labelize(document.status)}
+                      </span>
+                    </div>
+                    {document.notes ? <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{document.notes}</p> : null}
+                    {document.fileUrl ? (
+                      <a href={document.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex text-sm font-semibold text-[#d9b46f]">
+                        Open document
+                      </a>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {activeTab === 'messages' ? (
+            <div className="grid gap-4 p-4 xl:grid-cols-[1.05fr_0.95fr]">
+              <div className="grid max-h-[520px] gap-3 overflow-y-auto pr-1">
+                {messages.length === 0 ? (
+                  <div className={`rounded-xl border p-5 text-sm ${styles.surface} ${styles.muted}`}>
+                    No messages yet. Use this thread for shared client-DPM coordination on this request.
+                  </div>
+                ) : messages.map((message) => (
+                  <div key={message.id} className={`rounded-xl border p-4 ${message.senderType === 'dpm' ? styles.panelSoft : styles.surface}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-sm font-semibold">{message.sender}</div>
+                      <div className={`text-xs ${styles.muted}`}>
+                        {labelize(message.senderType)} - {new Date(message.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <p className={`mt-2 whitespace-pre-line text-sm leading-6 ${styles.soft}`}>{message.body}</p>
+                  </div>
+                ))}
+              </div>
+              <form onSubmit={submitMessage} className={`rounded-xl border p-4 ${styles.surface}`}>
+                <div className="mb-3 flex items-center gap-2 font-semibold">
+                  <MessageSquare className="h-4 w-4 text-[#d9b46f]" />
+                  Send shared message
+                </div>
+                <textarea
+                  value={messageBody}
+                  onChange={(event) => setMessageBody(event.target.value)}
+                  rows={8}
+                  className={`w-full rounded-lg border px-3 py-3 outline-none ${styles.input}`}
+                  placeholder="Ask DPM a question, confirm details, or share coordination notes."
+                />
+                <button type="submit" disabled={isSendingMessage} className={`mt-4 inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold ${styles.buttonPrimary} disabled:opacity-55`}>
+                  <Send className="h-4 w-4" />
+                  {isSendingMessage ? 'Sending...' : 'Send message'}
+                </button>
+              </form>
+            </div>
+          ) : null}
+
+          {activeTab === 'tasks' ? (
+            <div className="grid gap-3 p-4 md:grid-cols-2">
+              {tasks.length === 0 ? (
+                <div className={`rounded-xl border p-5 text-sm md:col-span-2 ${styles.surface} ${styles.muted}`}>
+                  No shared tasks yet. DPM can use tasks to expose follow-ups such as passport upload, approval confirmation, or payment action.
+                </div>
+              ) : tasks.map((task) => (
+                <div key={task.id} className={`rounded-xl border p-4 ${styles.surface}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">{task.title}</div>
+                      <div className={`mt-1 text-xs ${styles.muted}`}>{task.owner || 'Unassigned'}{task.dueDate ? ` - due ${task.dueDate}` : ''}</div>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] capitalize ${statusTone(task.status, theme)}`}>
+                      {labelize(task.status)}
+                    </span>
+                  </div>
+                  {task.description ? <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{task.description}</p> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <TimelinePanel title="Unified service timeline" events={unifiedTimeline} theme={theme} />
       </div>
 
       <aside className="grid gap-4">
         <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
           <div className="mb-3 text-base font-semibold">Cost lifecycle</div>
           <CostLifecycleCard trip={trip} theme={theme} />
+          <div className="mt-3 grid gap-2">
+            <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
+              <div className={`text-xs ${styles.muted}`}>Quote</div>
+              {trip.quote ? (
+                <>
+                  <div className="mt-1 text-sm font-semibold">{formatMoney(trip.quote.amount, trip.quote.currency)}</div>
+                  <div className={`mt-1 text-xs capitalize ${styles.muted}`}>{labelize(trip.quote.status)}{trip.quote.validUntil ? ` - valid until ${trip.quote.validUntil}` : ''}</div>
+                </>
+              ) : (
+                <div className={`mt-1 text-sm ${styles.muted}`}>No quote issued yet</div>
+              )}
+            </div>
+            <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
+              <div className={`text-xs ${styles.muted}`}>Booking</div>
+              {trip.booking ? (
+                <>
+                  <div className="mt-1 text-sm font-semibold">{trip.booking.bookingReference || 'Reference pending'}</div>
+                  <div className={`mt-1 text-xs capitalize ${styles.muted}`}>{labelize(trip.booking.status)}{trip.booking.totalCost ? ` - ${formatMoney(trip.booking.totalCost, trip.booking.currency)}` : ''}</div>
+                </>
+              ) : (
+                <div className={`mt-1 text-sm ${styles.muted}`}>No booking confirmed yet</div>
+              )}
+            </div>
+          </div>
           {trip.invoice ? (
             <div className="mt-3 grid gap-2">
               <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
                 <div className={`text-xs ${styles.muted}`}>Invoice</div>
                 <div className="mt-1 text-sm font-semibold">{trip.invoice.invoiceNumber}</div>
                 <div className={`mt-1 text-xs ${styles.muted}`}>
-                  {trip.invoice.status.replace(/_/g, ' ')} · {trip.invoice.currency} {trip.invoice.amount.toLocaleString('en-US')}
+                  {trip.invoice.status.replace(/_/g, ' ')} - {formatMoney(trip.invoice.amount, trip.invoice.currency)}
                 </div>
               </div>
               <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>

@@ -98,6 +98,7 @@ export type CrmLead = {
   lifecycleStage?: LeadLifecycleStage;
   emailStatus: LeadEmailStatus;
   internalNotes: string;
+  ctmRequestId?: string;
   clientId?: string | null;
   clientName?: string;
 };

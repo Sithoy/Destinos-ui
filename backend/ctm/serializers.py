@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from .bootstrap import ensure_default_ctm_context
+from .crm_handoff import sync_crm_lead_from_ctm_trip
 from .models import CompanyAccount, CompanyUser, Traveler, TripApproval, TripBooking, TripDocument, TripInvoice, TripMessage, TripPayment, TripQuote, TripRequest, TripService, TripTask, TripTimelineEvent, TripTraveler
 
 
@@ -1215,6 +1216,7 @@ class CorporateTripCreateSerializer(serializers.Serializer):
             title="Approval path opened",
             description=f"{travel_need_approver} notified",
         )
+        sync_crm_lead_from_ctm_trip(trip)
         return trip
 
 

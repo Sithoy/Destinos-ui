@@ -247,8 +247,11 @@ class CtmTripScopedView(APIView):
     permission_classes = [HasCtmAccess]
 
     def get_trip(self, request, reference_code: str) -> TripRequest:
-        membership = get_ctm_membership(request.user)
-        return get_object_or_404(ctm_trip_queryset(), company=membership.company, reference_code=reference_code)
+        queryset = ctm_trip_queryset()
+        if not can_manage_trip_operations(request.user):
+            membership = get_ctm_membership(request.user)
+            queryset = queryset.filter(company=membership.company) if membership else TripRequest.objects.none()
+        return get_object_or_404(queryset, reference_code=reference_code)
 
     def ensure_ops_access(self, request):
         if not can_manage_trip_operations(request.user):
@@ -460,11 +463,13 @@ class TripPaymentDetailView(CtmTripScopedView):
         denied = self.ensure_ops_access(request)
         if denied is not None:
             return denied
-        membership = get_ctm_membership(request.user)
+        queryset = TripPayment.objects.select_related("invoice__trip_request", "recorded_by")
+        if not can_manage_trip_operations(request.user):
+            membership = get_ctm_membership(request.user)
+            queryset = queryset.filter(invoice__trip_request__company=membership.company) if membership else TripPayment.objects.none()
         payment = get_object_or_404(
-            TripPayment.objects.select_related("invoice__trip_request", "recorded_by"),
+            queryset,
             pk=payment_id,
-            invoice__trip_request__company=membership.company,
         )
         previous_status = payment.status
         serializer = CorporateTripPaymentWriteSerializer(payment, data=request.data, partial=True, context={"invoice": payment.invoice, "request": request})
@@ -519,7 +524,11 @@ class TripTaskDetailView(CtmTripScopedView):
         denied = self.ensure_collaboration_access(request)
         if denied is not None:
             return denied
-        task = get_object_or_404(TripTask.objects.select_related("trip_request"), pk=task_id, trip_request__company=get_ctm_membership(request.user).company)
+        queryset = TripTask.objects.select_related("trip_request")
+        if not self.can_view_internal(request):
+            membership = get_ctm_membership(request.user)
+            queryset = queryset.filter(trip_request__company=membership.company) if membership else TripTask.objects.none()
+        task = get_object_or_404(queryset, pk=task_id)
         if not self.can_view_internal(request) and task.visibility == TripTask.Visibility.INTERNAL_ONLY:
             return Response({"detail": "Company users cannot edit internal-only tasks."}, status=status.HTTP_403_FORBIDDEN)
         if not self.can_view_internal(request) and request.data.get("visibility") == TripTask.Visibility.INTERNAL_ONLY:
@@ -566,7 +575,11 @@ class TripDocumentDetailView(CtmTripScopedView):
         denied = self.ensure_collaboration_access(request)
         if denied is not None:
             return denied
-        document = get_object_or_404(TripDocument.objects.select_related("trip_request", "traveler"), pk=document_id, trip_request__company=get_ctm_membership(request.user).company)
+        queryset = TripDocument.objects.select_related("trip_request", "traveler")
+        if not self.can_view_internal(request):
+            membership = get_ctm_membership(request.user)
+            queryset = queryset.filter(trip_request__company=membership.company) if membership else TripDocument.objects.none()
+        document = get_object_or_404(queryset, pk=document_id)
         if not self.can_view_internal(request) and document.visibility == TripDocument.Visibility.INTERNAL_ONLY:
             return Response({"detail": "Company users cannot edit internal-only documents."}, status=status.HTTP_403_FORBIDDEN)
         if not self.can_view_internal(request) and request.data.get("visibility") == TripDocument.Visibility.INTERNAL_ONLY:
@@ -623,8 +636,11 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         return CorporateTripRequestSerializer
 
     def get_queryset(self):
-        membership = get_ctm_membership(self.request.user)
-        queryset = ctm_trip_queryset().filter(company=membership.company) if membership else TripRequest.objects.none()
+        if can_manage_trip_operations(self.request.user):
+            queryset = ctm_trip_queryset()
+        else:
+            membership = get_ctm_membership(self.request.user)
+            queryset = ctm_trip_queryset().filter(company=membership.company) if membership else TripRequest.objects.none()
         search = self.request.query_params.get("search")
         if search:
             queryset = queryset.filter(

@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CorporateHeader } from '../../components/corporate-portal/CorporateHeader';
 import { CorporateSidebar } from '../../components/corporate-portal/CorporateSidebar';
+import { ctmPrimaryRoute } from '../../data/travel';
 import type { CorporatePortalTheme } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from './portalTheme';
 
@@ -48,7 +49,7 @@ export function CorporatePortalLayout({
             action={
               <button
                 type="button"
-                onClick={() => navigate('/corporate-portal/new-trip')}
+                onClick={() => navigate(`${ctmPrimaryRoute}/new-trip`)}
                 className={`inline-flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-medium ${styles.buttonPrimary}`}
               >
                 <Plus className="h-4 w-4" />

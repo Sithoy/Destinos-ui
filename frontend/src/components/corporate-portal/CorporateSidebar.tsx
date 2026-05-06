@@ -1,17 +1,17 @@
 import { BarChart3, CalendarDays, ClipboardCheck, ClipboardList, LayoutDashboard, PlusSquare, Users } from 'lucide-react';
 import { BrandLockup } from '../ui';
-import { classicLogo } from '../../data/travel';
+import { classicLogo, ctmPrimaryRoute } from '../../data/travel';
 import type { CorporatePortalTheme } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from '../../pages/corporate-portal/portalTheme';
 
 const navItems = [
-  { id: 'dashboard', label: 'Dashboard', Icon: LayoutDashboard, href: '/corporate-portal' },
-  { id: 'newTrip', label: 'New Trip', Icon: PlusSquare, href: '/corporate-portal/new-trip' },
-  { id: 'requests', label: 'Requests', Icon: ClipboardList, href: '/corporate-portal/requests' },
-  { id: 'approvals', label: 'Approvals', Icon: ClipboardCheck, href: '/corporate-portal/approvals' },
-  { id: 'itineraries', label: 'Itineraries', Icon: CalendarDays, href: '/corporate-portal/itineraries' },
-  { id: 'travelers', label: 'Travelers', Icon: Users, href: '/corporate-portal/travelers' },
-  { id: 'reports', label: 'Reports', Icon: BarChart3, href: '/corporate-portal/reports' },
+  { id: 'dashboard', label: 'Dashboard', Icon: LayoutDashboard, href: ctmPrimaryRoute },
+  { id: 'newTrip', label: 'New Trip', Icon: PlusSquare, href: `${ctmPrimaryRoute}/new-trip` },
+  { id: 'requests', label: 'Requests', Icon: ClipboardList, href: `${ctmPrimaryRoute}/requests` },
+  { id: 'approvals', label: 'Approvals', Icon: ClipboardCheck, href: `${ctmPrimaryRoute}/approvals` },
+  { id: 'itineraries', label: 'Itineraries', Icon: CalendarDays, href: `${ctmPrimaryRoute}/itineraries` },
+  { id: 'travelers', label: 'Travelers', Icon: Users, href: `${ctmPrimaryRoute}/travelers` },
+  { id: 'reports', label: 'Reports', Icon: BarChart3, href: `${ctmPrimaryRoute}/reports` },
 ];
 
 export function CorporateSidebar({
@@ -44,7 +44,7 @@ export function CorporateSidebar({
 
       <nav className="grid gap-2">
         {navItems.map(({ id, label, Icon, href }) => {
-          const active = activeHref === href || (href !== '/corporate-portal' && activeHref.startsWith(href));
+          const active = activeHref === href || (href !== ctmPrimaryRoute && activeHref.startsWith(href));
           return (
             <button
               key={id}

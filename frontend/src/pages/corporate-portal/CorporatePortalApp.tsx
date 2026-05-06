@@ -10,7 +10,8 @@ import { CorporateRequestsPage } from './CorporateRequestsPage';
 import { CorporateSectionPlaceholderPage } from './CorporateSectionPlaceholderPage';
 import { CorporateTravelersPage } from './CorporateTravelersPage';
 import { getCorporateCurrentTripCost } from '../../data/corporatePortal';
-import { approveCtmTripRequest, clearCtmSession, createCtmTraveler, createCtmTripRequest, CTM_AUTH_EVENT, fetchCtmBillingInvoices, fetchCtmBillingPayments, fetchCtmBillingSummary, fetchCtmContext, fetchCtmCurrentSession, fetchCtmTravelers, fetchCtmTripRequests, hasCtmApi, loginCtm, logoutCtm, readCtmSession, rejectCtmTripRequest, saveCtmSession, updateCtmTraveler } from '../../data/ctm';
+import { approveCtmTripRequest, clearCtmSession, createCtmTraveler, createCtmTripDocument, createCtmTripMessage, createCtmTripRequest, CTM_AUTH_EVENT, fetchCtmBillingInvoices, fetchCtmBillingPayments, fetchCtmBillingSummary, fetchCtmContext, fetchCtmCurrentSession, fetchCtmTravelers, fetchCtmTripRequests, hasCtmApi, loginCtm, logoutCtm, readCtmSession, rejectCtmTripRequest, saveCtmSession, updateCtmTraveler } from '../../data/ctm';
+import { ctmLegacyRoute, ctmPrimaryRoute } from '../../data/travel';
 import type {
   CorporateApprovalFilter,
   CorporateApprovalStage,
@@ -24,32 +25,50 @@ import type {
   CorporateTravelerProfile,
   CorporateTravelerProfileInput,
   CorporateTripCreateInput,
+  CorporateTripDocumentInput,
   CorporateTripInvoice,
+  CorporateTripMessageInput,
   CorporateTripPayment,
   CorporateTripRequest,
 } from '../../types/corporatePortal';
 import { CORPORATE_PORTAL_THEME_STORAGE_KEY, readCorporatePortalTheme } from './portalTheme';
 
 function getPortalTitle(pathname: string, company?: CorporatePortalCompany | null) {
-  if (pathname.startsWith('/corporate-portal/requests/')) return 'Request detail';
-  if (pathname.startsWith('/corporate-portal/requests')) return 'Requests';
-  if (pathname.startsWith('/corporate-portal/new-trip')) return 'New trip';
-  if (pathname.startsWith('/corporate-portal/approvals')) return 'Approvals';
-  if (pathname.startsWith('/corporate-portal/itineraries')) return 'Itineraries';
-  if (pathname.startsWith('/corporate-portal/travelers')) return 'Travelers';
-  if (pathname.startsWith('/corporate-portal/reports')) return 'Reports';
+  if (pathname.startsWith('/requests/')) return 'Request detail';
+  if (pathname.startsWith('/requests')) return 'Requests';
+  if (pathname.startsWith('/new-trip')) return 'New trip';
+  if (pathname.startsWith('/approvals')) return 'Approvals';
+  if (pathname.startsWith('/itineraries')) return 'Itineraries';
+  if (pathname.startsWith('/travelers')) return 'Travelers';
+  if (pathname.startsWith('/reports')) return 'Reports';
   return company?.name ?? 'Corporate portal';
 }
 
 function getPortalSubtitle(pathname: string) {
-  if (pathname.startsWith('/corporate-portal/requests/')) return 'Review cost lifecycle, approvals, traveler readiness, and DPM operational movement.';
-  if (pathname.startsWith('/corporate-portal/requests')) return 'Corporate request queue covering approvals, quotes, documents, and booked movement.';
-  if (pathname.startsWith('/corporate-portal/new-trip')) return 'Capture route, travelers, services, and budget once before handing it into the approval flow.';
-  if (pathname.startsWith('/corporate-portal/approvals')) return 'Keep travel-need and final-cost approvals in one review lane for company decision-makers.';
-  if (pathname.startsWith('/corporate-portal/itineraries')) return 'Confirmed and active travel will live here once booking output is connected.';
-  if (pathname.startsWith('/corporate-portal/travelers')) return 'Reusable traveler records will sit here with passport, visa, and readiness visibility.';
-  if (pathname.startsWith('/corporate-portal/reports')) return 'Spend, department movement, and approval bottlenecks will roll into this reporting layer.';
+  if (pathname.startsWith('/requests/')) return 'Review cost lifecycle, approvals, traveler readiness, and DPM operational movement.';
+  if (pathname.startsWith('/requests')) return 'Corporate request queue covering approvals, quotes, documents, and booked movement.';
+  if (pathname.startsWith('/new-trip')) return 'Capture route, travelers, services, and budget once before handing it into the approval flow.';
+  if (pathname.startsWith('/approvals')) return 'Keep travel-need and final-cost approvals in one review lane for company decision-makers.';
+  if (pathname.startsWith('/itineraries')) return 'Confirmed and active travel will live here once booking output is connected.';
+  if (pathname.startsWith('/travelers')) return 'Reusable traveler records will sit here with passport, visa, and readiness visibility.';
+  if (pathname.startsWith('/reports')) return 'Spend, department movement, and approval bottlenecks will roll into this reporting layer.';
   return 'A centralized workspace for group travel, approvals, documents, quotes, and service coordination with DPM.';
+}
+
+function getPortalPathname(pathname: string) {
+  const normalizedPathname = pathname.toLowerCase();
+  if (normalizedPathname === ctmPrimaryRoute || normalizedPathname.startsWith(`${ctmPrimaryRoute}/`)) {
+    return pathname.slice(ctmPrimaryRoute.length) || '/';
+  }
+  if (normalizedPathname === ctmLegacyRoute || normalizedPathname.startsWith(`${ctmLegacyRoute}/`)) {
+    return pathname.slice(ctmLegacyRoute.length) || '/';
+  }
+  return pathname;
+}
+
+function buildCtmRoute(pathname = '/') {
+  if (pathname === '/') return ctmPrimaryRoute;
+  return `${ctmPrimaryRoute}${pathname.startsWith('/') ? pathname : `/${pathname}`}`;
 }
 
 function buildPortalStats(requests: CorporateTripRequest[], billingSummary?: CorporateBillingSummary | null): CorporatePortalStat[] {
@@ -99,6 +118,8 @@ export function CorporatePortalApp() {
   const [loginPassword, setLoginPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const pathname = location.pathname;
+  const portalPathname = getPortalPathname(pathname);
+  const canonicalPathname = buildCtmRoute(portalPathname);
 
   useEffect(() => {
     const refreshSession = () => setCtmSession(readCtmSession());
@@ -205,34 +226,34 @@ export function CorporatePortalApp() {
     });
   }, [approvalFilter, searchedRequests]);
 
-  const selectedRequestId = pathname.startsWith('/corporate-portal/requests/') ? pathname.replace('/corporate-portal/requests/', '') : null;
+  const selectedRequestId = portalPathname.startsWith('/requests/') ? portalPathname.replace('/requests/', '') : null;
   const selectedTrip = selectedRequestId ? requests.find((trip) => trip.id === selectedRequestId) ?? filteredRequests[0] ?? requests[0] ?? null : filteredRequests[0] ?? requests[0] ?? null;
   const portalStats = useMemo(() => buildPortalStats(requests, billingSummary), [requests, billingSummary]);
   const portalTimeline = useMemo(() => buildActivityTimeline(requests), [requests]);
 
-  const openRequest = (tripId: string) => navigate(`/corporate-portal/requests/${tripId}`);
-  const openNewTrip = () => navigate('/corporate-portal/new-trip');
+  const openRequest = (tripId: string) => navigate(buildCtmRoute(`/requests/${tripId}`));
+  const openNewTrip = () => navigate(buildCtmRoute('/new-trip'));
   const openApprovals = () => {
     setRequestFilter('all');
     setApprovalFilter('all');
-    navigate('/corporate-portal/approvals');
+    navigate(buildCtmRoute('/approvals'));
   };
   const openRequests = () => {
     setRequestFilter('all');
-    navigate('/corporate-portal/requests');
+    navigate(buildCtmRoute('/requests'));
   };
   const activateRequestFilter = (filter: CorporateRequestFilter) => {
     setRequestFilter(filter);
-    navigate('/corporate-portal/requests');
+    navigate(buildCtmRoute('/requests'));
   };
   const activateApprovalFilter = (filter: CorporateApprovalFilter) => {
     setApprovalFilter(filter);
-    navigate('/corporate-portal/approvals');
+    navigate(buildCtmRoute('/approvals'));
   };
   const handleDashboardStatClick = (statId: CorporatePortalStat['id']) => {
     if (statId === 'pendingApprovals') {
       setApprovalFilter('all');
-      navigate('/corporate-portal/approvals');
+      navigate(buildCtmRoute('/approvals'));
       return;
     }
     if (statId === 'documentAlerts') {
@@ -241,11 +262,11 @@ export function CorporatePortalApp() {
     }
     if (statId === 'travelers') {
       setRequestFilter('active');
-      navigate('/corporate-portal/requests');
+      navigate(buildCtmRoute('/requests'));
       return;
     }
     setRequestFilter('all');
-    navigate('/corporate-portal/requests');
+    navigate(buildCtmRoute('/requests'));
   };
   const toggleTheme = () => {
     setTheme((current) => {
@@ -287,7 +308,7 @@ export function CorporatePortalApp() {
       const newTrip = await createCtmTripRequest(input, ctmSession);
       setRequests((current) => [newTrip, ...current]);
       setError('');
-      navigate(`/corporate-portal/requests/${newTrip.id}`);
+      navigate(buildCtmRoute(`/requests/${newTrip.id}`));
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Could not create trip request.');
     }
@@ -315,6 +336,32 @@ export function CorporatePortalApp() {
     }
   };
 
+  const createTripDocument = async (tripId: string, input: CorporateTripDocumentInput) => {
+    try {
+      const document = await createCtmTripDocument(tripId, input, ctmSession);
+      setRequests((current) => current.map((trip) => (
+        trip.id === tripId ? { ...trip, documents: [document, ...(trip.documents ?? [])] } : trip
+      )));
+      setError('');
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Could not create document.');
+      throw createError;
+    }
+  };
+
+  const createTripMessage = async (tripId: string, input: CorporateTripMessageInput) => {
+    try {
+      const message = await createCtmTripMessage(tripId, input, ctmSession);
+      setRequests((current) => current.map((trip) => (
+        trip.id === tripId ? { ...trip, messages: [...(trip.messages ?? []), message] } : trip
+      )));
+      setError('');
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Could not send message.');
+      throw createError;
+    }
+  };
+
   const updateApprovalDecision = async (tripId: string, stage: CorporateApprovalStage, decision: 'Approved' | 'Rejected') => {
     try {
       const updatedTrip = decision === 'Approved' ? await approveCtmTripRequest(tripId, stage, ctmSession) : await rejectCtmTripRequest(tripId, stage, ctmSession);
@@ -322,6 +369,7 @@ export function CorporatePortalApp() {
       setError('');
     } catch (approvalError) {
       setError(approvalError instanceof Error ? approvalError.message : 'Could not update approval.');
+      throw approvalError;
     }
   };
 
@@ -391,27 +439,36 @@ export function CorporatePortalApp() {
     );
   }
 
-  const screen = pathname.startsWith('/corporate-portal/requests/')
-    ? <CorporateRequestDetailPage trip={selectedTrip} theme={theme} />
-    : pathname.startsWith('/corporate-portal/requests')
+  const screen = portalPathname.startsWith('/requests/')
+    ? (
+      <CorporateRequestDetailPage
+        trip={selectedTrip}
+        theme={theme}
+        onCreateDocument={createTripDocument}
+        onCreateMessage={createTripMessage}
+        onApprove={(tripId, stage) => updateApprovalDecision(tripId, stage, 'Approved')}
+        onReject={(tripId, stage) => updateApprovalDecision(tripId, stage, 'Rejected')}
+      />
+    )
+    : portalPathname.startsWith('/requests')
       ? <CorporateRequestsPage allRequests={searchedRequests} requests={filteredRequests} selectedRequestId={selectedRequestId} onOpenRequest={openRequest} theme={theme} activeFilter={requestFilter} onFilterChange={activateRequestFilter} onOpenApprovals={openApprovals} />
-      : pathname.startsWith('/corporate-portal/new-trip')
+      : portalPathname.startsWith('/new-trip')
         ? <CorporateNewTripPage onCreateTrip={createTrip} savedTravelers={travelers} theme={theme} />
-      : pathname.startsWith('/corporate-portal/approvals')
+      : portalPathname.startsWith('/approvals')
           ? <CorporateApprovalsPage requests={filteredApprovalRequests} allRequests={searchedRequests} onOpenRequest={openRequest} onApprove={(tripId, stage) => updateApprovalDecision(tripId, stage, 'Approved')} onReject={(tripId, stage) => updateApprovalDecision(tripId, stage, 'Rejected')} theme={theme} activeFilter={approvalFilter} onFilterChange={activateApprovalFilter} onOpenRequests={openRequests} />
-        : pathname.startsWith('/corporate-portal/itineraries')
+        : portalPathname.startsWith('/itineraries')
           ? <CorporateSectionPlaceholderPage title="Itineraries" description="Confirmed trips, service breakdowns, and downloadable travel packs will live in this view once the booking side of CTM is connected." bullets={['Upcoming trips with hotel, transfer, and flight breakdowns', 'Live trip status for active company travelers', 'Downloadable itinerary packs and support notes']} actionLabel="Review booked request" onAction={() => openRequest('DPM-2419')} theme={theme} />
-          : pathname.startsWith('/corporate-portal/travelers')
+          : portalPathname.startsWith('/travelers')
             ? <CorporateTravelersPage travelers={travelers} search={search} theme={theme} onCreateTraveler={createTraveler} onUpdateTraveler={saveTraveler} onOpenRequest={openRequest} />
-          : pathname.startsWith('/corporate-portal/reports')
+          : portalPathname.startsWith('/reports')
               ? <CorporateReportsPage summary={billingSummary} invoices={billingInvoices} payments={billingPayments} theme={theme} onOpenRequest={openRequest} />
           : <CorporateDashboardPage requests={requests} stats={portalStats} activityTimeline={portalTimeline} onOpenRequest={openRequest} onOpenApprovals={openApprovals} onOpenNewTrip={openNewTrip} onStatClick={handleDashboardStatClick} theme={theme} />;
 
   return (
     <CorporatePortalLayout
-      pathname={pathname}
-      title={getPortalTitle(pathname, company)}
-      subtitle={getPortalSubtitle(pathname)}
+      pathname={canonicalPathname}
+      title={getPortalTitle(portalPathname, company)}
+      subtitle={getPortalSubtitle(portalPathname)}
       descriptor={company?.descriptor ?? 'Corporate Travel Platform'}
       searchValue={search}
       onSearchChange={setSearch}

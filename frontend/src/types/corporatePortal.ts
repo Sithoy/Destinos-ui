@@ -7,6 +7,14 @@ export type CorporateServiceType = 'Flight' | 'Hotel' | 'Transfer' | 'Visa suppo
 export type CorporateInvoiceStatus = 'draft' | 'sent' | 'partially_paid' | 'paid' | 'void' | 'overdue';
 export type CorporatePaymentStatus = 'pending' | 'received' | 'reconciled' | 'failed' | 'refunded';
 export type CorporatePaymentMethod = 'bank_transfer' | 'card' | 'cash' | 'other';
+export type CorporateQuoteStatus = 'draft' | 'sent' | 'approved' | 'rejected' | 'expired';
+export type CorporateBookingStatus = 'pending' | 'confirmed' | 'ticketed' | 'cancelled' | 'completed';
+export type CorporateTaskStatus = 'open' | 'in_progress' | 'done' | 'blocked';
+export type CorporateTaskPriority = 'low' | 'medium' | 'high';
+export type CorporateVisibility = 'shared' | 'internal_only';
+export type CorporateDocumentType = 'passport' | 'visa' | 'itinerary' | 'approval' | 'invoice' | 'other';
+export type CorporateDocumentStatus = 'missing' | 'requested' | 'received' | 'verified' | 'issued';
+export type CorporateMessageSenderType = 'dpm' | 'company' | 'system';
 
 export type CorporateTripStatus =
   | 'Pending approval'
@@ -107,8 +115,13 @@ export type CorporateTripRequest = {
   budgetBand: CorporateCostBand['key'];
   quotedCost?: number;
   finalCost?: number;
+  quote?: CorporateTripQuote | null;
+  booking?: CorporateTripBooking | null;
   invoice?: CorporateTripInvoice | null;
   payments: CorporateTripPayment[];
+  tasks?: CorporateTripTask[];
+  documents?: CorporateTripDocument[];
+  messages?: CorporateTripMessage[];
   approvals: CorporateApprovalState[];
   timeline: CorporateTimelineEvent[];
   internalSummary: string;
@@ -156,6 +169,42 @@ export type CorporateTripCreateInput = {
   }>;
 };
 
+export type CorporateTripQuoteInput = {
+  amount: string;
+  currency: string;
+  validUntil?: string | null;
+  notes: string;
+  status: CorporateQuoteStatus;
+};
+
+export type CorporateTripBookingInput = {
+  bookingReference: string;
+  supplierSummary: string;
+  totalCost?: string | null;
+  currency: string;
+  status: CorporateBookingStatus;
+  bookedAt?: string | null;
+};
+
+export type CorporateTripInvoiceInput = {
+  amount: string;
+  currency: string;
+  status: CorporateInvoiceStatus;
+  issuedAt?: string | null;
+  dueDate?: string | null;
+  notes: string;
+};
+
+export type CorporateTripPaymentInput = {
+  amount: string;
+  currency: string;
+  paymentMethod: CorporatePaymentMethod;
+  status: CorporatePaymentStatus;
+  reference: string;
+  receivedAt?: string | null;
+  notes: string;
+};
+
 export type CorporateTripInvoice = {
   id: string;
   tripRequestId: string;
@@ -168,6 +217,33 @@ export type CorporateTripInvoice = {
   paidAt: string | null;
   notes: string;
   issuedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CorporateTripQuote = {
+  id: string;
+  tripRequestId: string;
+  amount: number;
+  currency: string;
+  validUntil: string;
+  notes: string;
+  status: CorporateQuoteStatus;
+  preparedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CorporateTripBooking = {
+  id: string;
+  tripRequestId: string;
+  bookingReference: string;
+  supplierSummary: string;
+  totalCost: number | null;
+  currency: string;
+  status: CorporateBookingStatus;
+  bookedAt: string | null;
+  bookedBy: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -185,6 +261,54 @@ export type CorporateTripPayment = {
   recordedBy: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type CorporateTripTask = {
+  id: string;
+  title: string;
+  description: string;
+  status: CorporateTaskStatus;
+  priority: CorporateTaskPriority;
+  visibility: CorporateVisibility;
+  dueDate: string;
+  owner: string;
+  updatedAt: string;
+};
+
+export type CorporateTripDocument = {
+  id: string;
+  title: string;
+  documentType: CorporateDocumentType;
+  status: CorporateDocumentStatus;
+  visibility: CorporateVisibility;
+  fileUrl: string;
+  notes: string;
+  traveler: { id: string; name: string } | null;
+  updatedAt: string;
+};
+
+export type CorporateTripDocumentInput = {
+  title: string;
+  documentType: CorporateDocumentType;
+  status: CorporateDocumentStatus;
+  visibility: CorporateVisibility;
+  fileUrl: string;
+  notes: string;
+  travelerId?: string | null;
+};
+
+export type CorporateTripMessage = {
+  id: string;
+  senderType: CorporateMessageSenderType;
+  visibility: CorporateVisibility;
+  body: string;
+  sender: string;
+  createdAt: string;
+};
+
+export type CorporateTripMessageInput = {
+  body: string;
+  visibility: CorporateVisibility;
 };
 
 export type CorporateBillingSummary = {

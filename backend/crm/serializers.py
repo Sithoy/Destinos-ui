@@ -3,6 +3,8 @@ from django.contrib.auth.models import Group, User
 from django.utils import timezone
 from rest_framework import serializers
 
+from ctm.models import CompanyAccount
+
 from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceBlock, ItineraryStop, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary, WorkflowReminder
 
 
@@ -174,6 +176,9 @@ class LeadSerializer(serializers.ModelSerializer):
     emailStatus = serializers.ChoiceField(source="email_status", choices=Lead.EmailStatus.choices, required=False)
     lifecycleStage = serializers.ChoiceField(source="lifecycle_stage", choices=Lead.LifecycleStage.choices, required=False)
     internalNotes = serializers.CharField(source="internal_notes", required=False, allow_blank=True)
+    ctmRequestId = serializers.CharField(source="ctm_request_reference", required=False, allow_blank=True)
+    companyAccountId = serializers.PrimaryKeyRelatedField(source="company_account", queryset=CompanyAccount.objects.all(), required=False, allow_null=True)
+    companyAccountName = serializers.CharField(source="company_account.name", read_only=True)
     clientId = serializers.PrimaryKeyRelatedField(source="client", queryset=Client.objects.all(), required=False, allow_null=True)
     clientName = serializers.CharField(source="client.name", read_only=True)
 
@@ -204,6 +209,9 @@ class LeadSerializer(serializers.ModelSerializer):
             "lifecycleStage",
             "emailStatus",
             "internalNotes",
+            "ctmRequestId",
+            "companyAccountId",
+            "companyAccountName",
             "clientId",
             "clientName",
         ]
@@ -212,7 +220,7 @@ class LeadSerializer(serializers.ModelSerializer):
 
 class PublicLeadSerializer(LeadSerializer):
     class Meta(LeadSerializer.Meta):
-        read_only_fields = ["id", "createdAt", "updatedAt", "status", "lifecycleStage", "internalNotes"]
+        read_only_fields = ["id", "createdAt", "updatedAt", "status", "lifecycleStage", "internalNotes", "ctmRequestId", "companyAccountId", "companyAccountName"]
 
 
 class WorkflowChecklistItemSerializer(serializers.Serializer):

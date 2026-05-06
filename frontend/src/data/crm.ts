@@ -141,6 +141,7 @@ function normalizeCrmLead(lead: CrmLead): CrmLead {
   return {
     ...lead,
     lifecycleStage: lead.lifecycleStage ?? demoLifecycleStages[lead.id] ?? statusLifecycleFallback[lead.status],
+    ctmRequestId: lead.ctmRequestId ?? '',
   };
 }
 

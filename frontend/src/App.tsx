@@ -8,7 +8,7 @@ import { Nav } from './components/Nav';
 import { PrestigeGateway } from './components/PrestigeGateway';
 import { BrandLockup, InstagramIcon, LinkedInIcon } from './components/ui';
 import { CRM_AUTH_EVENT, canAccessCrm, clearCrmSession, fetchCrmCurrentUser, hasCrmApi, readCrmSession, saveCrmSession } from './data/crm';
-import { getPageFromPathname, pageMeta, pageRoutes } from './data/travel';
+import { ctmLegacyRoute, ctmPrimaryRoute, getPageFromPathname, pageMeta, pageRoutes } from './data/travel';
 import { ClassicHome } from './pages/ClassicHome';
 import { CorporatePage } from './pages/CorporatePage';
 import { CrmPage } from './pages/CrmPage';
@@ -87,6 +87,20 @@ export default function DestinosPeloMundoUIConcept() {
       });
   }, [crmSession?.token]);
 
+  useEffect(() => {
+    const normalizedPathname = location.pathname.toLowerCase();
+    const ctmSuffix = normalizedPathname === ctmPrimaryRoute || normalizedPathname.startsWith(`${ctmPrimaryRoute}/`)
+      ? location.pathname.slice(ctmPrimaryRoute.length)
+      : null;
+    const legacySuffix = normalizedPathname === ctmLegacyRoute || normalizedPathname.startsWith(`${ctmLegacyRoute}/`)
+      ? location.pathname.slice(ctmLegacyRoute.length)
+      : null;
+
+    if (legacySuffix !== null || (ctmSuffix !== null && !location.pathname.startsWith(ctmPrimaryRoute))) {
+      navigate(`${ctmPrimaryRoute}${legacySuffix ?? ctmSuffix}${location.search}${location.hash}`, { replace: true });
+    }
+  }, [location.hash, location.pathname, location.search, navigate]);
+
   const openPrestige = () => {
     setIsGatewayNavigating(false);
     setShowPrestigeGate(true);
@@ -115,7 +129,7 @@ export default function DestinosPeloMundoUIConcept() {
     ) : page === 'luxury' ? (
       <LuxuryPage openInquiry={openInquiry} />
     ) : page === 'corporate' ? (
-      <CorporatePage openInquiry={openInquiry} />
+      <CorporatePage />
     ) : (
       <ClassicHome openPrestige={openPrestige} openInquiry={openInquiry} openCrm={() => navigate(pageRoutes.crm)} canOpenCrm={canEnterCrm} />
     );

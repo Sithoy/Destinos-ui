@@ -7,6 +7,8 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
+from ctm.models import CompanyAccount
+
 from .models import AccommodationBlock, ItineraryStop, Lead, Quote, TransportSegment, TripItinerary, WorkflowReminder
 
 
@@ -34,6 +36,34 @@ class LeadWorkflowApiTests(APITestCase):
         }
         defaults.update(overrides)
         return Lead.objects.create(**defaults)
+
+    def test_lead_can_store_linked_ctm_request_reference(self):
+        lead = self.make_lead(
+            service="Prestige Corporate Form",
+            service_key=Lead.ServiceKey.CORPORATE,
+        )
+
+        response = self.client.patch(reverse("lead-detail", args=[lead.id]), {"ctmRequestId": "DPM-2401"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["ctmRequestId"], "DPM-2401")
+        lead.refresh_from_db()
+        self.assertEqual(lead.ctm_request_reference, "DPM-2401")
+
+    def test_corporate_lead_can_store_company_account(self):
+        company = CompanyAccount.objects.create(name="Acme Mining", legal_name="Acme Mining SA")
+        lead = self.make_lead(
+            service="Prestige Corporate Form",
+            service_key=Lead.ServiceKey.CORPORATE,
+        )
+
+        response = self.client.patch(reverse("lead-detail", args=[lead.id]), {"companyAccountId": str(company.id)}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(str(response.data["companyAccountId"]), str(company.id))
+        self.assertEqual(response.data["companyAccountName"], "Acme Mining")
+        lead.refresh_from_db()
+        self.assertEqual(lead.company_account, company)
 
     def test_workflow_state_returns_stage_and_checklist(self):
         lead = self.make_lead()
