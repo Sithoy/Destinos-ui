@@ -1,6 +1,10 @@
 import type {
   CorporateApprovalStage,
   CorporateBillingSummary,
+  CorporateCompanyAccount,
+  CorporateCompanyAccountInput,
+  CorporateCompanyUserAccount,
+  CorporateCompanyUserInput,
   CorporatePortalCompany,
   CorporatePortalSession,
   CorporateTravelerProfile,
@@ -126,7 +130,7 @@ export function clearCtmSession() {
   notifyCtmAuthUpdated();
 }
 
-export async function loginCtm(username: string, password: string): Promise<CorporatePortalSession> {
+export async function loginCtm(username: string, password: string, companyCode = ''): Promise<CorporatePortalSession> {
   const base = ctmApiBase();
   if (!base) throw new Error('CTM API URL is not configured.');
 
@@ -134,7 +138,7 @@ export async function loginCtm(username: string, password: string): Promise<Corp
     await fetch(`${base}/api/ctm/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ companyCode, username, password }),
     }),
   );
   saveCtmSession(session);
@@ -188,6 +192,87 @@ export async function fetchCtmTripRequests(session?: CtmAuthSession): Promise<Co
   return parseApiResponse(
     await fetch(`${base}/api/ctm/trip-requests/`, {
       headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+    }),
+  );
+}
+
+export async function fetchCtmCompanyAccounts(session?: CtmAuthSession): Promise<CorporateCompanyAccount[]> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/company-accounts/`, {
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+    }),
+  );
+}
+
+export async function createCtmCompanyAccount(input: CorporateCompanyAccountInput, session?: CtmAuthSession): Promise<CorporateCompanyAccount> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/company-accounts/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCtmCompanyAccount(id: string, input: Partial<CorporateCompanyAccountInput>, session?: CtmAuthSession): Promise<CorporateCompanyAccount> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/company-accounts/${id}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function fetchCtmCompanyUsers(session?: CtmAuthSession, companyId?: string): Promise<CorporateCompanyUserAccount[]> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+  const query = companyId ? `?companyId=${encodeURIComponent(companyId)}` : '';
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/company-users/${query}`, {
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+    }),
+  );
+}
+
+export async function createCtmCompanyUser(input: CorporateCompanyUserInput, session?: CtmAuthSession): Promise<CorporateCompanyUserAccount> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/company-users/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCtmCompanyUser(id: string, input: Partial<CorporateCompanyUserInput>, session?: CtmAuthSession): Promise<CorporateCompanyUserAccount> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/company-users/${id}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify(input),
     }),
   );
 }

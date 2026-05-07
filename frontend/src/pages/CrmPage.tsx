@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Bell,
   Briefcase,
+  Building2,
   CalendarDays,
   CheckSquare,
   ChevronLeft,
@@ -77,10 +78,16 @@ import {
 } from '../data/crm';
 import {
   createCtmTripBooking,
+  createCtmCompanyAccount,
+  createCtmCompanyUser,
   createCtmTripInvoice,
   createCtmTripPayment,
   createCtmTripQuote,
+  fetchCtmCompanyAccounts,
+  fetchCtmCompanyUsers,
   fetchCtmTripRequests,
+  updateCtmCompanyAccount,
+  updateCtmCompanyUser,
   updateCtmTripBooking,
   updateCtmTripInvoice,
   updateCtmTripQuote,
@@ -89,7 +96,7 @@ import { classicLogo } from '../data/travel';
 import { BrandLockup } from '../components/ui';
 import { BriefingGate, appendBriefingDecisionNote, briefingChecklistItems, briefingReadiness, type BriefingDecision } from '../modules/crm/briefing';
 import type { CrmClient, CrmCommunicationRecord, CrmLead, CrmManagedUser, CrmPaymentRecord, CrmQuote, CrmQuoteLine, CrmRole, CrmSession, CrmTripItinerary, CrmWorkflowReminder, CrmWorkflowState, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus, QuoteLineCategory, QuoteLineStatus } from '../types';
-import type { CorporateBookingStatus, CorporateInvoiceStatus, CorporatePaymentMethod, CorporatePaymentStatus, CorporateQuoteStatus, CorporateTripRequest } from '../types/corporatePortal';
+import type { CorporateBookingStatus, CorporateCompanyAccount, CorporateCompanyAccountInput, CorporateCompanyAccountStatus, CorporateCompanyServiceLevel, CorporateCompanyUserAccount, CorporateCompanyUserInput, CorporateCompanyUserRole, CorporateInvoiceStatus, CorporatePaymentMethod, CorporatePaymentStatus, CorporateQuoteStatus, CorporateTripRequest } from '../types/corporatePortal';
 
 type LeadTypeFilter = 'all' | InquiryKind;
 type StatusFilter = 'all' | LeadStatus | 'confirmedGroup' | 'workflowGroup';
@@ -115,7 +122,7 @@ type DetailTab =
   | 'payment';
 type DeskView = 'all' | 'leisure' | 'corporate';
 type CommandLens = 'all' | 'corporate' | 'leisure' | 'attention' | 'blocked' | 'ready';
-type CrmNavId = 'command' | 'leisureStudio' | 'corporateDesk' | 'tasks' | 'calendar' | 'clients' | 'reports' | 'settings';
+type CrmNavId = 'command' | 'leisureStudio' | 'corporateDesk' | 'corporateAccounts' | 'tasks' | 'calendar' | 'clients' | 'reports' | 'settings';
 type ProcessTaskTone = 'urgent' | 'normal' | 'upcoming';
 type CommunicationKind = 'proposal' | 'payment' | 'travel_pack' | 'follow_up';
 type CommunicationChannel = 'email' | 'whatsapp' | 'phone';
@@ -170,6 +177,8 @@ type CorporateOutputDraft = {
   paymentReference: string;
   paymentNotes: string;
 };
+type CorporateCompanyFormState = CorporateCompanyAccountInput;
+type CorporateCompanyUserFormState = CorporateCompanyUserInput;
 
 type TripDesignDrafts = {
   stop: {
@@ -435,6 +444,26 @@ const corporatePaymentMethodLabels: Record<CorporatePaymentMethod, string> = {
   other: 'Other',
 };
 
+const corporateCompanyStatusLabels: Record<CorporateCompanyAccountStatus, string> = {
+  active: 'Active',
+  inactive: 'Inactive',
+  prospect: 'Prospect',
+};
+
+const corporateCompanyServiceLabels: Record<CorporateCompanyServiceLevel, string> = {
+  classic: 'Classic',
+  corporate: 'Corporate',
+  prestige_corporate: 'Prestige Corporate',
+};
+
+const corporateCompanyUserRoleLabels: Record<CorporateCompanyUserRole, string> = {
+  employee: 'Employee',
+  travel_coordinator: 'Travel Coordinator',
+  manager: 'Manager',
+  finance_approver: 'Finance Approver',
+  company_admin: 'Company Admin',
+};
+
 const quoteApprovalLabels: Record<CrmQuote['approvals'][number]['decision'], string> = {
   pending: 'Pending',
   approved: 'Approved',
@@ -484,6 +513,9 @@ const corporateBookingStatuses = Object.keys(corporateBookingStatusLabels) as Co
 const corporateInvoiceStatuses = Object.keys(corporateInvoiceStatusLabels) as CorporateInvoiceStatus[];
 const corporatePaymentStatuses = Object.keys(corporatePaymentStatusLabels) as CorporatePaymentStatus[];
 const corporatePaymentMethods = Object.keys(corporatePaymentMethodLabels) as CorporatePaymentMethod[];
+const corporateCompanyStatuses = Object.keys(corporateCompanyStatusLabels) as CorporateCompanyAccountStatus[];
+const corporateCompanyServiceLevels = Object.keys(corporateCompanyServiceLabels) as CorporateCompanyServiceLevel[];
+const corporateCompanyUserRoles = Object.keys(corporateCompanyUserRoleLabels) as CorporateCompanyUserRole[];
 const communicationKindLabels: Record<CommunicationKind, string> = {
   proposal: 'Proposal',
   payment: 'Payment request',
@@ -662,6 +694,7 @@ const navItems: Array<{ id: CrmNavId; label: string; Icon: LucideIcon }> = [
   { id: 'command', label: 'Command Center', Icon: LayoutDashboard },
   { id: 'leisureStudio', label: 'Leisure Studio', Icon: Sparkles },
   { id: 'corporateDesk', label: 'Corporate Desk', Icon: Briefcase },
+  { id: 'corporateAccounts', label: 'Corporate Accounts', Icon: Building2 },
   { id: 'tasks', label: 'Tasks', Icon: CheckSquare },
   { id: 'calendar', label: 'Calendar', Icon: CalendarDays },
   { id: 'clients', label: 'Clients', Icon: Users },
@@ -2188,6 +2221,70 @@ function emptyCommunicationDraft(): CommunicationDraft {
   };
 }
 
+function emptyCorporateCompanyForm(): CorporateCompanyFormState {
+  return {
+    name: '',
+    accountCode: '',
+    legalName: '',
+    industry: '',
+    country: '',
+    billingEmail: '',
+    defaultCurrency: 'USD',
+    serviceLevel: 'corporate',
+    status: 'active',
+    notes: '',
+  };
+}
+
+function emptyCorporateCompanyUserForm(companyId = ''): CorporateCompanyUserFormState {
+  return {
+    companyId,
+    username: '',
+    email: '',
+    firstName: '',
+    lastName: '',
+    role: 'travel_coordinator',
+    accessRoles: ['travel_coordinator'],
+    department: '',
+    jobTitle: '',
+    phone: '',
+    isActive: true,
+    password: '',
+  };
+}
+
+function corporateCompanyFormFromAccount(company: CorporateCompanyAccount): CorporateCompanyFormState {
+  return {
+    name: company.name,
+    accountCode: company.accountCode,
+    legalName: company.legalName,
+    industry: company.industry,
+    country: company.country,
+    billingEmail: company.billingEmail,
+    defaultCurrency: company.defaultCurrency,
+    serviceLevel: company.serviceLevel,
+    status: company.status,
+    notes: company.notes,
+  };
+}
+
+function corporateCompanyUserFormFromAccount(user: CorporateCompanyUserAccount): CorporateCompanyUserFormState {
+  return {
+    companyId: user.companyId,
+    username: user.username,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    password: '',
+    role: user.role,
+    accessRoles: user.accessRoles.length > 0 ? user.accessRoles : [user.role],
+    department: user.department,
+    jobTitle: user.jobTitle,
+    phone: user.phone,
+    isActive: user.isActive,
+  };
+}
+
 export function CrmPage() {
   const apiEnabled = hasCrmApi();
   const [crmSession, setCrmSession] = useState<CrmSession | null>(() => readCrmSession());
@@ -2200,6 +2297,8 @@ export function CrmPage() {
   const [workflowReminders, setWorkflowReminders] = useState<CrmWorkflowReminder[]>([]);
   const [tripItineraries, setTripItineraries] = useState<CrmTripItinerary[]>([]);
   const [ctmTripRequests, setCtmTripRequests] = useState<CorporateTripRequest[]>([]);
+  const [corporateCompanies, setCorporateCompanies] = useState<CorporateCompanyAccount[]>([]);
+  const [corporateCompanyUsers, setCorporateCompanyUsers] = useState<CorporateCompanyUserAccount[]>([]);
   const [crmUsers, setCrmUsers] = useState<CrmManagedUser[]>([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [crmError, setCrmError] = useState('');
@@ -2214,6 +2313,7 @@ export function CrmPage() {
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [selectedCorporateCompanyId, setSelectedCorporateCompanyId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [page, setPage] = useState(1);
   const [theme, setTheme] = useState<CrmTheme>(() => readCrmTheme());
@@ -2229,7 +2329,13 @@ export function CrmPage() {
   const [quoteLineDraft, setQuoteLineDraft] = useState<QuoteLineDraft>(() => emptyQuoteLineDraft());
   const [selectedCtmReferencesByLead, setSelectedCtmReferencesByLead] = useState<Record<string, string>>({});
   const [corporateOutputDraft, setCorporateOutputDraft] = useState<CorporateOutputDraft>(() => emptyCorporateOutputDraft());
+  const [corporateCompanyForm, setCorporateCompanyForm] = useState<CorporateCompanyFormState>(() => emptyCorporateCompanyForm());
+  const [corporateCompanyUserForm, setCorporateCompanyUserForm] = useState<CorporateCompanyUserFormState>(() => emptyCorporateCompanyUserForm());
+  const [isCreatingCorporateCompany, setIsCreatingCorporateCompany] = useState(false);
+  const [editingCorporateUserId, setEditingCorporateUserId] = useState<string | null>(null);
   const [isSavingCorporateOutput, setIsSavingCorporateOutput] = useState(false);
+  const [isSavingCorporateCompany, setIsSavingCorporateCompany] = useState(false);
+  const [isSavingCorporateCompanyUser, setIsSavingCorporateCompanyUser] = useState(false);
   const [tripDesignDrafts, setTripDesignDrafts] = useState<TripDesignDrafts>(() => emptyTripDesignDrafts());
   const [activeTripDesignEditor, setActiveTripDesignEditor] = useState<TripDesignEditor>('stop');
   const [communicationDraft, setCommunicationDraft] = useState<CommunicationDraft>(() => emptyCommunicationDraft());
@@ -2266,9 +2372,11 @@ export function CrmPage() {
         fetchCrmWorkflowReminders(crmSession, 'pending'),
         fetchCrmTripItineraries(crmSession),
         fetchCtmTripRequests(crmSession),
+        canManageUsers(crmSession?.user) ? fetchCtmCompanyAccounts(crmSession) : Promise.resolve([]),
+        canManageUsers(crmSession?.user) ? fetchCtmCompanyUsers(crmSession) : Promise.resolve([]),
         canManageUsers(crmSession?.user) ? fetchCrmUsers(crmSession) : Promise.resolve([]),
       ])
-        .then(([nextLeads, nextClients, nextQuotes, nextPaymentRecords, nextCommunicationRecords, nextWorkflowReminders, nextItineraries, nextCtmTripRequests, nextUsers]) => {
+        .then(([nextLeads, nextClients, nextQuotes, nextPaymentRecords, nextCommunicationRecords, nextWorkflowReminders, nextItineraries, nextCtmTripRequests, nextCorporateCompanies, nextCorporateCompanyUsers, nextUsers]) => {
           setLeads(nextLeads);
           setClients(nextClients);
           setQuotes(nextQuotes);
@@ -2277,6 +2385,8 @@ export function CrmPage() {
           setWorkflowReminders(nextWorkflowReminders);
           setTripItineraries(nextItineraries);
           setCtmTripRequests(nextCtmTripRequests);
+          setCorporateCompanies(nextCorporateCompanies);
+          setCorporateCompanyUsers(nextCorporateCompanyUsers);
           setCrmUsers(nextUsers);
           setCrmError('');
         })
@@ -2391,6 +2501,27 @@ export function CrmPage() {
     });
   }, [crmUsers, query]);
 
+  const filteredCorporateCompanies = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return corporateCompanies.filter((company) => {
+      return (
+        !needle ||
+        [
+          company.name,
+          company.legalName,
+          company.industry,
+          company.country,
+          company.billingEmail,
+          corporateCompanyServiceLabels[company.serviceLevel],
+          corporateCompanyStatusLabels[company.status],
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(needle)
+      );
+    });
+  }, [corporateCompanies, query]);
+
   const visibleTypeFilters = deskView === 'corporate' ? (['all', 'corporate'] as LeadTypeFilter[]) : deskView === 'leisure' ? (['all', 'luxury', 'classic'] as LeadTypeFilter[]) : typeFilters;
 
   const typeCounts = useMemo(() => {
@@ -2431,15 +2562,18 @@ export function CrmPage() {
     });
   }, [commandLens, filteredLeads]);
   const leadSource = activeNav === 'command' ? commandLeads : filteredLeads;
-  const activeItems = activeNav === 'clients' ? filteredClients : activeNav === 'settings' ? filteredUsers : leadSource;
+  const activeItems = activeNav === 'clients' ? filteredClients : activeNav === 'settings' ? filteredUsers : activeNav === 'corporateAccounts' ? filteredCorporateCompanies : leadSource;
   const totalPages = Math.max(1, Math.ceil(activeItems.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const pageLeads = leadSource.slice(pageStart, pageStart + PAGE_SIZE);
   const pageClients = filteredClients.slice(pageStart, pageStart + PAGE_SIZE);
   const pageUsers = filteredUsers.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageCorporateCompanies = filteredCorporateCompanies.slice(pageStart, pageStart + PAGE_SIZE);
   const selectedLead = leadSource.find((lead) => lead.id === selectedLeadId) ?? pageLeads[0] ?? leadSource[0] ?? null;
   const selectedClient = filteredClients.find((client) => client.id === selectedClientId) ?? pageClients[0] ?? filteredClients[0] ?? null;
+  const selectedCorporateCompany = isCreatingCorporateCompany ? null : filteredCorporateCompanies.find((company) => company.id === selectedCorporateCompanyId) ?? pageCorporateCompanies[0] ?? filteredCorporateCompanies[0] ?? null;
+  const selectedCorporateCompanyUsers = selectedCorporateCompany ? corporateCompanyUsers.filter((user) => user.companyId === selectedCorporateCompany.id) : [];
   const selectedCtmReference = selectedLead
     ? selectedCtmReferencesByLead[selectedLead.id] ?? selectedLead.ctmRequestId ?? ctmTripRequests[0]?.id ?? null
     : ctmTripRequests[0]?.id ?? null;
@@ -2557,6 +2691,21 @@ export function CrmPage() {
   }, [selectedCtmOutputSignature, selectedCtmTrip]);
 
   useEffect(() => {
+    if (isCreatingCorporateCompany) return;
+    if (!selectedCorporateCompany && filteredCorporateCompanies.length === 0) return;
+    if (!selectedCorporateCompany || !filteredCorporateCompanies.some((company) => company.id === selectedCorporateCompany.id)) {
+      setSelectedCorporateCompanyId(filteredCorporateCompanies[0]?.id ?? null);
+      return;
+    }
+    setCorporateCompanyForm(corporateCompanyFormFromAccount(selectedCorporateCompany));
+    setCorporateCompanyUserForm((current) => ({
+      ...current,
+      companyId: selectedCorporateCompany.id,
+    }));
+    setEditingCorporateUserId(null);
+  }, [filteredCorporateCompanies, isCreatingCorporateCompany, selectedCorporateCompany]);
+
+  useEffect(() => {
     if (!selectedLead || !apiEnabled || !crmSession?.token) return;
     let isMounted = true;
     fetchCrmWorkflowState(selectedLead.id, crmSession)
@@ -2607,10 +2756,14 @@ export function CrmPage() {
   const managerAdminCount = crmUsers.filter((user) => user.role === 'admin' || user.role === 'manager').length;
   const activeAgentCount = crmUsers.filter((user) => user.role === 'agent' && user.isActive).length;
   const inactiveUserCount = crmUsers.filter((user) => !user.isActive).length;
+  const activeCorporateCompanyCount = corporateCompanies.filter((company) => company.status === 'active').length;
+  const prospectCorporateCompanyCount = corporateCompanies.filter((company) => company.status === 'prospect').length;
+  const activeCorporateCompanyUserCount = corporateCompanyUsers.filter((user) => user.isActive).length;
   const navCounts: Partial<Record<CrmNavId, number>> = {
     command: newCount,
     leisureStudio: leisureLeads.filter((lead) => lead.status !== 'lost').length,
     corporateDesk: corporateLeads.filter((lead) => lead.status !== 'lost').length,
+    corporateAccounts: corporateCompanies.length,
     tasks: taskCount,
     calendar: calendarCount,
     clients: clientCount,
@@ -2621,13 +2774,14 @@ export function CrmPage() {
     command: { title: 'Command Center', subtitle: 'Incoming requests from website forms and phone intake' },
     leisureStudio: { title: 'Leisure Studio', subtitle: 'Classic and luxury trip workspaces for proposal, payment, itinerary, and travel-pack delivery' },
     corporateDesk: { title: 'Corporate Desk', subtitle: 'Corporate request workspace for travelers, approvals, finance, documents, and fulfilment' },
+    corporateAccounts: { title: 'Corporate Accounts', subtitle: 'Create company accounts and CTM users before corporate travel requests start flowing' },
     tasks: { title: 'Priority Tasks', subtitle: 'Backend workflow reminders and high-attention requests that need action from the team' },
     calendar: { title: 'Travel Calendar', subtitle: 'Requests with travel dates, useful for upcoming movement planning' },
     clients: { title: 'Clients', subtitle: 'Client and company requests captured in the CRM pipeline' },
     reports: { title: 'Reports', subtitle: 'Filtered CRM data ready for export and review' },
     settings: { title: 'Settings', subtitle: 'CRM access, user roles, and operating preferences' },
   };
-  const requestCentricNav = activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'command';
+  const requestCentricNav = activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'corporateAccounts' && activeNav !== 'command';
   const commandMetricCards: MetricCard[] = [
     {
       label: 'At Risk',
@@ -2701,6 +2855,12 @@ export function CrmPage() {
     { label: 'Active Agents', value: activeAgentCount, meta: 'Operational users', Icon: Briefcase },
     { label: 'Inactive Accounts', value: inactiveUserCount, meta: 'Review before reactivation', Icon: Lock },
   ];
+  const corporateAccountMetricCards: MetricCard[] = [
+    { label: 'Companies', value: corporateCompanies.length, meta: `${activeCorporateCompanyCount} active`, Icon: Building2 },
+    { label: 'Prospects', value: prospectCorporateCompanyCount, meta: 'Ready for onboarding', Icon: Sparkles },
+    { label: 'CTM Users', value: corporateCompanyUsers.length, meta: `${activeCorporateCompanyUserCount} active`, Icon: Users },
+    { label: 'Requests', value: ctmTripRequests.length, meta: 'CTM movements received', Icon: Briefcase },
+  ];
 
   async function reloadLeads() {
     const nextLeads = await fetchCrmLeads(crmSession);
@@ -2760,6 +2920,33 @@ export function CrmPage() {
     const nextTripRequests = await fetchCtmTripRequests(crmSession);
     setCtmTripRequests(nextTripRequests);
     return nextTripRequests;
+  }
+
+  async function reloadCorporateCompanies() {
+    if (!canManageUsers(crmSession?.user)) {
+      setCorporateCompanies([]);
+      return [];
+    }
+    const nextCompanies = await fetchCtmCompanyAccounts(crmSession);
+    setCorporateCompanies(nextCompanies);
+    return nextCompanies;
+  }
+
+  async function reloadCorporateCompanyUsers(companyId?: string) {
+    if (!canManageUsers(crmSession?.user)) {
+      setCorporateCompanyUsers([]);
+      return [];
+    }
+    const nextUsers = await fetchCtmCompanyUsers(crmSession, companyId);
+    if (companyId) {
+      setCorporateCompanyUsers((current) => {
+        const retained = current.filter((user) => user.companyId !== companyId);
+        return [...retained, ...nextUsers];
+      });
+    } else {
+      setCorporateCompanyUsers(nextUsers);
+    }
+    return nextUsers;
   }
 
   async function reloadItineraries() {
@@ -3223,6 +3410,14 @@ export function CrmPage() {
       return;
     }
 
+    if (nextNav === 'corporateAccounts') {
+      setDeskView('corporate');
+      setStatusFilter('all');
+      setShowFilters(false);
+      setCorporateCompanyUserForm(emptyCorporateCompanyUserForm(selectedCorporateCompany?.id ?? ''));
+      return;
+    }
+
     if (nextNav === 'reports' || nextNav === 'settings') {
       setDeskView('all');
       setStatusFilter('all');
@@ -3277,6 +3472,32 @@ export function CrmPage() {
 
   function updateUserField<K extends keyof UserFormState>(field: K, value: UserFormState[K]) {
     setUserForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateCorporateCompanyField<K extends keyof CorporateCompanyFormState>(field: K, value: CorporateCompanyFormState[K]) {
+    setCorporateCompanyForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateCorporateCompanyUserField<K extends keyof CorporateCompanyUserFormState>(field: K, value: CorporateCompanyUserFormState[K]) {
+    setCorporateCompanyUserForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function toggleCorporateCompanyUserRole(role: CorporateCompanyUserRole) {
+    setCorporateCompanyUserForm((current) => {
+      const hasRole = current.accessRoles.includes(role);
+      const nextRoles = hasRole ? current.accessRoles.filter((item) => item !== role) : [...current.accessRoles, role];
+      const accessRoles: CorporateCompanyUserRole[] = nextRoles.length > 0 ? nextRoles : ['employee'];
+      return {
+        ...current,
+        accessRoles,
+        role: accessRoles.includes(current.role) ? current.role : accessRoles[0],
+      };
+    });
+  }
+
+  function editCorporateCompanyUser(user: CorporateCompanyUserAccount) {
+    setEditingCorporateUserId(user.id);
+    setCorporateCompanyUserForm(corporateCompanyUserFormFromAccount(user));
   }
 
   function updateQuoteLineDraft<K extends keyof QuoteLineDraft>(field: K, value: QuoteLineDraft[K]) {
@@ -3412,6 +3633,81 @@ export function CrmPage() {
       setCrmError(error instanceof Error ? error.message : 'Could not record CTM payment output.');
     } finally {
       setIsSavingCorporateOutput(false);
+    }
+  }
+
+  async function submitCorporateCompany(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canManageUsers(crmSession?.user)) {
+      setCrmError('Only CRM managers and admins can create corporate accounts.');
+      return;
+    }
+    if (!corporateCompanyForm.name.trim()) {
+      setCrmError('Company name is required.');
+      return;
+    }
+
+    setIsSavingCorporateCompany(true);
+    try {
+      const payload = {
+        ...corporateCompanyForm,
+        accountCode: corporateCompanyForm.accountCode.trim().toUpperCase(),
+        defaultCurrency: (corporateCompanyForm.defaultCurrency || 'USD').trim().toUpperCase(),
+      };
+      const company = selectedCorporateCompany && !isCreatingCorporateCompany
+        ? await updateCtmCompanyAccount(selectedCorporateCompany.id, payload, crmSession)
+        : await createCtmCompanyAccount(payload, crmSession);
+      setCorporateCompanies((current) => [company, ...current.filter((item) => item.id !== company.id)].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedCorporateCompanyId(company.id);
+      setIsCreatingCorporateCompany(false);
+      setCorporateCompanyForm(corporateCompanyFormFromAccount(company));
+      setCorporateCompanyUserForm(emptyCorporateCompanyUserForm(company.id));
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not save corporate company account.');
+    } finally {
+      setIsSavingCorporateCompany(false);
+    }
+  }
+
+  async function submitCorporateCompanyUser(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canManageUsers(crmSession?.user)) {
+      setCrmError('Only CRM managers and admins can create CTM users.');
+      return;
+    }
+    const companyId = corporateCompanyUserForm.companyId || selectedCorporateCompany?.id || '';
+    if (!companyId) {
+      setCrmError('Select a company before creating a CTM user.');
+      return;
+    }
+    if (!corporateCompanyUserForm.username.trim() || (!editingCorporateUserId && !corporateCompanyUserForm.password.trim())) {
+      setCrmError('Username and temporary password are required for CTM users.');
+      return;
+    }
+
+    setIsSavingCorporateCompanyUser(true);
+    try {
+      const payload = {
+        ...corporateCompanyUserForm,
+        companyId,
+        firstName: corporateCompanyUserForm.firstName.trim(),
+        lastName: corporateCompanyUserForm.lastName.trim(),
+        role: corporateCompanyUserForm.accessRoles[0] ?? corporateCompanyUserForm.role,
+        accessRoles: corporateCompanyUserForm.accessRoles.length > 0 ? corporateCompanyUserForm.accessRoles : [corporateCompanyUserForm.role],
+      };
+      const user = editingCorporateUserId
+        ? await updateCtmCompanyUser(editingCorporateUserId, { ...payload, password: payload.password || undefined }, crmSession)
+        : await createCtmCompanyUser(payload, crmSession);
+      setCorporateCompanyUsers((current) => [user, ...current.filter((item) => item.id !== user.id)]);
+      await Promise.all([reloadCorporateCompanies(), reloadCorporateCompanyUsers(companyId)]);
+      setEditingCorporateUserId(null);
+      setCorporateCompanyUserForm(emptyCorporateCompanyUserForm(companyId));
+      setCrmError('');
+    } catch (error) {
+      setCrmError(error instanceof Error ? error.message : 'Could not save CTM user.');
+    } finally {
+      setIsSavingCorporateCompanyUser(false);
     }
   }
 
@@ -3952,16 +4248,19 @@ export function CrmPage() {
                       ? openClientRegistrationFromLead(selectedLead)
                       : activeNav === 'settings'
                         ? openUserModal()
+                        : activeNav === 'corporateAccounts'
+                          ? (setIsCreatingCorporateCompany(true), setSelectedCorporateCompanyId(null), setCorporateCompanyForm(emptyCorporateCompanyForm()), setCorporateCompanyUserForm(emptyCorporateCompanyUserForm()), setEditingCorporateUserId(null))
                         : setShowManualRequest(true)
                   }
                   disabled={
                     (activeNav === 'clients' && !canManageClients(crmSession?.user)) ||
-                    (activeNav === 'settings' && !canManageUsers(crmSession?.user))
+                    (activeNav === 'settings' && !canManageUsers(crmSession?.user)) ||
+                    (activeNav === 'corporateAccounts' && !canManageUsers(crmSession?.user))
                   }
                   className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#12305a] px-4 text-sm font-medium text-white transition hover:bg-[#173d72] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Plus className="h-4 w-4" />
-                  {activeNav === 'clients' ? 'Register Client' : activeNav === 'settings' ? 'Add User' : 'New Leisure Request'}
+                  {activeNav === 'clients' ? 'Register Client' : activeNav === 'settings' ? 'Add User' : activeNav === 'corporateAccounts' ? 'New Company' : 'New Leisure Request'}
                 </button>
                 <button
                   type="button"
@@ -4000,14 +4299,14 @@ export function CrmPage() {
             </div>
           </header>
 
-          <div className={activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid xl:grid-cols-[minmax(720px,1fr)_430px]'}>
+          <div className={activeNav === 'corporateAccounts' ? 'block' : activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid xl:grid-cols-[minmax(720px,1fr)_430px]'}>
             <div className={`min-w-0 border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}>
           <div className="p-5">
             {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
             {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading CRM requests...</div> : null}
             {activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
               <div className={`grid gap-4 ${activeNav === 'command' ? 'md:grid-cols-2 xl:grid-cols-5' : 'lg:grid-cols-4'}`}>
-                {(activeNav === 'settings' ? settingsMetricCards : metricCards).map((card) => (
+                {(activeNav === 'settings' ? settingsMetricCards : activeNav === 'corporateAccounts' ? corporateAccountMetricCards : metricCards).map((card) => (
                   <button
                     key={card.label}
                     type="button"
@@ -4047,7 +4346,7 @@ export function CrmPage() {
               </div>
             ) : null}
 
-            {activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' && selectedLead ? (
+            {activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'corporateAccounts' && activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' && selectedLead ? (
               <div className={`mt-5 rounded-xl border p-4 ${styles.panel}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -4071,7 +4370,7 @@ export function CrmPage() {
               </div>
             ) : null}
 
-            {activeNav !== 'settings' && activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
+            {activeNav !== 'settings' && activeNav !== 'corporateAccounts' && activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
             <div className="mt-5 flex flex-wrap items-center gap-3">
                 {([
                   { key: 'all', label: 'All desks', meta: 'Unified CRM view' },
@@ -4120,7 +4419,7 @@ export function CrmPage() {
               </div>
             ) : null}
 
-            {activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
+            {activeNav !== 'command' && activeNav !== 'corporateAccounts' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
             <div className="mt-5 flex flex-wrap items-center gap-3">
               {visibleTypeFilters.map((filter) => (
                 <button
@@ -4207,6 +4506,8 @@ export function CrmPage() {
                 <h2 className="text-lg font-semibold">
                   {activeNav === 'settings'
                     ? 'CRM User Access'
+                    : activeNav === 'corporateAccounts'
+                      ? 'Company Accounts'
                     : activeNav === 'leisureStudio'
                       ? 'Leisure Requests'
                       : activeNav === 'corporateDesk'
@@ -4223,7 +4524,7 @@ export function CrmPage() {
                         ? 'Active Workflow'
                       : statusLabels[statusFilter]}
                 </h2>
-                {activeNav !== 'settings' ? (
+                {activeNav !== 'settings' && activeNav !== 'corporateAccounts' ? (
                   <button
                     type="button"
                     onClick={() => (activeNav === 'clients' ? exportClientsCsv(filteredClients) : exportCsv(filteredLeads))}
@@ -4301,6 +4602,74 @@ export function CrmPage() {
                               </button>
                             </div>
                           </div>
+                        );
+                      })
+                    )}
+                  </>
+                ) : activeNav === 'corporateAccounts' ? (
+                  <>
+                    <div className={`grid grid-cols-[minmax(0,1.4fr)_120px_130px_120px_90px_110px] gap-4 border-b px-5 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
+                      <div>Company</div>
+                      <div>Company ID</div>
+                      <div>Service</div>
+                      <div>Status</div>
+                      <div>Users</div>
+                      <div className="text-right">Requests</div>
+                    </div>
+
+                    {pageCorporateCompanies.length === 0 ? (
+                      <div className="p-10 text-center">
+                        <Building2 className={`mx-auto h-10 w-10 ${styles.muted}`} />
+                        <div className="mt-4 text-lg font-semibold">No company accounts yet</div>
+                        <p className={`mt-2 text-sm ${styles.muted}`}>Create the company first, then add CTM users who can submit travel requests for that account.</p>
+                      </div>
+                    ) : (
+                      pageCorporateCompanies.map((company) => {
+                        const isSelected = selectedCorporateCompany?.id === company.id;
+                        return (
+                          <button
+                            key={company.id}
+                            type="button"
+                            onClick={() => {
+                              setIsCreatingCorporateCompany(false);
+                              setSelectedCorporateCompanyId(company.id);
+                              setCorporateCompanyUserForm(emptyCorporateCompanyUserForm(company.id));
+                            }}
+                            className={`grid w-full grid-cols-[minmax(0,1.4fr)_120px_130px_120px_90px_110px] gap-4 border-b px-5 py-4 text-left transition ${
+                              isSelected ? styles.rowActive : styles.row
+                            }`}
+                          >
+                            <div className="flex min-w-0 items-center gap-4">
+                              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#12305a] text-sm font-semibold text-white">
+                                {initials(company.name)}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold">{company.name}</span>
+                                <span className={`mt-1 block truncate text-xs ${styles.muted}`}>
+                                  {[company.industry, company.country, company.billingEmail].filter(Boolean).join(' - ') || 'Corporate profile details pending'}
+                                </span>
+                              </span>
+                            </div>
+                            <div className={`flex items-center text-sm font-semibold ${styles.soft}`}>{company.accountCode}</div>
+                            <div className="flex items-center">
+                              <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${company.serviceLevel === 'prestige_corporate' ? styles.type.luxury : styles.type.corporate}`}>
+                                {corporateCompanyServiceLabels[company.serviceLevel]}
+                              </span>
+                            </div>
+                            <div className="flex items-center">
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+                                company.status === 'active'
+                                  ? 'bg-emerald-500/12 text-emerald-300 ring-emerald-400/20'
+                                  : company.status === 'prospect'
+                                    ? 'bg-sky-500/12 text-sky-300 ring-sky-400/20'
+                                    : 'bg-slate-500/12 text-slate-300 ring-slate-400/20'
+                              }`}>
+                                {corporateCompanyStatusLabels[company.status]}
+                              </span>
+                            </div>
+                            <div className={`flex items-center text-sm ${styles.soft}`}>{company.userCount}</div>
+                            <div className={`flex items-center justify-end text-sm ${styles.soft}`}>{company.requestCount}</div>
+                          </button>
                         );
                       })
                     )}
@@ -4581,12 +4950,147 @@ export function CrmPage() {
                 )}
               </div>
 
+              {activeNav === 'corporateAccounts' ? (
+                <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.75fr)]">
+                  <form onSubmit={submitCorporateCompany} className={`rounded-xl border p-5 ${styles.panel}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className={`text-xs uppercase tracking-[0.16em] ${styles.muted}`}>{isCreatingCorporateCompany ? 'New company' : 'Company profile'}</div>
+                        <h3 className="mt-1 text-lg font-semibold">{isCreatingCorporateCompany ? 'Create corporate account' : selectedCorporateCompany?.name ?? 'Select a company'}</h3>
+                      </div>
+                      {!isCreatingCorporateCompany && selectedCorporateCompany ? (
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${styles.type.corporate}`}>{selectedCorporateCompany.accountCode}</span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-2">
+                      <label className="text-sm font-medium">
+                        <span className={styles.muted}>Company name</span>
+                        <input value={corporateCompanyForm.name} onChange={(event) => updateCorporateCompanyField('name', event.target.value)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
+                      </label>
+                      <label className="text-sm font-medium">
+                        <span className={styles.muted}>Company ID</span>
+                        <input value={corporateCompanyForm.accountCode} onChange={(event) => updateCorporateCompanyField('accountCode', event.target.value.toUpperCase())} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm uppercase outline-none ${styles.input}`} placeholder="DPMCOMPANY" />
+                      </label>
+                      <label className="text-sm font-medium">
+                        <span className={styles.muted}>Legal name</span>
+                        <input value={corporateCompanyForm.legalName} onChange={(event) => updateCorporateCompanyField('legalName', event.target.value)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
+                      </label>
+                      <label className="text-sm font-medium">
+                        <span className={styles.muted}>Billing email</span>
+                        <input value={corporateCompanyForm.billingEmail} onChange={(event) => updateCorporateCompanyField('billingEmail', event.target.value)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
+                      </label>
+                      <label className="text-sm font-medium">
+                        <span className={styles.muted}>Industry</span>
+                        <input value={corporateCompanyForm.industry} onChange={(event) => updateCorporateCompanyField('industry', event.target.value)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
+                      </label>
+                      <label className="text-sm font-medium">
+                        <span className={styles.muted}>Country</span>
+                        <input value={corporateCompanyForm.country} onChange={(event) => updateCorporateCompanyField('country', event.target.value)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
+                      </label>
+                      <label className="text-sm font-medium">
+                        <span className={styles.muted}>Service level</span>
+                        <select value={corporateCompanyForm.serviceLevel} onChange={(event) => updateCorporateCompanyField('serviceLevel', event.target.value as CorporateCompanyServiceLevel)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}>
+                          {corporateCompanyServiceLevels.map((level) => <option key={level} value={level}>{corporateCompanyServiceLabels[level]}</option>)}
+                        </select>
+                      </label>
+                      <label className="text-sm font-medium">
+                        <span className={styles.muted}>Status</span>
+                        <select value={corporateCompanyForm.status} onChange={(event) => updateCorporateCompanyField('status', event.target.value as CorporateCompanyAccountStatus)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}>
+                          {corporateCompanyStatuses.map((status) => <option key={status} value={status}>{corporateCompanyStatusLabels[status]}</option>)}
+                        </select>
+                      </label>
+                      <label className="text-sm font-medium">
+                        <span className={styles.muted}>Currency</span>
+                        <input value={corporateCompanyForm.defaultCurrency} onChange={(event) => updateCorporateCompanyField('defaultCurrency', event.target.value.toUpperCase())} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm uppercase outline-none ${styles.input}`} maxLength={3} />
+                      </label>
+                      <label className="text-sm font-medium md:col-span-2">
+                        <span className={styles.muted}>Notes</span>
+                        <textarea value={corporateCompanyForm.notes} onChange={(event) => updateCorporateCompanyField('notes', event.target.value)} className={`mt-2 min-h-24 w-full rounded-lg border px-3 py-3 text-sm outline-none ${styles.input}`} />
+                      </label>
+                    </div>
+                    <button type="submit" disabled={isSavingCorporateCompany || !canManageUsers(crmSession?.user)} className="mt-4 inline-flex h-11 items-center gap-2 rounded-lg bg-[#12305a] px-4 text-sm font-medium text-white transition hover:bg-[#173d72] disabled:cursor-not-allowed disabled:opacity-45">
+                      <Building2 className="h-4 w-4" />
+                      {isSavingCorporateCompany ? 'Saving...' : isCreatingCorporateCompany ? 'Create Company' : 'Save Company'}
+                    </button>
+                  </form>
+
+                  <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className={`text-xs uppercase tracking-[0.16em] ${styles.muted}`}>CTM users</div>
+                        <h3 className="mt-1 text-lg font-semibold">{editingCorporateUserId ? 'Edit user access' : 'Add user to company'}</h3>
+                      </div>
+                      {editingCorporateUserId ? (
+                        <button type="button" onClick={() => { setEditingCorporateUserId(null); setCorporateCompanyUserForm(emptyCorporateCompanyUserForm(selectedCorporateCompany?.id ?? '')); }} className={`h-9 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>New user</button>
+                      ) : null}
+                    </div>
+
+                    <form onSubmit={submitCorporateCompanyUser} className="mt-4 grid gap-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <input value={corporateCompanyUserForm.firstName} onChange={(event) => updateCorporateCompanyUserField('firstName', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="First name" />
+                        <input value={corporateCompanyUserForm.lastName} onChange={(event) => updateCorporateCompanyUserField('lastName', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Last name" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <input value={corporateCompanyUserForm.username} onChange={(event) => updateCorporateCompanyUserField('username', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Username inside company" />
+                        <input value={corporateCompanyUserForm.password} onChange={(event) => updateCorporateCompanyUserField('password', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={editingCorporateUserId ? 'New password optional' : 'Temp password'} type="password" />
+                      </div>
+                      <input value={corporateCompanyUserForm.email} onChange={(event) => updateCorporateCompanyUserField('email', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Email" />
+                      <div className="grid grid-cols-2 gap-3">
+                        <input value={corporateCompanyUserForm.department} onChange={(event) => updateCorporateCompanyUserField('department', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Department" />
+                        <input value={corporateCompanyUserForm.jobTitle} onChange={(event) => updateCorporateCompanyUserField('jobTitle', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Job title" />
+                      </div>
+                      <input value={corporateCompanyUserForm.phone} onChange={(event) => updateCorporateCompanyUserField('phone', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Phone" />
+                      <div className={`rounded-lg border p-3 ${styles.panelSoft}`}>
+                        <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>Access roles</div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          {corporateCompanyUserRoles.map((role) => (
+                            <label key={role} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${styles.buttonGhost}`}>
+                              <input type="checkbox" checked={corporateCompanyUserForm.accessRoles.includes(role)} onChange={() => toggleCorporateCompanyUserRole(role)} className="h-4 w-4" />
+                              <span>{corporateCompanyUserRoleLabels[role]}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <label className={`flex items-center justify-between rounded-lg border px-3 py-3 text-sm ${styles.panelSoft}`}>
+                        <span>Active user</span>
+                        <input type="checkbox" checked={corporateCompanyUserForm.isActive} onChange={(event) => updateCorporateCompanyUserField('isActive', event.target.checked)} className="h-4 w-4" />
+                      </label>
+                      <button type="submit" disabled={isSavingCorporateCompanyUser || !selectedCorporateCompany || !canManageUsers(crmSession?.user)} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#12305a] px-4 text-sm font-medium text-white transition hover:bg-[#173d72] disabled:cursor-not-allowed disabled:opacity-45">
+                        <Users className="h-4 w-4" />
+                        {isSavingCorporateCompanyUser ? 'Saving...' : editingCorporateUserId ? 'Save User' : 'Create CTM User'}
+                      </button>
+                    </form>
+
+                    <div className="mt-5 grid gap-2">
+                      {selectedCorporateCompanyUsers.length === 0 ? (
+                        <div className={`rounded-lg border p-4 text-sm ${styles.panelSoft}`}>No CTM users created for this company yet.</div>
+                      ) : selectedCorporateCompanyUsers.map((user) => (
+                        <button key={user.id} type="button" onClick={() => editCorporateCompanyUser(user)} className={`rounded-lg border px-4 py-3 text-left transition ${editingCorporateUserId === user.id ? styles.rowActive : styles.row}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold">{user.displayName || user.username}</div>
+                              <div className={`mt-1 truncate text-xs ${styles.muted}`}>{user.username} - {user.email || 'Email pending'}</div>
+                            </div>
+                            <div className="flex flex-wrap justify-end gap-1">
+                              {(user.accessRoles.length > 0 ? user.accessRoles : [user.role]).map((role) => (
+                                <span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${styles.type.corporate}`}>{corporateCompanyUserRoleLabels[role]}</span>
+                              ))}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <div className={`flex flex-wrap items-center justify-between gap-3 px-1 py-4 text-sm ${styles.muted}`}>
                 <div>
                   {activeNav === 'command'
                     ? `${activeItems.length === 0 ? 0 : pageStart + 1}-${Math.min(pageStart + PAGE_SIZE, activeItems.length)} of ${filteredLeads.length} active requests in the manager board`
                     : `${activeItems.length === 0 ? 0 : pageStart + 1}-${Math.min(pageStart + PAGE_SIZE, activeItems.length)} of ${activeItems.length} ${
-                        activeNav === 'clients' ? 'clients' : activeNav === 'settings' ? 'users' : 'requests'
+                        activeNav === 'clients' ? 'clients' : activeNav === 'settings' ? 'users' : activeNav === 'corporateAccounts' ? 'companies' : 'requests'
                       }`}
                 </div>
                 <div className="flex items-center gap-2">
@@ -4617,6 +5121,7 @@ export function CrmPage() {
           </div>
             </div>
 
+        {activeNav !== 'corporateAccounts' ? (
         <aside className={`hidden min-h-full px-5 py-6 xl:block ${styles.rightPane}`}>
           {activeNav === 'settings' ? (
             <div className="grid gap-4">
@@ -7587,6 +8092,7 @@ export function CrmPage() {
             </div>
           )}
         </aside>
+        ) : null}
           </div>
         </section>
       </div>

@@ -138,7 +138,42 @@ export type CorporatePortalStat = {
 export type CorporatePortalCompany = {
   id: string;
   name: string;
+  accountCode: string;
   descriptor: string;
+};
+
+export type CorporateCompanyAccountStatus = 'active' | 'inactive' | 'prospect';
+export type CorporateCompanyServiceLevel = 'classic' | 'corporate' | 'prestige_corporate';
+
+export type CorporateCompanyAccount = {
+  id: string;
+  name: string;
+  accountCode: string;
+  legalName: string;
+  industry: string;
+  country: string;
+  billingEmail: string;
+  defaultCurrency: string;
+  serviceLevel: CorporateCompanyServiceLevel;
+  status: CorporateCompanyAccountStatus;
+  notes: string;
+  userCount: number;
+  requestCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CorporateCompanyAccountInput = {
+  name: string;
+  accountCode: string;
+  legalName: string;
+  industry: string;
+  country: string;
+  billingEmail: string;
+  defaultCurrency: string;
+  serviceLevel: CorporateCompanyServiceLevel;
+  status: CorporateCompanyAccountStatus;
+  notes: string;
 };
 
 export type CorporatePortalUser = {
@@ -146,6 +181,42 @@ export type CorporatePortalUser = {
   name: string;
   role: CorporatePortalRole;
   companyId: string;
+};
+
+export type CorporateCompanyUserRole = 'employee' | 'travel_coordinator' | 'manager' | 'finance_approver' | 'company_admin';
+
+export type CorporateCompanyUserAccount = {
+  id: string;
+  companyId: string;
+  companyName: string;
+  companyCode: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  role: CorporateCompanyUserRole;
+  accessRoles: CorporateCompanyUserRole[];
+  department: string;
+  jobTitle: string;
+  phone: string;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type CorporateCompanyUserInput = {
+  companyId: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  password: string;
+  role: CorporateCompanyUserRole;
+  accessRoles: CorporateCompanyUserRole[];
+  department: string;
+  jobTitle: string;
+  phone: string;
+  isActive: boolean;
 };
 
 export type CorporatePortalSession = {

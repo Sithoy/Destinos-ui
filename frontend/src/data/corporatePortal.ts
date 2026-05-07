@@ -12,6 +12,7 @@ import type {
 export const corporatePortalCompany: CorporatePortalCompany = {
   id: 'company-mozal-operations',
   name: 'Mozal Operations',
+  accountCode: 'MOZAL',
   descriptor: 'Corporate Travel Platform',
 };
 

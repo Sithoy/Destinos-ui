@@ -2,8 +2,18 @@ import uuid
 
 from django.contrib.auth.models import User
 from django.db import models
+from django.utils.text import slugify
 
 from crm.models import Client
+
+
+def normalize_company_code(value: str) -> str:
+    return slugify(value or "").replace("-", "").upper()[:32]
+
+
+def company_code_from_name(name: str) -> str:
+    base = normalize_company_code(name)
+    return base or "DPM"
 
 
 class CompanyAccount(models.Model):
@@ -26,6 +36,7 @@ class CompanyAccount(models.Model):
         blank=True,
     )
     name = models.CharField(max_length=180)
+    account_code = models.CharField(max_length=32, unique=True, blank=True)
     legal_name = models.CharField(max_length=220, blank=True)
     industry = models.CharField(max_length=120, blank=True)
     country = models.CharField(max_length=120, blank=True)
@@ -44,9 +55,23 @@ class CompanyAccount(models.Model):
     class Meta:
         ordering = ["name"]
         indexes = [
+            models.Index(fields=["account_code"]),
             models.Index(fields=["status", "service_level"]),
             models.Index(fields=["name"]),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.account_code:
+            self.account_code = normalize_company_code(self.account_code)
+        else:
+            base = company_code_from_name(self.name)
+            code = base
+            suffix = 2
+            while CompanyAccount.objects.filter(account_code=code).exclude(pk=self.pk).exists():
+                code = f"{base[: max(1, 32 - len(str(suffix)))]}{suffix}"
+                suffix += 1
+            self.account_code = code
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return self.name
@@ -63,7 +88,9 @@ class CompanyUser(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     company = models.ForeignKey(CompanyAccount, related_name="company_users", on_delete=models.CASCADE)
     user = models.ForeignKey(User, related_name="company_memberships", on_delete=models.CASCADE)
+    login_username = models.CharField(max_length=150, blank=True)
     role = models.CharField(max_length=32, choices=Role.choices, default=Role.EMPLOYEE)
+    access_roles = models.JSONField(default=list, blank=True)
     department = models.CharField(max_length=120, blank=True)
     job_title = models.CharField(max_length=120, blank=True)
     phone = models.CharField(max_length=80, blank=True)
@@ -75,14 +102,25 @@ class CompanyUser(models.Model):
         ordering = ["company__name", "user__username"]
         constraints = [
             models.UniqueConstraint(fields=["company", "user"], name="unique_company_user_membership"),
+            models.UniqueConstraint(fields=["company", "login_username"], name="unique_company_login_username"),
         ]
         indexes = [
+            models.Index(fields=["company", "login_username"]),
             models.Index(fields=["company", "role"]),
             models.Index(fields=["company", "is_active"]),
         ]
 
+    def save(self, *args, **kwargs):
+        if not self.login_username and self.user_id:
+            self.login_username = self.user.username
+        if not self.access_roles:
+            self.access_roles = [self.role]
+        elif self.role not in self.access_roles:
+            self.access_roles = [self.role, *self.access_roles]
+        super().save(*args, **kwargs)
+
     def __str__(self) -> str:
-        return f"{self.company.name} - {self.user.username}"
+        return f"{self.company.name} - {self.login_username or self.user.username}"
 
 
 class Traveler(models.Model):

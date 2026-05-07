@@ -130,3 +130,104 @@ class CtmOpsScopeTests(APITestCase):
         self.assertEqual(Lead.objects.filter(ctm_request_reference=self.trip_a.reference_code).count(), 1)
         first_lead.refresh_from_db()
         self.assertEqual(first_lead.destination, "Porto")
+
+    def test_ops_user_can_create_company_account(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
+
+        response = self.client.post(
+            reverse("ctm-company-account-list"),
+            {
+                "name": "Nova Energy",
+                "legalName": "Nova Energy SA",
+                "industry": "Energy",
+                "country": "Mozambique",
+                "billingEmail": "finance@nova.example",
+                "defaultCurrency": "usd",
+                "serviceLevel": CompanyAccount.ServiceLevel.PRESTIGE_CORPORATE,
+                "status": CompanyAccount.Status.ACTIVE,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        company = CompanyAccount.objects.get(name="Nova Energy")
+        self.assertEqual(company.default_currency, "USD")
+        self.assertEqual(company.account_code, "NOVAENERGY")
+        self.assertEqual(response.data["accountCode"], "NOVAENERGY")
+        self.assertEqual(response.data["legalName"], "Nova Energy SA")
+
+    def test_ops_user_can_create_ctm_user_for_selected_company(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
+
+        response = self.client.post(
+            reverse("ctm-company-user-list"),
+            {
+                "companyId": str(self.company_b.id),
+                "username": "finance-global",
+                "email": "finance@global.example",
+                "firstName": "Finance",
+                "lastName": "Approver",
+                "password": "pass12345",
+                "accessRoles": [CompanyUser.Role.TRAVEL_COORDINATOR, CompanyUser.Role.FINANCE_APPROVER],
+                "department": "Finance",
+                "jobTitle": "Finance Controller",
+                "isActive": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        company_user = CompanyUser.objects.get(login_username="finance-global")
+        self.assertEqual(company_user.company, self.company_b)
+        self.assertEqual(company_user.role, CompanyUser.Role.FINANCE_APPROVER)
+        self.assertEqual(company_user.access_roles, [CompanyUser.Role.TRAVEL_COORDINATOR, CompanyUser.Role.FINANCE_APPROVER])
+        self.assertEqual(response.data["companyId"], str(self.company_b.id))
+        self.assertEqual(response.data["companyName"], "Global Mining")
+        self.assertEqual(response.data["username"], "finance-global")
+
+    def test_ops_user_can_create_same_login_username_for_different_companies(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
+
+        for company in (self.company_a, self.company_b):
+            response = self.client.post(
+                reverse("ctm-company-user-list"),
+                {
+                    "companyId": str(company.id),
+                    "username": "travel.manager",
+                    "email": f"travel.manager@{company.account_code.lower()}.example",
+                    "password": "pass12345",
+                    "accessRoles": [CompanyUser.Role.COMPANY_ADMIN, CompanyUser.Role.FINANCE_APPROVER],
+                    "isActive": True,
+                },
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        self.assertEqual(CompanyUser.objects.filter(login_username="travel.manager").count(), 2)
+
+    def test_ctm_login_uses_company_code_for_scoped_username(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
+        create_response = self.client.post(
+            reverse("ctm-company-user-list"),
+            {
+                "companyId": str(self.company_b.id),
+                "username": "travel.manager",
+                "email": "manager@global.example",
+                "password": "pass12345",
+                "accessRoles": [CompanyUser.Role.COMPANY_ADMIN],
+                "isActive": True,
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.client.credentials()
+
+        response = self.client.post(
+            reverse("ctm-auth-login"),
+            {"companyCode": self.company_b.account_code, "username": "travel.manager", "password": "pass12345"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["company"]["accountCode"], self.company_b.account_code)
+        self.assertEqual(response.data["user"]["companyId"], str(self.company_b.id))

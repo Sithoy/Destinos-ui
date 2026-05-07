@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from ctm.views import BillingInvoiceReportView, BillingPaymentReportView, BillingSummaryReportView, CompanyUserViewSet, CorporatePortalContextView, CtmAuthLoginView, CtmAuthLogoutView, CtmAuthMeView, ItineraryViewSet, TravelerViewSet, TripBookingView, TripDocumentDetailView, TripDocumentListView, TripInvoiceView, TripMessageListView, TripPaymentDetailView, TripPaymentListView, TripQuoteView, TripRequestViewSet, TripTaskDetailView, TripTaskListView
+from ctm.views import BillingInvoiceReportView, BillingPaymentReportView, BillingSummaryReportView, CompanyAccountViewSet, CompanyUserViewSet, CorporatePortalContextView, CtmAuthLoginView, CtmAuthLogoutView, CtmAuthMeView, ItineraryViewSet, TravelerViewSet, TripBookingView, TripDocumentDetailView, TripDocumentListView, TripInvoiceView, TripMessageListView, TripPaymentDetailView, TripPaymentListView, TripQuoteView, TripRequestViewSet, TripTaskDetailView, TripTaskListView
 from crm.views import AccommodationBlockViewSet, AuthLoginView, AuthLogoutView, AuthMeView, ClientViewSet, CommunicationRecordViewSet, ExperienceBlockViewSet, ItineraryStopViewSet, LeadViewSet, PaymentRecordViewSet, PublicLeadCreateView, QuoteApprovalViewSet, QuoteLineViewSet, QuoteViewSet, TransportSegmentViewSet, TripItineraryViewSet, UserViewSet, WorkflowReminderViewSet
 
 router = DefaultRouter()
@@ -23,6 +23,7 @@ router.register("experience-blocks", ExperienceBlockViewSet, basename="experienc
 router.register("ctm/trip-requests", TripRequestViewSet, basename="ctm-trip-request")
 router.register("ctm/travelers", TravelerViewSet, basename="ctm-traveler")
 router.register("ctm/itineraries", ItineraryViewSet, basename="ctm-itinerary")
+router.register("ctm/company-accounts", CompanyAccountViewSet, basename="ctm-company-account")
 router.register("ctm/company-users", CompanyUserViewSet, basename="ctm-company-user")
 
 urlpatterns = [

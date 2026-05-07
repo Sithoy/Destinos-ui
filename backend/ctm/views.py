@@ -10,7 +10,10 @@ from rest_framework.views import APIView
 
 from .serializers import (
     CorporateBillingSummarySerializer,
+    CorporateCompanyAccountSerializer,
+    CorporateCompanyAccountWriteSerializer,
     CorporateCompanyUserSerializer,
+    CorporateCompanyUserOpsWriteSerializer,
     CorporateCompanyUserWriteSerializer,
     CorporateApprovalActionSerializer,
     CorporateTripBookingSerializer,
@@ -46,7 +49,7 @@ from .serializers import (
     get_ctm_membership,
     parse_approval_stage,
 )
-from .models import CompanyUser, Traveler, TripApproval, TripBooking, TripDocument, TripInvoice, TripMessage, TripPayment, TripQuote, TripRequest, TripService, TripTask, TripTimelineEvent, TripTraveler
+from .models import CompanyAccount, CompanyUser, Traveler, TripApproval, TripBooking, TripDocument, TripInvoice, TripMessage, TripPayment, TripQuote, TripRequest, TripService, TripTask, TripTimelineEvent, TripTraveler
 
 
 def ctm_trip_queryset():
@@ -83,6 +86,10 @@ def ctm_traveler_queryset():
 
 def ctm_company_user_queryset():
     return CompanyUser.objects.select_related("company", "user").order_by("user__first_name", "user__last_name", "user__username")
+
+
+def ctm_company_account_queryset():
+    return CompanyAccount.objects.prefetch_related("company_users", "trip_requests").order_by("name")
 
 
 def ctm_invoice_queryset():
@@ -795,26 +802,102 @@ class TravelerViewSet(viewsets.ModelViewSet):
         return Response(CorporateTravelerDirectorySerializer(traveler).data)
 
 
+class CompanyAccountViewSet(viewsets.ModelViewSet):
+    permission_classes = [HasCtmAccess]
+    lookup_field = "pk"
+
+    def get_serializer_class(self):
+        if self.action in {"create", "update", "partial_update"}:
+            return CorporateCompanyAccountWriteSerializer
+        return CorporateCompanyAccountSerializer
+
+    def get_queryset(self):
+        if not can_manage_trip_operations(self.request.user):
+            return CompanyAccount.objects.none()
+        queryset = ctm_company_account_queryset()
+        search = self.request.query_params.get("search")
+        status_filter = self.request.query_params.get("status")
+        service_level = self.request.query_params.get("serviceLevel")
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search)
+                | Q(account_code__icontains=search)
+                | Q(legal_name__icontains=search)
+                | Q(industry__icontains=search)
+                | Q(country__icontains=search)
+            )
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        if service_level:
+            queryset = queryset.filter(service_level=service_level)
+        return queryset
+
+    def _ensure_ops_access(self, request):
+        if not can_manage_trip_operations(request.user):
+            return Response({"detail": "Only DPM operations users can manage company accounts."}, status=status.HTTP_403_FORBIDDEN)
+        return None
+
+    def list(self, request, *args, **kwargs):
+        denied = self._ensure_ops_access(request)
+        if denied is not None:
+            return denied
+        serializer = self.get_serializer(self.get_queryset(), many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        denied = self._ensure_ops_access(request)
+        if denied is not None:
+            return denied
+        serializer = self.get_serializer(self.get_object())
+        return Response(serializer.data)
+
+    def create(self, request, *args, **kwargs):
+        denied = self._ensure_ops_access(request)
+        if denied is not None:
+            return denied
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        company = serializer.save()
+        return Response(CorporateCompanyAccountSerializer(company).data, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, *args, **kwargs):
+        denied = self._ensure_ops_access(request)
+        if denied is not None:
+            return denied
+        company = self.get_object()
+        serializer = self.get_serializer(company, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        company = serializer.save()
+        return Response(CorporateCompanyAccountSerializer(company).data)
+
+
 class CompanyUserViewSet(viewsets.ModelViewSet):
     permission_classes = [HasCtmAccess]
     lookup_field = "pk"
 
     def get_serializer_class(self):
         if self.action in {"create", "update", "partial_update"}:
+            if can_manage_trip_operations(self.request.user):
+                return CorporateCompanyUserOpsWriteSerializer
             return CorporateCompanyUserWriteSerializer
         return CorporateCompanyUserSerializer
 
     def get_queryset(self):
-        membership = get_ctm_membership(self.request.user)
-        if membership is None or not can_view_company_users(membership):
-            return CompanyUser.objects.none()
-        queryset = ctm_company_user_queryset().filter(company=membership.company)
+        if can_manage_trip_operations(self.request.user):
+            queryset = ctm_company_user_queryset()
+        else:
+            membership = get_ctm_membership(self.request.user)
+            if membership is None or not can_view_company_users(membership):
+                return CompanyUser.objects.none()
+            queryset = ctm_company_user_queryset().filter(company=membership.company)
         search = self.request.query_params.get("search")
         role = self.request.query_params.get("role")
         active = self.request.query_params.get("active")
+        company_id = self.request.query_params.get("companyId")
         if search:
             queryset = queryset.filter(
                 Q(user__username__icontains=search)
+                | Q(login_username__icontains=search)
                 | Q(user__email__icontains=search)
                 | Q(user__first_name__icontains=search)
                 | Q(user__last_name__icontains=search)
@@ -825,6 +908,8 @@ class CompanyUserViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(role=role)
         if active in {"true", "false"}:
             queryset = queryset.filter(is_active=(active == "true"))
+        if company_id and can_manage_trip_operations(self.request.user):
+            queryset = queryset.filter(company_id=company_id)
         return queryset
 
     def list(self, request, *args, **kwargs):
@@ -836,6 +921,8 @@ class CompanyUserViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def _ensure_manage_access(self, request):
+        if can_manage_trip_operations(request.user):
+            return None
         membership = get_ctm_membership(request.user)
         if membership is None or not can_manage_company_users(membership):
             return Response({"detail": "You do not have permission to manage company users."}, status=status.HTTP_403_FORBIDDEN)

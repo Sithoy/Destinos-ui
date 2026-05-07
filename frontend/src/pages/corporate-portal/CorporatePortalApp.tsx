@@ -114,6 +114,7 @@ export function CorporatePortalApp() {
   const [approvalFilter, setApprovalFilter] = useState<CorporateApprovalFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [loginCompanyCode, setLoginCompanyCode] = useState('');
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -293,7 +294,7 @@ export function CorporatePortalApp() {
     setIsLoggingIn(true);
     setError('');
     try {
-      const session = await loginCtm(loginIdentifier, loginPassword);
+      const session = await loginCtm(loginIdentifier, loginPassword, loginCompanyCode);
       setCtmSession(session);
       setLoginPassword('');
     } catch (loginError) {
@@ -392,9 +393,20 @@ export function CorporatePortalApp() {
         <form onSubmit={submitLogin} className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1828] p-6 shadow-2xl">
           <h1 className="text-2xl font-semibold">CTM Sign In</h1>
           <p className="mt-2 text-sm leading-6 text-white/60">
-            Use a company portal account with CTM access to manage requests, approvals, and traveler readiness.
+            Use your Company ID and portal account to manage requests, approvals, and traveler readiness.
           </p>
           <label className="mt-6 block text-sm font-medium text-white/75">
+            Company ID
+            <input
+              value={loginCompanyCode}
+              onChange={(event) => setLoginCompanyCode(event.target.value)}
+              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm uppercase text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              placeholder="DPMCOMPANY"
+              autoComplete="organization"
+              required
+            />
+          </label>
+          <label className="mt-4 block text-sm font-medium text-white/75">
             Username or email
             <input
               value={loginIdentifier}

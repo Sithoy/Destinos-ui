@@ -3,11 +3,12 @@ from django.utils import timezone
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.db.models import Q
 from rest_framework import serializers
 
 from .bootstrap import ensure_default_ctm_context
 from .crm_handoff import sync_crm_lead_from_ctm_trip
-from .models import CompanyAccount, CompanyUser, Traveler, TripApproval, TripBooking, TripDocument, TripInvoice, TripMessage, TripPayment, TripQuote, TripRequest, TripService, TripTask, TripTimelineEvent, TripTraveler
+from .models import CompanyAccount, CompanyUser, Traveler, TripApproval, TripBooking, TripDocument, TripInvoice, TripMessage, TripPayment, TripQuote, TripRequest, TripService, TripTask, TripTimelineEvent, TripTraveler, normalize_company_code
 
 
 def format_portal_date(value):
@@ -39,6 +40,37 @@ def format_role(value: str) -> str:
     return role_map.get(value, "employee")
 
 
+def company_user_role_set(membership: CompanyUser) -> set[str]:
+    roles = set(membership.access_roles or [])
+    roles.add(membership.role)
+    return roles
+
+
+def primary_role_from_access_roles(roles: list[str]) -> str:
+    priority = [
+        CompanyUser.Role.COMPANY_ADMIN,
+        CompanyUser.Role.MANAGER,
+        CompanyUser.Role.FINANCE_APPROVER,
+        CompanyUser.Role.TRAVEL_COORDINATOR,
+        CompanyUser.Role.EMPLOYEE,
+    ]
+    role_set = set(roles)
+    for role in priority:
+        if role in role_set:
+            return role
+    return CompanyUser.Role.EMPLOYEE
+
+
+def scoped_django_username(company: CompanyAccount, login_username: str) -> str:
+    base = f"{company.account_code.lower()}__{login_username.strip().lower()}"[:140]
+    candidate = base
+    suffix = 2
+    while User.objects.filter(username__iexact=candidate).exists():
+        candidate = f"{base[: max(1, 150 - len(str(suffix)))]}{suffix}"
+        suffix += 1
+    return candidate
+
+
 def get_ctm_membership(user: User) -> CompanyUser | None:
     membership = (
         CompanyUser.objects.select_related("company", "user")
@@ -56,36 +88,37 @@ def can_access_ctm(user: User) -> bool:
 
 
 def can_approve_ctm_stage(membership: CompanyUser, stage: str) -> bool:
+    roles = company_user_role_set(membership)
     if stage == "Travel need":
-        return membership.role in {
+        return bool(roles & {
             CompanyUser.Role.TRAVEL_COORDINATOR,
             CompanyUser.Role.MANAGER,
             CompanyUser.Role.COMPANY_ADMIN,
-        }
-    return membership.role in {
+        })
+    return bool(roles & {
         CompanyUser.Role.MANAGER,
         CompanyUser.Role.FINANCE_APPROVER,
         CompanyUser.Role.COMPANY_ADMIN,
-    }
+    })
 
 
 def can_manage_travelers(membership: CompanyUser) -> bool:
-    return membership.role in {
+    return bool(company_user_role_set(membership) & {
         CompanyUser.Role.TRAVEL_COORDINATOR,
         CompanyUser.Role.MANAGER,
         CompanyUser.Role.COMPANY_ADMIN,
-    }
+    })
 
 
 def can_view_company_users(membership: CompanyUser) -> bool:
-    return membership.role in {
+    return bool(company_user_role_set(membership) & {
         CompanyUser.Role.MANAGER,
         CompanyUser.Role.COMPANY_ADMIN,
-    }
+    })
 
 
 def can_manage_company_users(membership: CompanyUser) -> bool:
-    return membership.role == CompanyUser.Role.COMPANY_ADMIN
+    return CompanyUser.Role.COMPANY_ADMIN in company_user_role_set(membership)
 
 
 def can_manage_trip_operations(user: User) -> bool:
@@ -93,11 +126,11 @@ def can_manage_trip_operations(user: User) -> bool:
 
 
 def can_manage_company_collaboration(membership: CompanyUser) -> bool:
-    return membership.role in {
+    return bool(company_user_role_set(membership) & {
         CompanyUser.Role.TRAVEL_COORDINATOR,
         CompanyUser.Role.MANAGER,
         CompanyUser.Role.COMPANY_ADMIN,
-    }
+    })
 
 
 def format_trip_status(value: str) -> str:
@@ -130,10 +163,72 @@ def parse_budget_estimate(value: str) -> int:
 class CorporatePortalCompanySerializer(serializers.Serializer):
     id = serializers.UUIDField(source="pk")
     name = serializers.CharField()
+    accountCode = serializers.CharField(source="account_code")
     descriptor = serializers.SerializerMethodField()
 
     def get_descriptor(self, obj: CompanyAccount) -> str:
         return "Corporate Travel Platform"
+
+
+class CorporateCompanyAccountSerializer(serializers.Serializer):
+    id = serializers.UUIDField(source="pk")
+    name = serializers.CharField()
+    accountCode = serializers.CharField(source="account_code")
+    legalName = serializers.CharField(source="legal_name")
+    industry = serializers.CharField()
+    country = serializers.CharField()
+    billingEmail = serializers.EmailField(source="billing_email")
+    defaultCurrency = serializers.CharField(source="default_currency")
+    serviceLevel = serializers.CharField(source="service_level")
+    status = serializers.CharField()
+    notes = serializers.CharField()
+    userCount = serializers.IntegerField(source="company_users.count", read_only=True)
+    requestCount = serializers.IntegerField(source="trip_requests.count", read_only=True)
+    createdAt = serializers.DateTimeField(source="created_at")
+    updatedAt = serializers.DateTimeField(source="updated_at")
+
+
+class CorporateCompanyAccountWriteSerializer(serializers.ModelSerializer):
+    accountCode = serializers.CharField(source="account_code", required=False, allow_blank=True)
+    legalName = serializers.CharField(source="legal_name", required=False, allow_blank=True)
+    billingEmail = serializers.EmailField(source="billing_email", required=False, allow_blank=True)
+    defaultCurrency = serializers.CharField(source="default_currency", required=False, allow_blank=True)
+    serviceLevel = serializers.ChoiceField(source="service_level", choices=CompanyAccount.ServiceLevel.choices, required=False)
+
+    class Meta:
+        model = CompanyAccount
+        fields = [
+            "name",
+            "accountCode",
+            "legalName",
+            "industry",
+            "country",
+            "billingEmail",
+            "defaultCurrency",
+            "serviceLevel",
+            "status",
+            "notes",
+        ]
+        extra_kwargs = {
+            "industry": {"required": False, "allow_blank": True},
+            "country": {"required": False, "allow_blank": True},
+            "status": {"required": False},
+            "notes": {"required": False, "allow_blank": True},
+        }
+
+    def validate_defaultCurrency(self, value: str) -> str:
+        return (value or "USD").strip().upper()
+
+    def validate_accountCode(self, value: str) -> str:
+        code = normalize_company_code(value)
+        if not code:
+            return ""
+        queryset = CompanyAccount.objects.filter(account_code__iexact=code)
+        if self.instance is not None:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("This company ID is already in use.")
+        return code
 
 
 class CorporatePortalUserSerializer(serializers.Serializer):
@@ -152,12 +247,16 @@ class CorporatePortalUserSerializer(serializers.Serializer):
 
 class CorporateCompanyUserSerializer(serializers.Serializer):
     id = serializers.UUIDField(source="pk")
-    username = serializers.CharField(source="user.username")
+    companyId = serializers.UUIDField(source="company.pk")
+    companyName = serializers.CharField(source="company.name")
+    companyCode = serializers.CharField(source="company.account_code")
+    username = serializers.CharField(source="login_username")
     email = serializers.EmailField(source="user.email")
     firstName = serializers.CharField(source="user.first_name")
     lastName = serializers.CharField(source="user.last_name")
     displayName = serializers.SerializerMethodField()
     role = serializers.CharField()
+    accessRoles = serializers.ListField(source="access_roles", child=serializers.CharField())
     department = serializers.CharField()
     jobTitle = serializers.CharField(source="job_title")
     phone = serializers.CharField()
@@ -301,6 +400,7 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
     lastName = serializers.CharField(max_length=150, required=False, allow_blank=True)
     password = serializers.CharField(required=False, write_only=True, allow_blank=False)
     role = serializers.ChoiceField(choices=[choice for choice, _ in CompanyUser.Role.choices], required=False)
+    accessRoles = serializers.ListField(child=serializers.ChoiceField(choices=[choice for choice, _ in CompanyUser.Role.choices]), required=False)
     department = serializers.CharField(required=False, allow_blank=True, max_length=120)
     jobTitle = serializers.CharField(required=False, allow_blank=True, max_length=120)
     phone = serializers.CharField(required=False, allow_blank=True, max_length=80)
@@ -313,6 +413,12 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
         if not can_manage_company_users(membership):
             raise serializers.ValidationError("You do not have permission to manage company users.")
         return membership
+
+    def _target_company(self, attrs) -> CompanyAccount:
+        company = attrs.get("company")
+        if company is not None:
+            return company
+        return self._membership().company
 
     def _validate_last_admin_guard(self, instance: CompanyUser, role: str, is_active: bool):
         if instance.role != CompanyUser.Role.COMPANY_ADMIN:
@@ -329,23 +435,32 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
+        access_roles = attrs.get("accessRoles")
+        if access_roles is not None:
+            attrs["accessRoles"] = list(dict.fromkeys(access_roles))
+
         if instance is None:
             username = attrs.get("username", "").strip()
             password = attrs.get("password")
+            company = self._target_company(attrs)
             if not username:
                 raise serializers.ValidationError({"username": "Username is required."})
             if not password:
                 raise serializers.ValidationError({"password": "Password is required."})
-            if User.objects.filter(username__iexact=username).exists():
-                raise serializers.ValidationError({"username": "This username is already in use."})
+            if CompanyUser.objects.filter(company=company, login_username__iexact=username).exists():
+                raise serializers.ValidationError({"username": "This username is already in use for this company."})
             email = attrs.get("email", "").strip()
             if email and User.objects.filter(email__iexact=email).exists():
                 raise serializers.ValidationError({"email": "This email is already in use."})
+            if "role" not in attrs and "accessRoles" in attrs:
+                attrs["role"] = primary_role_from_access_roles(attrs["accessRoles"])
             if "role" not in attrs:
                 raise serializers.ValidationError({"role": "Role is required."})
+            attrs["accessRoles"] = attrs.get("accessRoles") or [attrs["role"]]
             return attrs
 
-        next_role = attrs.get("role", instance.role)
+        next_roles = attrs.get("accessRoles", instance.access_roles or [instance.role])
+        next_role = attrs.get("role", primary_role_from_access_roles(next_roles))
         next_active = attrs.get("isActive", instance.is_active)
         self._validate_last_admin_guard(instance, next_role, next_active)
 
@@ -353,14 +468,17 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
         if email and User.objects.filter(email__iexact=email).exclude(pk=instance.user_id).exists():
             raise serializers.ValidationError({"email": "This email is already in use."})
         username = attrs.get("username")
-        if username and User.objects.filter(username__iexact=username).exclude(pk=instance.user_id).exists():
-            raise serializers.ValidationError({"username": "This username is already in use."})
+        if username and CompanyUser.objects.filter(company=instance.company, login_username__iexact=username.strip()).exclude(pk=instance.pk).exists():
+            raise serializers.ValidationError({"username": "This username is already in use for this company."})
+        if "role" not in attrs and "accessRoles" in attrs:
+            attrs["role"] = primary_role_from_access_roles(attrs["accessRoles"])
         return attrs
 
     def create(self, validated_data):
-        membership = self._membership()
+        company = self._target_company(validated_data)
+        login_username = validated_data["username"].strip()
         user = User.objects.create_user(
-            username=validated_data["username"].strip(),
+            username=scoped_django_username(company, login_username),
             email=validated_data.get("email", "").strip(),
             password=validated_data["password"],
             first_name=validated_data.get("firstName", "").strip(),
@@ -368,9 +486,11 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
             is_active=validated_data.get("isActive", True),
         )
         return CompanyUser.objects.create(
-            company=membership.company,
+            company=company,
             user=user,
+            login_username=login_username,
             role=validated_data["role"],
+            access_roles=validated_data.get("accessRoles") or [validated_data["role"]],
             department=validated_data.get("department", ""),
             job_title=validated_data.get("jobTitle", ""),
             phone=validated_data.get("phone", ""),
@@ -381,7 +501,7 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
         self._membership()
         user = instance.user
         if "username" in validated_data:
-            user.username = validated_data["username"].strip()
+            instance.login_username = validated_data["username"].strip()
         if "email" in validated_data:
             user.email = validated_data["email"].strip()
         if "firstName" in validated_data:
@@ -397,6 +517,7 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
 
         field_map = {
             "role": "role",
+            "accessRoles": "access_roles",
             "department": "department",
             "jobTitle": "job_title",
             "phone": "phone",
@@ -406,6 +527,21 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
                 setattr(instance, field, validated_data[key])
         instance.save()
         return instance
+
+
+class CorporateCompanyUserOpsWriteSerializer(CorporateCompanyUserWriteSerializer):
+    companyId = serializers.PrimaryKeyRelatedField(source="company", queryset=CompanyAccount.objects.all(), required=False)
+
+    def _membership(self) -> CompanyUser | None:
+        request = self.context["request"]
+        if can_manage_trip_operations(request.user):
+            return None
+        return super()._membership()
+
+    def validate(self, attrs):
+        if getattr(self, "instance", None) is None and "company" not in attrs:
+            raise serializers.ValidationError({"companyId": "Company account is required."})
+        return super().validate(attrs)
 
 
 class CorporateApprovalSerializer(serializers.Serializer):
@@ -1225,30 +1361,50 @@ class CorporateApprovalActionSerializer(serializers.Serializer):
 
 
 class CtmLoginSerializer(serializers.Serializer):
+    companyCode = serializers.CharField(required=False, allow_blank=True)
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
-        username = attrs["username"]
+        company_code = normalize_company_code(attrs.get("companyCode", ""))
+        username = attrs["username"].strip()
         password = attrs["password"]
-        user = authenticate(username=username, password=password)
+        membership = None
+        user = None
 
-        if user is None:
+        if company_code:
             try:
-                matched_user = User.objects.get(email__iexact=username)
-            except User.DoesNotExist:
-                matched_user = None
+                company = CompanyAccount.objects.get(account_code__iexact=company_code, status=CompanyAccount.Status.ACTIVE)
+            except CompanyAccount.DoesNotExist:
+                raise serializers.ValidationError("Invalid company ID, username/email, or password.")
 
-            if matched_user is not None:
-                user = authenticate(username=matched_user.username, password=password)
+            membership = (
+                CompanyUser.objects.select_related("company", "user")
+                .filter(company=company, is_active=True)
+                .filter(Q(login_username__iexact=username) | Q(user__email__iexact=username))
+                .first()
+            )
+            if membership is not None:
+                user = authenticate(username=membership.user.username, password=password)
+        else:
+            user = authenticate(username=username, password=password)
+
+            if user is None:
+                try:
+                    matched_user = User.objects.get(email__iexact=username)
+                except User.DoesNotExist:
+                    matched_user = None
+
+                if matched_user is not None:
+                    user = authenticate(username=matched_user.username, password=password)
 
         if user is None:
-            raise serializers.ValidationError("Invalid username/email or password.")
+            raise serializers.ValidationError("Invalid company ID, username/email, or password.")
 
         if not user.is_active:
             raise serializers.ValidationError("This CTM account is inactive.")
 
-        membership = get_ctm_membership(user)
+        membership = membership or get_ctm_membership(user)
         if membership is None:
             raise serializers.ValidationError("This account does not have CTM access.")
 
