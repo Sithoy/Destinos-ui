@@ -28,7 +28,7 @@ import type {
 
 const CTM_AUTH_STORAGE_KEY = 'dpm.ctm.auth.v1';
 const CTM_AUTH_EVENT = 'dpm-ctm-auth-updated';
-type CtmAuthSession = Pick<CorporatePortalSession, 'token'> | null | undefined;
+type CtmAuthSession = (Pick<CorporatePortalSession, 'token'> & Partial<Pick<CorporatePortalSession, 'company'>>) | null | undefined;
 
 function ctmApiBase() {
   const raw = import.meta.env.VITE_CRM_API_URL?.toString().trim();
@@ -76,7 +76,9 @@ function notifyCtmAuthUpdated() {
 }
 
 function authHeaders(session?: CtmAuthSession): Record<string, string> {
-  return session?.token ? { Authorization: `Token ${session.token}` } : {};
+  const headers: Record<string, string> = session?.token ? { Authorization: `Token ${session.token}` } : {};
+  if (session?.company?.accountCode) headers['X-CTM-Company-Code'] = session.company.accountCode;
+  return headers;
 }
 
 function readValue<T = unknown>(record: Record<string, unknown>, ...keys: string[]): T | undefined {

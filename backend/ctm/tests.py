@@ -225,6 +225,36 @@ class CtmOpsScopeTests(APITestCase):
 
         self.assertEqual(CompanyUser.objects.filter(user__email="travel.desk@example.com").count(), 2)
 
+    def test_ctm_login_by_duplicate_email_uses_matching_password_account(self):
+        first_user = User.objects.create_user(username="shared-email-a", password="first-pass", email="shared@example.com")
+        second_user = User.objects.create_user(username="shared-email-b", password="second-pass", email="shared@example.com")
+        CompanyUser.objects.create(
+            company=self.company_a,
+            user=first_user,
+            login_username="shared-email-a",
+            role=CompanyUser.Role.TRAVEL_COORDINATOR,
+            access_roles=[CompanyUser.Role.TRAVEL_COORDINATOR],
+            is_active=True,
+        )
+        CompanyUser.objects.create(
+            company=self.company_b,
+            user=second_user,
+            login_username="shared-email-b",
+            role=CompanyUser.Role.COMPANY_ADMIN,
+            access_roles=[CompanyUser.Role.COMPANY_ADMIN],
+            is_active=True,
+        )
+
+        response = self.client.post(
+            reverse("ctm-auth-login"),
+            {"username": "shared@example.com", "password": "second-pass"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["company"]["accountCode"], self.company_b.account_code)
+        self.assertEqual(response.data["user"]["companyId"], str(self.company_b.id))
+
     def test_ctm_login_uses_company_code_for_scoped_username(self):
         self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
         create_response = self.client.post(
@@ -251,3 +281,31 @@ class CtmOpsScopeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["company"]["accountCode"], self.company_b.account_code)
         self.assertEqual(response.data["user"]["companyId"], str(self.company_b.id))
+
+    def test_company_admin_can_log_into_another_company_workspace(self):
+        admin_user = User.objects.create_user(username="global-admin", password="pass12345", email="global.admin@example.com")
+        CompanyUser.objects.create(
+            company=self.company_a,
+            user=admin_user,
+            login_username="global-admin",
+            role=CompanyUser.Role.COMPANY_ADMIN,
+            access_roles=[CompanyUser.Role.COMPANY_ADMIN],
+            is_active=True,
+        )
+
+        response = self.client.post(
+            reverse("ctm-auth-login"),
+            {"companyCode": self.company_b.account_code, "username": "global-admin", "password": "pass12345"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["company"]["accountCode"], self.company_b.account_code)
+        self.assertEqual(response.data["user"]["companyId"], str(self.company_b.id))
+        self.assertTrue(CompanyUser.objects.filter(company=self.company_b, user=admin_user, role=CompanyUser.Role.COMPANY_ADMIN).exists())
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {response.data['token']}")
+        list_response = self.client.get(reverse("ctm-trip-request-list"), HTTP_X_CTM_COMPANY_CODE=self.company_b.account_code)
+
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual([item["id"] for item in list_response.data], [self.trip_b.reference_code])

@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 
 import dj_database_url
+from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 
 
@@ -118,6 +119,7 @@ CORS_ALLOWED_ORIGINS = env_list(
     "DJANGO_CORS_ALLOWED_ORIGINS",
     "http://localhost:5173,http://127.0.0.1:5173,https://www.dpmundo.com,https://dpmundo.com",
 )
+CORS_ALLOW_HEADERS = (*default_headers, "x-ctm-company-code")
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_CONTENT_TYPE_NOSNIFF = True

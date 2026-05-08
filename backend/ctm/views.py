@@ -46,7 +46,8 @@ from .serializers import (
     can_manage_trip_operations,
     can_manage_travelers,
     can_view_company_users,
-    get_ctm_membership,
+    get_ctm_membership_for_request,
+    get_request_company_code,
     parse_approval_stage,
 )
 from .models import CompanyAccount, CompanyUser, Traveler, TripApproval, TripBooking, TripDocument, TripInvoice, TripMessage, TripPayment, TripQuote, TripRequest, TripService, TripTask, TripTimelineEvent, TripTraveler
@@ -133,7 +134,7 @@ class CtmAuthMeView(APIView):
     permission_classes = [HasCtmAccess]
 
     def get(self, request):
-        payload = build_context_payload(request.user)
+        payload = build_context_payload(request.user, get_request_company_code(request))
         return Response(CtmSessionSerializer({"token": "", **payload}).data)
 
 
@@ -141,7 +142,7 @@ class CorporatePortalContextView(APIView):
     permission_classes = [HasCtmAccess]
 
     def get(self, request):
-        serializer = CorporatePortalContextSerializer(build_context_payload(request.user))
+        serializer = CorporatePortalContextSerializer(build_context_payload(request.user, get_request_company_code(request)))
         return Response(serializer.data)
 
 
@@ -149,7 +150,7 @@ class BillingReportBaseView(APIView):
     permission_classes = [HasCtmAccess]
 
     def get_membership(self, request):
-        return get_ctm_membership(request.user)
+        return get_ctm_membership_for_request(request)
 
     def get_invoice_queryset(self, request):
         membership = self.get_membership(request)
@@ -256,7 +257,7 @@ class CtmTripScopedView(APIView):
     def get_trip(self, request, reference_code: str) -> TripRequest:
         queryset = ctm_trip_queryset()
         if not can_manage_trip_operations(request.user):
-            membership = get_ctm_membership(request.user)
+            membership = get_ctm_membership_for_request(request)
             queryset = queryset.filter(company=membership.company) if membership else TripRequest.objects.none()
         return get_object_or_404(queryset, reference_code=reference_code)
 
@@ -266,7 +267,7 @@ class CtmTripScopedView(APIView):
         return None
 
     def ensure_collaboration_access(self, request):
-        membership = get_ctm_membership(request.user)
+        membership = get_ctm_membership_for_request(request)
         if can_manage_trip_operations(request.user):
             return None
         if membership is None or not can_manage_company_collaboration(membership):
@@ -472,7 +473,7 @@ class TripPaymentDetailView(CtmTripScopedView):
             return denied
         queryset = TripPayment.objects.select_related("invoice__trip_request", "recorded_by")
         if not can_manage_trip_operations(request.user):
-            membership = get_ctm_membership(request.user)
+            membership = get_ctm_membership_for_request(request)
             queryset = queryset.filter(invoice__trip_request__company=membership.company) if membership else TripPayment.objects.none()
         payment = get_object_or_404(
             queryset,
@@ -517,7 +518,7 @@ class TripTaskListView(CtmTripScopedView):
             trip_request=trip,
             actor_type=TripTimelineEvent.ActorType.DPM if can_manage_trip_operations(request.user) else TripTimelineEvent.ActorType.COMPANY,
             actor_user=request.user if can_manage_trip_operations(request.user) else None,
-            actor_company_user=None if can_manage_trip_operations(request.user) else get_ctm_membership(request.user),
+            actor_company_user=None if can_manage_trip_operations(request.user) else get_ctm_membership_for_request(request),
             event_type=TripTimelineEvent.EventType.NOTE,
             visibility=TripTimelineEvent.Visibility.SHARED if task.visibility == TripTask.Visibility.SHARED else TripTimelineEvent.Visibility.INTERNAL_ONLY,
             title="Task created",
@@ -533,7 +534,7 @@ class TripTaskDetailView(CtmTripScopedView):
             return denied
         queryset = TripTask.objects.select_related("trip_request")
         if not self.can_view_internal(request):
-            membership = get_ctm_membership(request.user)
+            membership = get_ctm_membership_for_request(request)
             queryset = queryset.filter(trip_request__company=membership.company) if membership else TripTask.objects.none()
         task = get_object_or_404(queryset, pk=task_id)
         if not self.can_view_internal(request) and task.visibility == TripTask.Visibility.INTERNAL_ONLY:
@@ -568,7 +569,7 @@ class TripDocumentListView(CtmTripScopedView):
             trip_request=trip,
             actor_type=TripTimelineEvent.ActorType.DPM if can_manage_trip_operations(request.user) else TripTimelineEvent.ActorType.COMPANY,
             actor_user=request.user if can_manage_trip_operations(request.user) else None,
-            actor_company_user=None if can_manage_trip_operations(request.user) else get_ctm_membership(request.user),
+            actor_company_user=None if can_manage_trip_operations(request.user) else get_ctm_membership_for_request(request),
             event_type=TripTimelineEvent.EventType.DOCUMENTS_REQUESTED if document.status in {TripDocument.Status.MISSING, TripDocument.Status.REQUESTED} else TripTimelineEvent.EventType.UPDATED,
             visibility=TripTimelineEvent.Visibility.SHARED if document.visibility == TripDocument.Visibility.SHARED else TripTimelineEvent.Visibility.INTERNAL_ONLY,
             title="Document updated",
@@ -584,7 +585,7 @@ class TripDocumentDetailView(CtmTripScopedView):
             return denied
         queryset = TripDocument.objects.select_related("trip_request", "traveler")
         if not self.can_view_internal(request):
-            membership = get_ctm_membership(request.user)
+            membership = get_ctm_membership_for_request(request)
             queryset = queryset.filter(trip_request__company=membership.company) if membership else TripDocument.objects.none()
         document = get_object_or_404(queryset, pk=document_id)
         if not self.can_view_internal(request) and document.visibility == TripDocument.Visibility.INTERNAL_ONLY:
@@ -608,7 +609,7 @@ class TripMessageListView(CtmTripScopedView):
     def post(self, request, reference_code: str):
         trip = self.get_trip(request, reference_code)
         is_ops = can_manage_trip_operations(request.user)
-        membership = get_ctm_membership(request.user)
+        membership = get_ctm_membership_for_request(request)
         if not is_ops and membership is None:
             return Response({"detail": "This account does not have CTM access."}, status=status.HTTP_403_FORBIDDEN)
         if not is_ops and request.data.get("visibility") == TripMessage.Visibility.INTERNAL_ONLY:
@@ -646,7 +647,7 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         if can_manage_trip_operations(self.request.user):
             queryset = ctm_trip_queryset()
         else:
-            membership = get_ctm_membership(self.request.user)
+            membership = get_ctm_membership_for_request(self.request)
             queryset = ctm_trip_queryset().filter(company=membership.company) if membership else TripRequest.objects.none()
         search = self.request.query_params.get("search")
         if search:
@@ -679,7 +680,7 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         trip = self.get_object()
         serializer = CorporateApprovalActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        membership = get_ctm_membership(request.user)
+        membership = get_ctm_membership_for_request(request)
         if membership is None or not can_approve_ctm_stage(membership, serializer.validated_data["stage"]):
             return Response({"detail": "You do not have permission to approve this CTM stage."}, status=status.HTTP_403_FORBIDDEN)
         approval_type = parse_approval_stage(serializer.validated_data["stage"])
@@ -712,7 +713,7 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         trip = self.get_object()
         serializer = CorporateApprovalActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        membership = get_ctm_membership(request.user)
+        membership = get_ctm_membership_for_request(request)
         if membership is None or not can_approve_ctm_stage(membership, serializer.validated_data["stage"]):
             return Response({"detail": "You do not have permission to reject this CTM stage."}, status=status.HTTP_403_FORBIDDEN)
         approval_type = parse_approval_stage(serializer.validated_data["stage"])
@@ -747,7 +748,7 @@ class TravelerViewSet(viewsets.ModelViewSet):
         return CorporateTravelerDirectorySerializer
 
     def get_queryset(self):
-        membership = get_ctm_membership(self.request.user)
+        membership = get_ctm_membership_for_request(self.request)
         queryset = ctm_traveler_queryset().filter(company=membership.company) if membership else Traveler.objects.none()
         search = self.request.query_params.get("search")
         department = self.request.query_params.get("department")
@@ -777,7 +778,7 @@ class TravelerViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def _ensure_manage_access(self, request):
-        membership = get_ctm_membership(request.user)
+        membership = get_ctm_membership_for_request(request)
         if membership is None or not can_manage_travelers(membership):
             return Response({"detail": "You do not have permission to manage travelers."}, status=status.HTTP_403_FORBIDDEN)
         return None
@@ -886,7 +887,7 @@ class CompanyUserViewSet(viewsets.ModelViewSet):
         if can_manage_trip_operations(self.request.user):
             queryset = ctm_company_user_queryset()
         else:
-            membership = get_ctm_membership(self.request.user)
+            membership = get_ctm_membership_for_request(self.request)
             if membership is None or not can_view_company_users(membership):
                 return CompanyUser.objects.none()
             queryset = ctm_company_user_queryset().filter(company=membership.company)
@@ -923,7 +924,7 @@ class CompanyUserViewSet(viewsets.ModelViewSet):
     def _ensure_manage_access(self, request):
         if can_manage_trip_operations(request.user):
             return None
-        membership = get_ctm_membership(request.user)
+        membership = get_ctm_membership_for_request(request)
         if membership is None or not can_manage_company_users(membership):
             return Response({"detail": "You do not have permission to manage company users."}, status=status.HTTP_403_FORBIDDEN)
         return None
@@ -954,7 +955,7 @@ class ItineraryViewSet(viewsets.ReadOnlyModelViewSet):
     lookup_field = "reference_code"
 
     def get_queryset(self):
-        membership = get_ctm_membership(self.request.user)
+        membership = get_ctm_membership_for_request(self.request)
         queryset = ctm_trip_queryset().filter(company=membership.company, status__in=[TripRequest.Status.BOOKED, TripRequest.Status.COMPLETED]) if membership else TripRequest.objects.none()
         search = self.request.query_params.get("search")
         department = self.request.query_params.get("department")

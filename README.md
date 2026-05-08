@@ -154,6 +154,31 @@ python backend/manage.py check
 python backend/manage.py test crm ctm
 ```
 
+## Docker Development
+
+Build and run the full local stack with PostgreSQL:
+
+```bash
+docker compose up --build
+```
+
+Open the app:
+
+```text
+Frontend: http://localhost:5173
+Backend:  http://localhost:8000
+CTM:      http://localhost:5173/ctm
+CRM:      http://localhost:5173/crm
+```
+
+Useful commands:
+
+```bash
+docker compose exec backend python manage.py createsuperuser
+docker compose exec backend python manage.py test crm ctm
+docker compose down
+```
+
 ## Architecture Notes
 
 The Django backend is the source of truth. The React frontend should consume backend APIs for CRM and CTM workflows instead of relying on long-lived mock state.

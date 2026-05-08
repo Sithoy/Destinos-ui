@@ -71,7 +71,78 @@ def scoped_django_username(company: CompanyAccount, login_username: str) -> str:
     return candidate
 
 
-def get_ctm_membership(user: User) -> CompanyUser | None:
+def is_company_admin_membership(membership: CompanyUser) -> bool:
+    return CompanyUser.Role.COMPANY_ADMIN in company_user_role_set(membership)
+
+
+def get_admin_source_membership(user: User) -> CompanyUser | None:
+    memberships = (
+        CompanyUser.objects.select_related("company", "user")
+        .filter(user=user, is_active=True, company__status=CompanyAccount.Status.ACTIVE)
+        .order_by("created_at")
+    )
+    for membership in memberships:
+        if is_company_admin_membership(membership):
+            return membership
+    return memberships.first()
+
+
+def can_administer_any_company(user: User) -> bool:
+    if user.is_staff or user.is_superuser:
+        return True
+    return any(is_company_admin_membership(membership) for membership in CompanyUser.objects.filter(user=user, is_active=True, company__status=CompanyAccount.Status.ACTIVE))
+
+
+def scoped_login_username_for_company(company: CompanyAccount, preferred_username: str) -> str:
+    base = (preferred_username or "admin").strip()[:140]
+    candidate = base
+    suffix = 2
+    while CompanyUser.objects.filter(company=company, login_username__iexact=candidate).exists():
+        candidate = f"{base[: max(1, 150 - len(str(suffix)))]}{suffix}"
+        suffix += 1
+    return candidate
+
+
+def ensure_admin_membership(user: User, company: CompanyAccount) -> CompanyUser:
+    membership = CompanyUser.objects.select_related("company", "user").filter(user=user, company=company).first()
+    if membership:
+        if not membership.is_active:
+            membership.is_active = True
+        if CompanyUser.Role.COMPANY_ADMIN not in (membership.access_roles or []):
+            membership.access_roles = [CompanyUser.Role.COMPANY_ADMIN, *(membership.access_roles or [])]
+        membership.role = CompanyUser.Role.COMPANY_ADMIN
+        membership.save()
+        return membership
+
+    source = get_admin_source_membership(user)
+    preferred_username = source.login_username if source else user.username
+    return CompanyUser.objects.create(
+        company=company,
+        user=user,
+        login_username=scoped_login_username_for_company(company, preferred_username),
+        role=CompanyUser.Role.COMPANY_ADMIN,
+        access_roles=[CompanyUser.Role.COMPANY_ADMIN],
+        department=source.department if source else "",
+        job_title=source.job_title if source else "Company admin",
+        phone=source.phone if source else "",
+        is_active=True,
+    )
+
+
+def get_ctm_membership(user: User, company_code: str = "") -> CompanyUser | None:
+    company_code = normalize_company_code(company_code)
+    if company_code:
+        try:
+            company = CompanyAccount.objects.get(account_code__iexact=company_code, status=CompanyAccount.Status.ACTIVE)
+        except CompanyAccount.DoesNotExist:
+            return None
+        membership = CompanyUser.objects.select_related("company", "user").filter(user=user, company=company, is_active=True).first()
+        if membership:
+            return membership
+        if can_administer_any_company(user):
+            return ensure_admin_membership(user, company)
+        return None
+
     membership = (
         CompanyUser.objects.select_related("company", "user")
         .filter(user=user, is_active=True, company__status=CompanyAccount.Status.ACTIVE)
@@ -81,6 +152,23 @@ def get_ctm_membership(user: User) -> CompanyUser | None:
     if membership is None and user.is_active and (user.is_superuser or user.is_staff):
         _, membership = ensure_default_ctm_context(for_user=user)
     return membership
+
+
+def get_request_company_code(request) -> str:
+    header_code = request.headers.get("X-CTM-Company-Code", "")
+    if header_code:
+        return normalize_company_code(header_code)
+    query_code = getattr(request, "query_params", {}).get("companyCode", "")
+    if query_code:
+        return normalize_company_code(query_code)
+    data = getattr(request, "data", {})
+    if isinstance(data, dict):
+        return normalize_company_code(data.get("companyCode", ""))
+    return ""
+
+
+def get_ctm_membership_for_request(request) -> CompanyUser | None:
+    return get_ctm_membership(request.user, get_request_company_code(request))
 
 
 def can_access_ctm(user: User) -> bool:
@@ -347,7 +435,7 @@ class CorporateTravelerWriteSerializer(serializers.Serializer):
     isActive = serializers.BooleanField(required=False)
 
     def _membership(self) -> CompanyUser:
-        membership = get_ctm_membership(self.context["request"].user)
+        membership = get_ctm_membership_for_request(self.context["request"])
         if membership is None:
             raise serializers.ValidationError("This account does not have CTM access.")
         if not can_manage_travelers(membership):
@@ -407,7 +495,7 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
     isActive = serializers.BooleanField(required=False)
 
     def _membership(self) -> CompanyUser:
-        membership = get_ctm_membership(self.context["request"].user)
+        membership = get_ctm_membership_for_request(self.context["request"])
         if membership is None:
             raise serializers.ValidationError("This account does not have CTM access.")
         if not can_manage_company_users(membership):
@@ -611,7 +699,7 @@ class CorporateTripTaskWriteSerializer(serializers.Serializer):
     def create(self, validated_data):
         trip = self.context["trip_request"]
         request = self.context["request"]
-        membership = get_ctm_membership(request.user)
+        membership = get_ctm_membership_for_request(request)
         task = TripTask.objects.create(
             trip_request=trip,
             title=validated_data["title"],
@@ -675,7 +763,7 @@ class CorporateTripDocumentWriteSerializer(serializers.Serializer):
     def create(self, validated_data):
         trip = self.context["trip_request"]
         request = self.context["request"]
-        membership = get_ctm_membership(request.user)
+        membership = get_ctm_membership_for_request(request)
         return TripDocument.objects.create(
             trip_request=trip,
             traveler=self._resolve_traveler(trip, validated_data.get("travelerId")),
@@ -733,7 +821,7 @@ class CorporateTripMessageWriteSerializer(serializers.Serializer):
     def create(self, validated_data):
         trip = self.context["trip_request"]
         request = self.context["request"]
-        membership = get_ctm_membership(request.user)
+        membership = get_ctm_membership_for_request(request)
         is_ops = can_manage_trip_operations(request.user)
         return TripMessage.objects.create(
             trip_request=trip,
@@ -1275,7 +1363,7 @@ class CorporateTripCreateSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         request = self.context["request"]
-        company_user = get_ctm_membership(request.user)
+        company_user = get_ctm_membership_for_request(request)
         if company_user is None:
             raise serializers.ValidationError("This account does not have CTM access.")
         company = company_user.company
@@ -1380,17 +1468,39 @@ class CtmLoginSerializer(serializers.Serializer):
             )
             if membership is not None:
                 user = authenticate(username=membership.user.username, password=password)
+
+            if user is None:
+                admin_candidates = CompanyUser.objects.select_related("company", "user").filter(is_active=True, company__status=CompanyAccount.Status.ACTIVE).filter(
+                    Q(login_username__iexact=username) | Q(user__email__iexact=username)
+                )
+                for candidate in admin_candidates:
+                    if not is_company_admin_membership(candidate):
+                        continue
+                    authenticated_user = authenticate(username=candidate.user.username, password=password)
+                    if authenticated_user is not None:
+                        user = authenticated_user
+                        membership = get_ctm_membership(user, company_code)
+                        break
+
+            if user is None:
+                staff_candidates = User.objects.filter(Q(username__iexact=username) | Q(email__iexact=username), is_active=True)
+                for matched_user in staff_candidates:
+                    if not (matched_user.is_staff or matched_user.is_superuser):
+                        continue
+                    user = authenticate(username=matched_user.username, password=password)
+                    if user is not None:
+                        membership = get_ctm_membership(user, company_code)
+                        break
         else:
             user = authenticate(username=username, password=password)
 
             if user is None:
-                try:
-                    matched_user = User.objects.get(email__iexact=username)
-                except User.DoesNotExist:
-                    matched_user = None
-
-                if matched_user is not None:
-                    user = authenticate(username=matched_user.username, password=password)
+                matched_users = User.objects.filter(email__iexact=username, is_active=True)
+                for matched_user in matched_users:
+                    candidate = authenticate(username=matched_user.username, password=password)
+                    if candidate is not None and get_ctm_membership(candidate):
+                        user = candidate
+                        break
 
         if user is None:
             raise serializers.ValidationError("Invalid company ID, username/email, or password.")
@@ -1398,7 +1508,7 @@ class CtmLoginSerializer(serializers.Serializer):
         if not user.is_active:
             raise serializers.ValidationError("This CTM account is inactive.")
 
-        membership = membership or get_ctm_membership(user)
+        membership = membership or get_ctm_membership(user, company_code)
         if membership is None:
             raise serializers.ValidationError("This account does not have CTM access.")
 
@@ -1413,8 +1523,8 @@ class CtmSessionSerializer(serializers.Serializer):
     user = CorporatePortalUserSerializer()
 
 
-def build_context_payload(user: User):
-    company_user = get_ctm_membership(user)
+def build_context_payload(user: User, company_code: str = ""):
+    company_user = get_ctm_membership(user, company_code)
     if company_user is None:
         raise serializers.ValidationError("This account does not have CTM access.")
     return {"company": company_user.company, "user": company_user}

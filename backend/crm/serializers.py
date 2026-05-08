@@ -767,13 +767,12 @@ class LoginSerializer(serializers.Serializer):
         user = authenticate(username=username, password=password)
 
         if user is None:
-            try:
-                matched_user = User.objects.get(email__iexact=username)
-            except User.DoesNotExist:
-                matched_user = None
-
-            if matched_user is not None:
-                user = authenticate(username=matched_user.username, password=password)
+            matched_users = User.objects.filter(email__iexact=username, is_active=True)
+            for matched_user in matched_users:
+                candidate = authenticate(username=matched_user.username, password=password)
+                if candidate is not None and can_access_crm(candidate):
+                    user = candidate
+                    break
 
         if user is None:
             raise serializers.ValidationError("Invalid username/email or password.")

@@ -12,6 +12,23 @@ from ctm.models import CompanyAccount
 from .models import AccommodationBlock, ItineraryStop, Lead, Quote, TransportSegment, TripItinerary, WorkflowReminder
 
 
+class CrmAuthTests(APITestCase):
+    def test_login_by_duplicate_email_uses_matching_crm_account(self):
+        group, _ = Group.objects.get_or_create(name="crm_agent")
+        crm_user = User.objects.create_user(username="crm-agent", email="shared@example.com", password="crm-pass")
+        crm_user.groups.add(group)
+        User.objects.create_user(username="ctm-user", email="shared@example.com", password="ctm-pass")
+
+        response = self.client.post(
+            reverse("auth-login"),
+            {"username": "shared@example.com", "password": "crm-pass"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["user"]["username"], "crm-agent")
+
+
 class LeadWorkflowApiTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="agent", password="pass")
