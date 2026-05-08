@@ -44,7 +44,18 @@ async function parseApiResponse<T>(response: Response): Promise<T> {
     let message = `CTM API request failed (${response.status})`;
     try {
       const body = await response.json();
-      message = body.detail || body.non_field_errors?.[0] || body.error || message;
+      if (body.detail || body.non_field_errors?.[0] || body.error) {
+        message = body.detail || body.non_field_errors?.[0] || body.error;
+      } else if (body && typeof body === 'object') {
+        const fieldErrors = Object.entries(body)
+          .flatMap(([field, value]) => {
+            if (Array.isArray(value)) return value.map((item) => `${field}: ${String(item)}`);
+            if (typeof value === 'string') return [`${field}: ${value}`];
+            return [];
+          })
+          .filter(Boolean);
+        if (fieldErrors.length > 0) message = fieldErrors.join(' ');
+      }
     } catch {
       // keep status-based message
     }

@@ -449,9 +449,6 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"password": "Password is required."})
             if CompanyUser.objects.filter(company=company, login_username__iexact=username).exists():
                 raise serializers.ValidationError({"username": "This username is already in use for this company."})
-            email = attrs.get("email", "").strip()
-            if email and User.objects.filter(email__iexact=email).exists():
-                raise serializers.ValidationError({"email": "This email is already in use."})
             if "role" not in attrs and "accessRoles" in attrs:
                 attrs["role"] = primary_role_from_access_roles(attrs["accessRoles"])
             if "role" not in attrs:
@@ -464,9 +461,6 @@ class CorporateCompanyUserWriteSerializer(serializers.Serializer):
         next_active = attrs.get("isActive", instance.is_active)
         self._validate_last_admin_guard(instance, next_role, next_active)
 
-        email = attrs.get("email")
-        if email and User.objects.filter(email__iexact=email).exclude(pk=instance.user_id).exists():
-            raise serializers.ValidationError({"email": "This email is already in use."})
         username = attrs.get("username")
         if username and CompanyUser.objects.filter(company=instance.company, login_username__iexact=username.strip()).exclude(pk=instance.pk).exists():
             raise serializers.ValidationError({"username": "This username is already in use for this company."})

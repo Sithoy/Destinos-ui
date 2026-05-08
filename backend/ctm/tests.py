@@ -205,6 +205,26 @@ class CtmOpsScopeTests(APITestCase):
 
         self.assertEqual(CompanyUser.objects.filter(login_username="travel.manager").count(), 2)
 
+    def test_ops_user_can_reuse_email_across_company_users(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
+
+        for index, company in enumerate((self.company_a, self.company_b), start=1):
+            response = self.client.post(
+                reverse("ctm-company-user-list"),
+                {
+                    "companyId": str(company.id),
+                    "username": f"shared-email-{index}",
+                    "email": "travel.desk@example.com",
+                    "password": "pass12345",
+                    "accessRoles": [CompanyUser.Role.TRAVEL_COORDINATOR],
+                    "isActive": True,
+                },
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        self.assertEqual(CompanyUser.objects.filter(user__email="travel.desk@example.com").count(), 2)
+
     def test_ctm_login_uses_company_code_for_scoped_username(self):
         self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
         create_response = self.client.post(
