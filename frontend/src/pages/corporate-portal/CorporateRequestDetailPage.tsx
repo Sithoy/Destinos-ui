@@ -76,6 +76,10 @@ function approvalStatus(trip: CorporateTripRequest, stage: 'Travel need' | 'Fina
   return trip.approvals.find((approval) => approval.stage === stage)?.status ?? 'Pending';
 }
 
+function hasApprovalReadyQuote(trip: CorporateTripRequest) {
+  return Boolean(trip.quote && ['sent', 'approved'].includes(trip.quote.status) && trip.quote.amount > 0 && trip.quote.currency);
+}
+
 function hasDocumentBlocker(trip: CorporateTripRequest) {
   return trip.travelers.some((traveler) => traveler.readiness.passport !== 'OK' || traveler.readiness.visa === 'Required')
     || (trip.documents ?? []).some((document) => document.status === 'missing' || document.status === 'requested');
@@ -84,7 +88,7 @@ function hasDocumentBlocker(trip: CorporateTripRequest) {
 function buildProcessingStages(trip: CorporateTripRequest): ProcessingStage[] {
   const travelNeed = approvalStatus(trip, 'Travel need');
   const finalCost = approvalStatus(trip, 'Final cost');
-  const quoteReady = Boolean(trip.quote) || trip.status === 'Quote ready' || trip.status === 'Final approval';
+  const quoteReady = hasApprovalReadyQuote(trip);
   const bookingReady = Boolean(trip.booking) || trip.status === 'Booked' || trip.status === 'Completed';
   const invoiceReady = Boolean(trip.invoice);
   const paid = trip.invoice?.status === 'paid' || trip.payments.some((payment) => payment.status === 'received' || payment.status === 'reconciled');
@@ -153,7 +157,8 @@ function clientNextAction(trip: CorporateTripRequest) {
   const finalCost = approvalStatus(trip, 'Final cost');
 
   if (travelNeed === 'Pending') return 'Approve the travel need so DPM can qualify the request.';
-  if (trip.quote && finalCost === 'Pending') return 'Review the shared quote and approve or reject the final cost.';
+  if (hasApprovalReadyQuote(trip) && finalCost === 'Pending') return 'Review the shared quote and approve or reject the final cost.';
+  if (finalCost === 'Pending') return 'DPM is preparing the quote before final approval opens.';
   if (hasDocumentBlocker(trip)) return 'Upload or validate missing traveler documents.';
   if (trip.invoice && trip.invoice.status !== 'paid') return 'Coordinate payment or invoice approval with finance.';
   if (trip.booking) return 'Review booking details and wait for the final travel pack.';
@@ -354,6 +359,8 @@ export function CorporateRequestDetailPage({
   const nextClientAction = clientNextAction(trip);
   const unifiedTimeline = buildUnifiedTimeline(trip);
   const pendingApprovals = trip.approvals.filter((approval) => approval.status === 'Pending');
+  const actionableApprovals = pendingApprovals.filter((approval) => approval.canApprove !== false);
+  const lockedApprovals = pendingApprovals.filter((approval) => approval.canApprove === false);
   const tabItems: Array<{ id: WorkbenchTab; label: string; count: number; Icon: typeof FileText }> = [
     { id: 'documents', label: 'Documents', count: documents.length, Icon: FileText },
     { id: 'messages', label: 'Messages', count: messages.length, Icon: MessageSquare },
@@ -549,7 +556,7 @@ export function CorporateRequestDetailPage({
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              {pendingApprovals.length > 0 ? pendingApprovals.map((approval) => (
+              {actionableApprovals.length > 0 ? actionableApprovals.map((approval) => (
                 <div key={`${approval.stage}-${approval.approver}-action`} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -579,12 +586,27 @@ export function CorporateRequestDetailPage({
                     </button>
                   </div>
                 </div>
-              )) : (
+              )) : lockedApprovals.length === 0 ? (
                 <div className={`rounded-lg border px-3 py-3 text-sm lg:col-span-2 ${styles.panelSoft}`}>
                   <div className="font-semibold">No pending approvals</div>
                   <div className={`mt-1 ${styles.muted}`}>Approval actions will appear here when travel need or final cost review is required.</div>
                 </div>
-              )}
+              ) : null}
+              {lockedApprovals.map((approval) => (
+                <div key={`${approval.stage}-${approval.approver}-locked`} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">{approval.stage} approval</div>
+                      <div className={`mt-1 text-xs ${styles.muted}`}>Responsible: {approval.approver}</div>
+                    </div>
+                    <span className={theme === 'dark' ? 'rounded-full bg-white/8 px-2.5 py-1 text-[11px] text-slate-300' : 'rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600'}>Locked</span>
+                  </div>
+                  <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${styles.surface}`}>
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                    <span className={styles.muted}>{approval.blocker || 'Complete the previous workflow gate before this approval opens.'}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -607,7 +629,11 @@ export function CorporateRequestDetailPage({
                     <div className="font-medium">{approval.stage}</div>
                     <span
                       className={`rounded-full px-2.5 py-1 text-[11px] ${
-                        approval.status === 'Approved'
+                        approval.status === 'Pending' && approval.canApprove === false
+                          ? theme === 'dark'
+                            ? 'bg-white/8 text-slate-300'
+                            : 'bg-slate-100 text-slate-600'
+                          : approval.status === 'Approved'
                           ? 'bg-emerald-500/12 text-emerald-200'
                           : approval.status === 'Rejected'
                             ? 'bg-rose-500/12 text-rose-200'
@@ -616,10 +642,13 @@ export function CorporateRequestDetailPage({
                               : 'bg-sky-50 text-sky-800'
                       }`}
                     >
-                      {approval.status}
+                      {approval.status === 'Pending' && approval.canApprove === false ? 'Locked' : approval.status}
                     </span>
                   </div>
                   <div className={`mt-1 text-xs ${styles.muted}`}>{approval.approver}</div>
+                  {approval.status === 'Pending' && approval.canApprove === false ? (
+                    <div className={`mt-2 text-xs ${styles.muted}`}>{approval.blocker || 'Waiting for the previous workflow gate.'}</div>
+                  ) : null}
                 </div>
               ))}
             </div>

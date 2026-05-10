@@ -87,6 +87,8 @@ export type CorporateApprovalState = {
   stage: 'Travel need' | 'Final cost';
   approver: string;
   status: 'Pending' | 'Approved' | 'Rejected';
+  canApprove?: boolean;
+  blocker?: string;
 };
 
 export type CorporateApprovalStage = CorporateApprovalState['stage'];

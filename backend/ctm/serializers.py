@@ -240,6 +240,42 @@ def parse_approval_stage(stage: str) -> str:
     return TripApproval.ApprovalType.TRAVEL_NEED if stage == "Travel need" else TripApproval.ApprovalType.FINAL_COST
 
 
+def final_cost_approval_gate(trip: TripRequest) -> dict:
+    travel_need_approval = trip.approvals.filter(approval_type=TripApproval.ApprovalType.TRAVEL_NEED).first()
+    if travel_need_approval is None or travel_need_approval.status != TripApproval.Status.APPROVED:
+        return {
+            "ready": False,
+            "detail": "Travel need approval must be completed before final cost approval.",
+        }
+    quote = getattr(trip, "quote", None)
+    if not quote:
+        return {
+            "ready": False,
+            "detail": "DPM must send a quote before final cost approval is available.",
+        }
+    if quote.status not in {TripQuote.Status.SENT, TripQuote.Status.APPROVED}:
+        return {
+            "ready": False,
+            "detail": "DPM quote must be sent before final cost approval.",
+        }
+    if quote.amount is None or quote.amount <= 0:
+        return {
+            "ready": False,
+            "detail": "DPM quote must include a real quoted amount.",
+        }
+    if not quote.currency:
+        return {
+            "ready": False,
+            "detail": "DPM quote must include a currency.",
+        }
+    if quote.valid_until and quote.valid_until < timezone.localdate():
+        return {
+            "ready": False,
+            "detail": "DPM quote has expired and must be updated before final approval.",
+        }
+    return {"ready": True, "detail": "Quote is ready for final cost approval."}
+
+
 def parse_budget_estimate(value: str) -> int:
     return {
         "lt1k": 800,
@@ -630,6 +666,8 @@ class CorporateApprovalSerializer(serializers.Serializer):
     stage = serializers.SerializerMethodField()
     approver = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
+    canApprove = serializers.SerializerMethodField()
+    blocker = serializers.SerializerMethodField()
 
     def get_stage(self, obj: TripApproval) -> str:
         return "Travel need" if obj.approval_type == TripApproval.ApprovalType.TRAVEL_NEED else "Final cost"
@@ -644,6 +682,20 @@ class CorporateApprovalSerializer(serializers.Serializer):
 
     def get_status(self, obj: TripApproval) -> str:
         return obj.status.title()
+
+    def _gate(self, obj: TripApproval) -> dict:
+        if obj.status != TripApproval.Status.PENDING:
+            return {"ready": False, "detail": ""}
+        if obj.approval_type == TripApproval.ApprovalType.FINAL_COST:
+            return final_cost_approval_gate(obj.trip_request)
+        return {"ready": True, "detail": "Approval is available."}
+
+    def get_canApprove(self, obj: TripApproval) -> bool:
+        return bool(self._gate(obj)["ready"])
+
+    def get_blocker(self, obj: TripApproval) -> str:
+        gate = self._gate(obj)
+        return "" if gate["ready"] else gate["detail"]
 
 
 class CorporateTimelineEventSerializer(serializers.Serializer):
@@ -1286,7 +1338,7 @@ class CorporateBillingSummarySerializer(serializers.Serializer):
 def sync_trip_from_quote(trip: TripRequest, quote: TripQuote):
     trip.quoted_cost = quote.amount
     trip.currency = quote.currency or trip.currency
-    if quote.status in {TripQuote.Status.DRAFT, TripQuote.Status.SENT, TripQuote.Status.APPROVED}:
+    if quote.status in {TripQuote.Status.SENT, TripQuote.Status.APPROVED}:
         trip.status = TripRequest.Status.QUOTE_READY
         trip.approval_stage = TripRequest.ApprovalStage.FINAL_COST
     trip.save(update_fields=["quoted_cost", "currency", "status", "approval_stage", "updated_at"])

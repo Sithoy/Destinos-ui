@@ -977,6 +977,28 @@ function hasCtmDocumentBlocker(trip: CorporateTripRequest) {
     || (trip.documents ?? []).some((document) => document.status === 'missing' || document.status === 'requested');
 }
 
+function finalCostGateSummary(trip: CorporateTripRequest): { label: string; detail: string; tone: CorporateDeskSignalTone; ready: boolean } {
+  const travelNeed = trip.approvals.find((approval) => approval.stage === 'Travel need');
+  const finalCost = trip.approvals.find((approval) => approval.stage === 'Final cost');
+
+  if (finalCost?.status === 'Approved') {
+    return { label: 'Final approval complete', detail: 'Company has approved the commercial release.', tone: 'success', ready: true };
+  }
+  if (travelNeed?.status !== 'Approved') {
+    return { label: 'Approval locked', detail: 'Travel need approval must clear before quote approval opens.', tone: 'warning', ready: false };
+  }
+  if (finalCost?.blocker) {
+    return { label: 'Approval locked', detail: finalCost.blocker, tone: 'warning', ready: false };
+  }
+  if (!trip.quote) {
+    return { label: 'Quote missing', detail: 'Create and send a CTM quote to unlock final cost approval.', tone: 'warning', ready: false };
+  }
+  if (!['sent', 'approved'].includes(trip.quote.status)) {
+    return { label: 'Draft only', detail: 'Save is internal. Mark the quote as sent when it is ready for CTM approval.', tone: 'warning', ready: false };
+  }
+  return { label: 'Approval open', detail: 'The company can now approve or reject the final cost in CTM.', tone: 'info', ready: true };
+}
+
 function ctmSignalToneClass(tone: CorporateDeskSignalTone) {
   if (tone === 'success') return 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200';
   if (tone === 'danger') return 'border-rose-400/25 bg-rose-500/10 text-rose-100';
@@ -2580,6 +2602,7 @@ export function CrmPage() {
   const selectedCtmTrip = ctmTripRequests.find((trip) => trip.id === selectedCtmReference) ?? ctmTripRequests[0] ?? null;
   const selectedCtmSignals = selectedCtmTrip ? buildCorporateDeskSignals(selectedCtmTrip) : [];
   const selectedCtmNextAction = selectedCtmTrip ? getCorporateDeskNextAction(selectedCtmTrip) : 'Link a CTM request before processing corporate workflow actions.';
+  const selectedCtmFinalCostGate = selectedCtmTrip ? finalCostGateSummary(selectedCtmTrip) : null;
   const selectedCtmOutputSignature = selectedCtmTrip
     ? [
         selectedCtmTrip.id,
@@ -3508,7 +3531,7 @@ export function CrmPage() {
     setCorporateOutputDraft((current) => ({ ...current, [field]: value }));
   }
 
-  async function saveCorporateQuoteOutput() {
+  async function saveCorporateQuoteOutput(statusOverride?: CorporateQuoteStatus) {
     if (!selectedCtmTrip) return;
     if (!corporateOutputDraft.quoteAmount.trim()) {
       setCrmError('Quote amount is required before sharing CTM commercial output.');
@@ -3522,7 +3545,7 @@ export function CrmPage() {
         currency: corporateOutputDraft.quoteCurrency || 'USD',
         validUntil: corporateOutputDraft.quoteValidUntil || null,
         notes: corporateOutputDraft.quoteNotes,
-        status: corporateOutputDraft.quoteStatus,
+        status: statusOverride ?? corporateOutputDraft.quoteStatus,
       };
       if (selectedCtmTrip.quote) {
         await updateCtmTripQuote(selectedCtmTrip.id, payload, crmSession);
@@ -5663,6 +5686,16 @@ export function CrmPage() {
                             </div>
                           </div>
                           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            {selectedCtmFinalCostGate ? (
+                              <div className={`rounded-lg border px-3 py-3 ${ctmSignalToneClass(selectedCtmFinalCostGate.tone)}`}>
+                                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] opacity-75">
+                                  {selectedCtmFinalCostGate.ready ? <CheckSquare className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                                  Final cost gate
+                                </div>
+                                <div className="mt-1 truncate text-sm font-semibold">{selectedCtmFinalCostGate.label}</div>
+                                <div className="mt-1 line-clamp-2 text-xs opacity-75">{selectedCtmFinalCostGate.detail}</div>
+                              </div>
+                            ) : null}
                             {selectedCtmSignals.map((signal) => (
                               <div key={signal.label} className={`rounded-lg border px-3 py-3 ${ctmSignalToneClass(signal.tone)}`}>
                                 <div className="text-[10px] uppercase tracking-[0.14em] opacity-75">{signal.label}</div>
@@ -7822,6 +7855,15 @@ export function CrmPage() {
                               <div className="text-sm font-semibold">Quote</div>
                               <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.quote ? corporateQuoteStatusLabels[selectedCtmTrip.quote.status] : 'Not created'}</span>
                             </div>
+                            {selectedCtmFinalCostGate ? (
+                              <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${ctmSignalToneClass(selectedCtmFinalCostGate.tone)}`}>
+                                <div className="flex items-center gap-2 font-semibold">
+                                  {selectedCtmFinalCostGate.ready ? <CheckSquare className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                                  {selectedCtmFinalCostGate.label}
+                                </div>
+                                <div className="mt-1 opacity-75">{selectedCtmFinalCostGate.detail}</div>
+                              </div>
+                            ) : null}
                             <div className="mt-3 grid grid-cols-[1fr_74px] gap-2">
                               <input value={corporateOutputDraft.quoteAmount} onChange={(event) => updateCorporateOutputDraft('quoteAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Amount" />
                               <input value={corporateOutputDraft.quoteCurrency} onChange={(event) => updateCorporateOutputDraft('quoteCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="USD" />
@@ -7833,8 +7875,16 @@ export function CrmPage() {
                               </select>
                             </div>
                             <textarea value={corporateOutputDraft.quoteNotes} onChange={(event) => updateCorporateOutputDraft('quoteNotes', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder="Quote note visible to CTM when shared" />
-                            <button type="button" disabled={isSavingCorporateOutput} onClick={saveCorporateQuoteOutput} className="mt-3 h-9 w-full rounded-lg bg-sky-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
-                              {selectedCtmTrip.quote ? 'Update quote' : 'Create quote'}
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <button type="button" disabled={isSavingCorporateOutput} onClick={() => saveCorporateQuoteOutput('draft')} className={`h-9 rounded-lg border px-3 text-xs font-medium ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-50`}>
+                                Save draft
+                              </button>
+                              <button type="button" disabled={isSavingCorporateOutput} onClick={() => saveCorporateQuoteOutput('sent')} className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                                Send to CTM
+                              </button>
+                            </div>
+                            <button type="button" disabled={isSavingCorporateOutput} onClick={() => saveCorporateQuoteOutput()} className={`mt-2 h-9 w-full rounded-lg border px-3 text-xs font-medium ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-50`}>
+                              Save selected status
                             </button>
                           </div>
 

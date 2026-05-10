@@ -48,6 +48,7 @@ from .serializers import (
     can_view_company_users,
     get_ctm_membership_for_request,
     get_request_company_code,
+    final_cost_approval_gate,
     parse_approval_stage,
 )
 from .models import CompanyAccount, CompanyUser, Traveler, TripApproval, TripBooking, TripDocument, TripInvoice, TripMessage, TripPayment, TripQuote, TripRequest, TripService, TripTask, TripTimelineEvent, TripTraveler
@@ -699,6 +700,10 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         approval = trip.approvals.filter(approval_type=approval_type, status=TripApproval.Status.PENDING).first()
         if approval is None:
             return Response({"detail": "No pending approval was found for this stage."}, status=status.HTTP_400_BAD_REQUEST)
+        if approval_type == TripApproval.ApprovalType.FINAL_COST:
+            gate = final_cost_approval_gate(trip)
+            if not gate["ready"]:
+                return Response({"detail": gate["detail"]}, status=status.HTTP_400_BAD_REQUEST)
 
         approval.status = TripApproval.Status.APPROVED
         approval.save(update_fields=["status", "updated_at"])

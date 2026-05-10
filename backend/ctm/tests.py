@@ -11,7 +11,7 @@ from rest_framework.test import APITestCase
 from crm.models import Lead
 
 from .crm_handoff import sync_crm_lead_from_ctm_trip
-from .models import CompanyAccount, CompanyUser, TripQuote, TripRequest
+from .models import CompanyAccount, CompanyUser, TripApproval, TripQuote, TripRequest
 
 
 class BootstrapDockerDevTests(APITestCase):
@@ -129,6 +129,102 @@ class CtmOpsScopeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["tripRequestId"], self.trip_b.reference_code)
         self.assertTrue(TripQuote.objects.filter(trip_request=self.trip_b, prepared_by=self.ops_user).exists())
+
+    def test_final_cost_approval_is_locked_until_travel_need_and_sent_quote_are_ready(self):
+        self.company_user_b.role = CompanyUser.Role.FINANCE_APPROVER
+        self.company_user_b.access_roles = [CompanyUser.Role.FINANCE_APPROVER]
+        self.company_user_b.save()
+        TripApproval.objects.create(
+            trip_request=self.trip_b,
+            approval_type=TripApproval.ApprovalType.TRAVEL_NEED,
+            status=TripApproval.Status.PENDING,
+        )
+        TripApproval.objects.create(
+            trip_request=self.trip_b,
+            approval_type=TripApproval.ApprovalType.FINAL_COST,
+            status=TripApproval.Status.PENDING,
+        )
+        self.authenticate_company_user(self.company_user_b)
+
+        detail_response = self.client.get(reverse("ctm-trip-request-detail", args=[self.trip_b.reference_code]))
+        final_cost = next(item for item in detail_response.data["approvals"] if item["stage"] == "Final cost")
+        self.assertFalse(final_cost["canApprove"])
+        self.assertEqual(final_cost["blocker"], "Travel need approval must be completed before final cost approval.")
+
+        approve_response = self.client.post(
+            reverse("ctm-trip-request-approve", args=[self.trip_b.reference_code]),
+            {"stage": "Final cost"},
+            format="json",
+        )
+
+        self.assertEqual(approve_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(approve_response.data["detail"], "Travel need approval must be completed before final cost approval.")
+
+    def test_final_cost_approval_requires_sent_quote(self):
+        self.company_user_b.role = CompanyUser.Role.FINANCE_APPROVER
+        self.company_user_b.access_roles = [CompanyUser.Role.FINANCE_APPROVER]
+        self.company_user_b.save()
+        TripApproval.objects.create(
+            trip_request=self.trip_b,
+            approval_type=TripApproval.ApprovalType.TRAVEL_NEED,
+            status=TripApproval.Status.APPROVED,
+        )
+        TripApproval.objects.create(
+            trip_request=self.trip_b,
+            approval_type=TripApproval.ApprovalType.FINAL_COST,
+            status=TripApproval.Status.PENDING,
+        )
+        TripQuote.objects.create(
+            trip_request=self.trip_b,
+            prepared_by=self.ops_user,
+            amount="2400.00",
+            currency="USD",
+            status=TripQuote.Status.DRAFT,
+        )
+        self.authenticate_company_user(self.company_user_b)
+
+        approve_response = self.client.post(
+            reverse("ctm-trip-request-approve", args=[self.trip_b.reference_code]),
+            {"stage": "Final cost"},
+            format="json",
+        )
+
+        self.assertEqual(approve_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(approve_response.data["detail"], "DPM quote must be sent before final cost approval.")
+
+    def test_final_cost_approval_succeeds_after_travel_need_and_sent_quote(self):
+        self.company_user_b.role = CompanyUser.Role.FINANCE_APPROVER
+        self.company_user_b.access_roles = [CompanyUser.Role.FINANCE_APPROVER]
+        self.company_user_b.save()
+        TripApproval.objects.create(
+            trip_request=self.trip_b,
+            approval_type=TripApproval.ApprovalType.TRAVEL_NEED,
+            status=TripApproval.Status.APPROVED,
+        )
+        TripApproval.objects.create(
+            trip_request=self.trip_b,
+            approval_type=TripApproval.ApprovalType.FINAL_COST,
+            status=TripApproval.Status.PENDING,
+        )
+        TripQuote.objects.create(
+            trip_request=self.trip_b,
+            prepared_by=self.ops_user,
+            amount="2400.00",
+            currency="USD",
+            status=TripQuote.Status.SENT,
+            valid_until=date(2026, 9, 10),
+        )
+        self.authenticate_company_user(self.company_user_b)
+
+        approve_response = self.client.post(
+            reverse("ctm-trip-request-approve", args=[self.trip_b.reference_code]),
+            {"stage": "Final cost"},
+            format="json",
+        )
+
+        self.assertEqual(approve_response.status_code, status.HTTP_200_OK)
+        final_cost = next(item for item in approve_response.data["approvals"] if item["stage"] == "Final cost")
+        self.assertEqual(final_cost["status"], "Approved")
 
     def test_ctm_request_creation_creates_crm_corporate_lead(self):
         self.company_user_a.user.email = "coordinator@acme.example"
