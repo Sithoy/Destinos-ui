@@ -2635,6 +2635,7 @@ export function CrmPage() {
   }, [activeNav, selectedLead]);
   const selectedTasks = selectedLead ? leadTasks(selectedLead) : [];
   const selectedBriefing = selectedLead ? briefingReadiness(selectedLead) : null;
+  const selectedCorporateBriefReady = selectedLead?.serviceKey === 'corporate' ? Boolean(selectedBriefing?.canApprove) : true;
   const selectedHistory = selectedLead ? workflowHistory(selectedLead) : [];
   const selectedStatusCards = selectedLead ? leftRailStatusCards(selectedLead) : [];
   const selectedItinerarySummary = selectedLead ? itinerarySummaryCards(selectedLead, selectedItinerary) : [];
@@ -3274,8 +3275,9 @@ export function CrmPage() {
   }
 
   async function saveBriefingValidationSummary(lead: CrmLead, summary: string) {
+    const marker = lead.serviceKey === 'corporate' ? '[Corporate validation brief]' : '[Client validation brief]';
     await refreshLead(lead.id, {
-      internalNotes: [lead.internalNotes?.trim(), `[Client validation brief]\n${summary}`].filter(Boolean).join('\n\n'),
+      internalNotes: [lead.internalNotes?.trim(), `${marker}\n${summary}`].filter(Boolean).join('\n\n'),
     });
   }
 
@@ -3289,7 +3291,7 @@ export function CrmPage() {
         ? missingItems.length > 0
           ? `Missing ${missingItems.join(', ')}`
           : 'Clarification needed before design work'
-        : `${briefingReadiness(lead).readyCount}/6 brief fields ready`;
+        : `${briefingReadiness(lead).readyCount}/${briefingReadiness(lead).total} brief fields ready`;
     const patch: Partial<Pick<CrmLead, 'status' | 'lifecycleStage' | 'priority' | 'internalNotes'>> =
       decision === 'approved'
         ? { status: 'planning', lifecycleStage: 'validated' }
@@ -7855,6 +7857,18 @@ export function CrmPage() {
                               <div className="text-sm font-semibold">Quote</div>
                               <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.quote ? corporateQuoteStatusLabels[selectedCtmTrip.quote.status] : 'Not created'}</span>
                             </div>
+                            {!selectedCorporateBriefReady ? (
+                              <div className="mt-3 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                                <div className="flex items-center gap-2 font-semibold">
+                                  <Lock className="h-3.5 w-3.5" />
+                                  Corporate brief required
+                                </div>
+                                <div className="mt-1 opacity-80">Complete and save the corporate brief before preparing or sending the CTM quote.</div>
+                                <button type="button" onClick={() => setDetailTab('brief')} className="mt-2 rounded-md bg-amber-400/15 px-2 py-1 text-[11px] font-semibold text-amber-50">
+                                  Open brief
+                                </button>
+                              </div>
+                            ) : null}
                             {selectedCtmFinalCostGate ? (
                               <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${ctmSignalToneClass(selectedCtmFinalCostGate.tone)}`}>
                                 <div className="flex items-center gap-2 font-semibold">
@@ -7865,25 +7879,25 @@ export function CrmPage() {
                               </div>
                             ) : null}
                             <div className="mt-3 grid grid-cols-[1fr_74px] gap-2">
-                              <input value={corporateOutputDraft.quoteAmount} onChange={(event) => updateCorporateOutputDraft('quoteAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Amount" />
-                              <input value={corporateOutputDraft.quoteCurrency} onChange={(event) => updateCorporateOutputDraft('quoteCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="USD" />
+                              <input value={corporateOutputDraft.quoteAmount} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.input}`} placeholder="Amount" />
+                              <input value={corporateOutputDraft.quoteCurrency} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.input}`} placeholder="USD" />
                             </div>
                             <div className="mt-2 grid grid-cols-[1fr_1fr] gap-2">
-                              <input type="date" value={corporateOutputDraft.quoteValidUntil} onChange={(event) => updateCorporateOutputDraft('quoteValidUntil', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
-                              <select value={corporateOutputDraft.quoteStatus} onChange={(event) => updateCorporateOutputDraft('quoteStatus', event.target.value as CorporateQuoteStatus)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
+                              <input type="date" value={corporateOutputDraft.quoteValidUntil} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteValidUntil', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.input}`} />
+                              <select value={corporateOutputDraft.quoteStatus} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteStatus', event.target.value as CorporateQuoteStatus)} className={`h-9 rounded-lg border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.select}`}>
                                 {corporateQuoteStatuses.map((status) => <option key={status} value={status}>{corporateQuoteStatusLabels[status]}</option>)}
                               </select>
                             </div>
-                            <textarea value={corporateOutputDraft.quoteNotes} onChange={(event) => updateCorporateOutputDraft('quoteNotes', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder="Quote note visible to CTM when shared" />
+                            <textarea value={corporateOutputDraft.quoteNotes} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteNotes', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.input}`} placeholder="Quote note visible to CTM when shared" />
                             <div className="mt-3 grid grid-cols-2 gap-2">
-                              <button type="button" disabled={isSavingCorporateOutput} onClick={() => saveCorporateQuoteOutput('draft')} className={`h-9 rounded-lg border px-3 text-xs font-medium ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-50`}>
+                              <button type="button" disabled={isSavingCorporateOutput || !selectedCorporateBriefReady} onClick={() => saveCorporateQuoteOutput('draft')} className={`h-9 rounded-lg border px-3 text-xs font-medium ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-50`}>
                                 Save draft
                               </button>
-                              <button type="button" disabled={isSavingCorporateOutput} onClick={() => saveCorporateQuoteOutput('sent')} className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                              <button type="button" disabled={isSavingCorporateOutput || !selectedCorporateBriefReady} onClick={() => saveCorporateQuoteOutput('sent')} className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
                                 Send to CTM
                               </button>
                             </div>
-                            <button type="button" disabled={isSavingCorporateOutput} onClick={() => saveCorporateQuoteOutput()} className={`mt-2 h-9 w-full rounded-lg border px-3 text-xs font-medium ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-50`}>
+                            <button type="button" disabled={isSavingCorporateOutput || !selectedCorporateBriefReady} onClick={() => saveCorporateQuoteOutput()} className={`mt-2 h-9 w-full rounded-lg border px-3 text-xs font-medium ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-50`}>
                               Save selected status
                             </button>
                           </div>

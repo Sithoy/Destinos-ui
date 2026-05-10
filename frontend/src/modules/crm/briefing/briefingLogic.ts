@@ -45,6 +45,51 @@ export function hasBriefingValue(value?: string | null) {
 }
 
 export function briefingChecklistItems(lead: CrmLead) {
+  if (lead.serviceKey === 'corporate') {
+    return [
+      {
+        label: 'Company contact',
+        ready: hasBriefingValue(lead.email) || hasBriefingValue(lead.whatsapp) || hasBriefingValue(lead.contact),
+        detail: lead.email || lead.whatsapp || lead.contact || 'Missing company coordinator contact.',
+      },
+      {
+        label: 'Business purpose',
+        ready: hasBriefingValue(lead.tripType) || hasBriefingValue(lead.notes),
+        detail: lead.tripType || lead.notes || 'Capture why the company movement is needed.',
+      },
+      {
+        label: 'Route / cities',
+        ready: hasBriefingValue(lead.destination) || hasBriefingValue(lead.departureCity),
+        detail: [lead.departureCity, lead.destination].filter(Boolean).join(' to ') || 'Capture origin, destination, and any intermediate cities.',
+      },
+      {
+        label: 'Travel window',
+        ready: hasBriefingValue(lead.dates),
+        detail: lead.dates || 'Confirm fixed or flexible corporate travel dates.',
+      },
+      {
+        label: 'Traveler scope',
+        ready: hasBriefingValue(lead.travelers),
+        detail: lead.travelers || 'Confirm traveler count, names, departments, and readiness.',
+      },
+      {
+        label: 'Service scope',
+        ready: hasBriefingValue(lead.requestedServices) || hasBriefingValue(lead.notes),
+        detail: lead.requestedServices || lead.notes || 'Capture flights, hotels, transfers, visa, billing, and support needs.',
+      },
+      {
+        label: 'Budget / policy',
+        ready: hasBriefingValue(lead.budget),
+        detail: lead.budget || 'Capture policy limits, budget band, PO, cost center, or invoice posture.',
+      },
+      {
+        label: 'Corporate brief saved',
+        ready: (lead.internalNotes || '').includes('[Corporate validation brief]'),
+        detail: (lead.internalNotes || '').includes('[Corporate validation brief]') ? 'Structured corporate brief saved.' : 'Save the corporate brief before quotation starts.',
+      },
+    ];
+  }
+
   return [
     {
       label: 'Contact channel',
@@ -52,7 +97,7 @@ export function briefingChecklistItems(lead: CrmLead) {
       detail: lead.email || lead.whatsapp || lead.contact || 'Missing email or phone.',
     },
     {
-      label: lead.serviceKey === 'corporate' ? 'Company travel need' : 'Destination / route idea',
+      label: 'Destination / route idea',
       ready: hasBriefingValue(lead.destination) || hasBriefingValue(lead.notes),
       detail: lead.destination || 'Capture the route, destination, or travel intent.',
     },
@@ -86,7 +131,7 @@ export function briefingReadiness(lead: CrmLead): BriefingReadiness {
     items,
     readyCount,
     total: items.length,
-    canApprove: readyCount >= 5,
+    canApprove: lead.serviceKey === 'corporate' ? readyCount >= 8 : readyCount >= 5,
   };
 }
 
@@ -106,25 +151,55 @@ export function appendBriefingDecisionNote(lead: CrmLead, decision: BriefingDeci
 }
 
 export function emptyBriefingTemplateDraft(lead?: CrmLead | null): BriefingTemplateDraft {
+  const isCorporate = lead?.serviceKey === 'corporate';
   return {
     purpose: lead?.tripType || '',
     successDefinition: '',
-    travelStyle: lead?.serviceKey === 'luxury' ? 'Luxury / premium comfort' : lead?.serviceKey === 'corporate' ? 'Efficient business travel' : '',
+    travelStyle: lead?.serviceKey === 'luxury' ? 'Luxury / premium comfort' : isCorporate ? 'Efficient business travel' : '',
     pace: '',
-    accommodationLevel: lead?.serviceKey === 'luxury' ? 'Premium / luxury' : '',
+    accommodationLevel: lead?.serviceKey === 'luxury' ? 'Premium / luxury' : isCorporate ? 'Business hotel / policy compliant' : '',
     roomPreferences: '',
     routePreferences: lead?.destination || '',
     dateFlexibility: lead?.dates || '',
     travelerProfile: lead?.travelers || '',
     specialRequirements: '',
     budgetFlexibility: lead?.budget || '',
-    decisionPriority: '',
+    decisionPriority: isCorporate ? 'Policy fit, timing, total cost, traveler convenience' : '',
     servicesNeeded: lead?.requestedServices || '',
-    validationQuestions: 'Please confirm if this brief is correct, or tell us what should change before DPM starts trip design.',
+    validationQuestions: isCorporate
+      ? 'Please confirm traveler names, travel dates, route, budget/policy limits, approval owner, and billing requirements before DPM prepares the quote.'
+      : 'Please confirm if this brief is correct, or tell us what should change before DPM starts trip design.',
   };
 }
 
 export function briefingValidationSummary(lead: CrmLead, draft: BriefingTemplateDraft) {
+  if (lead.serviceKey === 'corporate') {
+    return [
+      `Corporate travel brief - ${lead.name}`,
+      '',
+      'Movement context',
+      `Business purpose: ${draft.purpose || lead.tripType || lead.notes || 'To confirm'}`,
+      `Success criteria: ${draft.successDefinition || 'To confirm'}`,
+      `Route / cities: ${draft.routePreferences || lead.destination || 'To confirm'}`,
+      `Travel dates: ${lead.dates || 'To confirm'} (${draft.dateFlexibility || 'Flexibility to confirm'})`,
+      `Traveler scope: ${draft.travelerProfile || lead.travelers || 'To confirm'}`,
+      '',
+      'Service requirements',
+      `Flights / movement: ${draft.travelStyle || 'To confirm'}`,
+      `Accommodation: ${draft.accommodationLevel || 'To confirm'}`,
+      `Room requirements: ${draft.roomPreferences || 'To confirm'}`,
+      `Ground transport / visa / assistance: ${draft.servicesNeeded || lead.requestedServices || 'To confirm'}`,
+      `Special requirements or risks: ${draft.specialRequirements || 'None captured yet'}`,
+      '',
+      'Commercial and approval controls',
+      `Budget / policy / PO: ${lead.budget || 'To confirm'}${draft.budgetFlexibility ? ` - ${draft.budgetFlexibility}` : ''}`,
+      `Decision priority: ${draft.decisionPriority || 'To confirm'}`,
+      '',
+      'Company validation needed',
+      draft.validationQuestions || 'Please confirm the corporate brief before DPM prepares the quote.',
+    ].join('\n');
+  }
+
   return [
     `Client validation brief - ${lead.name}`,
     '',

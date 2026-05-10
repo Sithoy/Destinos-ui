@@ -62,6 +62,7 @@ export function BriefingGate({
   }
 
   const isClosed = lead.status === 'lost' || lead.lifecycleStage === 'closed';
+  const isCorporate = lead.serviceKey === 'corporate';
   const templateCoreFields = [
     briefingTemplate.purpose,
     briefingTemplate.successDefinition,
@@ -82,9 +83,13 @@ export function BriefingGate({
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="font-semibold">Briefing gate</div>
-            <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>Confirm the request is clear enough before it becomes design work.</p>
+            <div>
+              <div className="font-semibold">{isCorporate ? 'Corporate briefing gate' : 'Briefing gate'}</div>
+              <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>
+                {isCorporate
+                  ? 'Confirm the movement, traveler, policy, approval, and billing details before quotation.'
+                  : 'Confirm the request is clear enough before it becomes design work.'}
+              </p>
           </div>
           <span className={`rounded-full px-2.5 py-1 text-xs ${readiness.canApprove ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
             {readiness.readyCount}/{readiness.total} ready
@@ -110,8 +115,12 @@ export function BriefingGate({
         <div className={`mt-4 rounded-xl border p-4 ${styles.panel}`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="font-semibold">Pre-trip design template</div>
-              <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>Capture the details DPM should validate with the client before itinerary design starts.</p>
+              <div className="font-semibold">{isCorporate ? 'Corporate travel brief template' : 'Pre-trip design template'}</div>
+              <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>
+                {isCorporate
+                  ? 'Capture the details DPM should validate with the company before commercial quotation starts.'
+                  : 'Capture the details DPM should validate with the client before itinerary design starts.'}
+              </p>
             </div>
             <span className={`rounded-full px-2.5 py-1 text-xs ${templateCanApprove ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
               {templateReadyCount}/10 template
@@ -120,69 +129,69 @@ export function BriefingGate({
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <label className="text-sm font-medium">
-              Trip purpose
+              {isCorporate ? 'Business purpose / meeting objective' : 'Trip purpose'}
               <input value={briefingTemplate.purpose} onChange={(event) => updateBriefingTemplateField('purpose', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
             </label>
             <label className="text-sm font-medium">
-              Travel style
-              <input value={briefingTemplate.travelStyle} onChange={(event) => updateBriefingTemplateField('travelStyle', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Relaxed, luxury, adventure, family..." />
+              {isCorporate ? 'Flight / movement preference' : 'Travel style'}
+              <input value={briefingTemplate.travelStyle} onChange={(event) => updateBriefingTemplateField('travelStyle', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={isCorporate ? 'Direct flights, flexible fares, baggage, airport preference...' : 'Relaxed, luxury, adventure, family...'} />
             </label>
             <label className="text-sm font-medium">
-              Preferred pace
+              {isCorporate ? 'Schedule pressure' : 'Preferred pace'}
               <select value={briefingTemplate.pace} onChange={(event) => updateBriefingTemplateField('pace', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}>
-                <option value="">Select pace</option>
-                <option value="Slow and relaxed">Slow and relaxed</option>
-                <option value="Balanced">Balanced</option>
-                <option value="Active / full schedule">Active / full schedule</option>
-                <option value="Flexible by city">Flexible by city</option>
+                <option value="">{isCorporate ? 'Select schedule pressure' : 'Select pace'}</option>
+                <option value={isCorporate ? 'Fixed meeting schedule' : 'Slow and relaxed'}>{isCorporate ? 'Fixed meeting schedule' : 'Slow and relaxed'}</option>
+                <option value={isCorporate ? 'Some flexibility' : 'Balanced'}>{isCorporate ? 'Some flexibility' : 'Balanced'}</option>
+                <option value={isCorporate ? 'Urgent / critical movement' : 'Active / full schedule'}>{isCorporate ? 'Urgent / critical movement' : 'Active / full schedule'}</option>
+                <option value={isCorporate ? 'Multiple city dependencies' : 'Flexible by city'}>{isCorporate ? 'Multiple city dependencies' : 'Flexible by city'}</option>
               </select>
             </label>
             <label className="text-sm font-medium">
-              Accommodation level
-              <input value={briefingTemplate.accommodationLevel} onChange={(event) => updateBriefingTemplateField('accommodationLevel', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="3-star, 4-star, luxury, villa..." />
+              {isCorporate ? 'Hotel / location requirement' : 'Accommodation level'}
+              <input value={briefingTemplate.accommodationLevel} onChange={(event) => updateBriefingTemplateField('accommodationLevel', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={isCorporate ? 'Near office, meeting venue, safe area, policy hotel...' : '3-star, 4-star, luxury, villa...'} />
             </label>
             <label className="text-sm font-medium">
-              Route preferences
-              <input value={briefingTemplate.routePreferences} onChange={(event) => updateBriefingTemplateField('routePreferences', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Cities, countries, must-visit places..." />
+              {isCorporate ? 'Cities / route / movement plan' : 'Route preferences'}
+              <input value={briefingTemplate.routePreferences} onChange={(event) => updateBriefingTemplateField('routePreferences', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={isCorporate ? 'Maputo, Johannesburg, Cape Town, return route...' : 'Cities, countries, must-visit places...'} />
             </label>
             <label className="text-sm font-medium">
               Date flexibility
-              <input value={briefingTemplate.dateFlexibility} onChange={(event) => updateBriefingTemplateField('dateFlexibility', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Fixed, flexible, best month..." />
+              <input value={briefingTemplate.dateFlexibility} onChange={(event) => updateBriefingTemplateField('dateFlexibility', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={isCorporate ? 'Fixed meeting dates, acceptable alternatives...' : 'Fixed, flexible, best month...'} />
             </label>
             <label className="text-sm font-medium">
-              Traveler profile
-              <input value={briefingTemplate.travelerProfile} onChange={(event) => updateBriefingTemplateField('travelerProfile', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Adults, children, ages, occasion..." />
+              {isCorporate ? 'Traveler list / departments' : 'Traveler profile'}
+              <input value={briefingTemplate.travelerProfile} onChange={(event) => updateBriefingTemplateField('travelerProfile', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={isCorporate ? 'Names, departments, seniority, passport readiness...' : 'Adults, children, ages, occasion...'} />
             </label>
             <label className="text-sm font-medium">
-              Decision priority
-              <input value={briefingTemplate.decisionPriority} onChange={(event) => updateBriefingTemplateField('decisionPriority', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Price, comfort, experience, convenience..." />
+              {isCorporate ? 'Approval owner / priority' : 'Decision priority'}
+              <input value={briefingTemplate.decisionPriority} onChange={(event) => updateBriefingTemplateField('decisionPriority', event.target.value)} className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={isCorporate ? 'Manager, finance approver, policy, timing, total cost...' : 'Price, comfort, experience, convenience...'} />
             </label>
           </div>
 
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <label className="text-sm font-medium">
-              Success definition
-              <textarea value={briefingTemplate.successDefinition} onChange={(event) => updateBriefingTemplateField('successDefinition', event.target.value)} className={`mt-2 min-h-24 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`} placeholder="What should make this trip feel successful for the client?" />
+              {isCorporate ? 'Success criteria' : 'Success definition'}
+              <textarea value={briefingTemplate.successDefinition} onChange={(event) => updateBriefingTemplateField('successDefinition', event.target.value)} className={`mt-2 min-h-24 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`} placeholder={isCorporate ? 'Meeting attendance, arrival timing, policy compliance, no traveler friction...' : 'What should make this trip feel successful for the client?'} />
             </label>
             <label className="text-sm font-medium">
-              Room and special requirements
+              {isCorporate ? 'Room, visa, document, and risk notes' : 'Room and special requirements'}
               <textarea value={`${briefingTemplate.roomPreferences}${briefingTemplate.specialRequirements ? `\n${briefingTemplate.specialRequirements}` : ''}`} onChange={(event) => {
                 const [roomPreferences, ...specialLines] = event.target.value.split('\n');
                 setBriefingTemplate((current) => ({ ...current, roomPreferences, specialRequirements: specialLines.join('\n') }));
-              }} className={`mt-2 min-h-24 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`} placeholder="Room type, bed setup, accessibility, diet, visa/passport notes..." />
+              }} className={`mt-2 min-h-24 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`} placeholder={isCorporate ? 'Room type, late check-in, passport/visa gaps, VIP handling, risk notes...' : 'Room type, bed setup, accessibility, diet, visa/passport notes...'} />
             </label>
             <label className="text-sm font-medium">
-              Budget flexibility
-              <textarea value={briefingTemplate.budgetFlexibility} onChange={(event) => updateBriefingTemplateField('budgetFlexibility', event.target.value)} className={`mt-2 min-h-20 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`} placeholder="Hard cap, flexible, comfort over price..." />
+              {isCorporate ? 'Budget / policy / PO notes' : 'Budget flexibility'}
+              <textarea value={briefingTemplate.budgetFlexibility} onChange={(event) => updateBriefingTemplateField('budgetFlexibility', event.target.value)} className={`mt-2 min-h-20 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`} placeholder={isCorporate ? 'Cost center, PO requirement, billing email, class of service, cap...' : 'Hard cap, flexible, comfort over price...'} />
             </label>
             <label className="text-sm font-medium">
-              Services needed
-              <textarea value={briefingTemplate.servicesNeeded} onChange={(event) => updateBriefingTemplateField('servicesNeeded', event.target.value)} className={`mt-2 min-h-20 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`} placeholder="Flights, hotels, transfers, experiences, visa, insurance..." />
+              {isCorporate ? 'DPM services needed' : 'Services needed'}
+              <textarea value={briefingTemplate.servicesNeeded} onChange={(event) => updateBriefingTemplateField('servicesNeeded', event.target.value)} className={`mt-2 min-h-20 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`} placeholder={isCorporate ? 'Flights, hotel, transfers, visa support, invoice, emergency assistance...' : 'Flights, hotels, transfers, experiences, visa, insurance...'} />
             </label>
           </div>
 
           <label className="mt-3 block text-sm font-medium">
-            Client validation questions
+          {isCorporate ? 'Company validation questions' : 'Client validation questions'}
             <textarea value={briefingTemplate.validationQuestions} onChange={(event) => updateBriefingTemplateField('validationQuestions', event.target.value)} className={`mt-2 min-h-20 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`} />
           </label>
 
@@ -193,7 +202,7 @@ export function BriefingGate({
             </button>
             <button type="button" onClick={saveBriefingValidationSummary} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#d4af37] px-3 text-sm font-semibold text-[#241f1b]">
               <CheckSquare className="h-4 w-4" />
-              Save validation brief
+              {isCorporate ? 'Save corporate brief' : 'Save validation brief'}
             </button>
           </div>
 
@@ -221,8 +230,8 @@ export function BriefingGate({
         <div className="font-semibold">Brief decision</div>
         <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
           {canApproveBriefing
-            ? 'This request can move into Trip Design.'
-            : 'Complete the core brief and request validation before assigning design work.'}
+            ? isCorporate ? 'This corporate request can move into quotation.' : 'This request can move into Trip Design.'
+            : isCorporate ? 'Complete and save the corporate brief before quotation starts.' : 'Complete the core brief and request validation before assigning design work.'}
         </p>
 
         <div className={`mt-4 rounded-lg border p-3 ${styles.panel}`}>
@@ -252,7 +261,7 @@ export function BriefingGate({
             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
           >
             <CheckSquare className="h-4 w-4" />
-            Approve for Trip Design
+            {isCorporate ? 'Approve for Quote Prep' : 'Approve for Trip Design'}
           </button>
           <button
             type="button"

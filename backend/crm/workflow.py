@@ -213,9 +213,13 @@ def _intake_checks(lead: Lead) -> list[dict]:
 def _brief_checks(lead: Lead) -> list[dict]:
     if lead.service_key == Lead.ServiceKey.CORPORATE:
         return [
+            _check("purpose", "Business purpose", bool(lead.trip_type or lead.notes), "Corporate request needs a business purpose or meeting objective."),
+            _check("route", "Route / cities", bool(lead.destination or lead.departure_city), "Corporate request needs origin, destination, or movement cities."),
             _check("travelers", "Traveler scope", bool(lead.travelers), "Corporate request needs traveler count or traveler scope."),
             _check("dates", "Travel dates", bool(lead.dates), "Corporate movement needs timing before options are built."),
             _check("services", "Service scope", bool(lead.requested_services), "Policy, invoice, visa, hotel, and movement needs should be visible."),
+            _check("budget_policy", "Budget / policy", bool(lead.budget), "Budget, cost center, PO, or policy posture should be captured."),
+            _check("corporate_brief", "Corporate brief saved", "[Corporate validation brief]" in (lead.internal_notes or ""), "Save the structured corporate brief before quotation."),
         ]
 
     return [
