@@ -103,6 +103,12 @@ def ctm_payment_queryset():
     return TripPayment.objects.select_related("invoice__trip_request__company", "invoice__trip_request", "recorded_by").order_by("-received_at", "-created_at")
 
 
+def get_active_company_membership(request) -> CompanyUser | None:
+    if not get_request_company_code(request):
+        return None
+    return get_ctm_membership_for_request(request)
+
+
 class HasCtmAccess(permissions.BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and can_access_ctm(request.user))
@@ -256,7 +262,10 @@ class CtmTripScopedView(APIView):
 
     def get_trip(self, request, reference_code: str) -> TripRequest:
         queryset = ctm_trip_queryset()
-        if not can_manage_trip_operations(request.user):
+        membership = get_active_company_membership(request)
+        if membership is not None:
+            queryset = queryset.filter(company=membership.company)
+        elif not can_manage_trip_operations(request.user):
             membership = get_ctm_membership_for_request(request)
             queryset = queryset.filter(company=membership.company) if membership else TripRequest.objects.none()
         return get_object_or_404(queryset, reference_code=reference_code)
@@ -644,7 +653,10 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         return CorporateTripRequestSerializer
 
     def get_queryset(self):
-        if can_manage_trip_operations(self.request.user):
+        membership = get_active_company_membership(self.request)
+        if membership is not None:
+            queryset = ctm_trip_queryset().filter(company=membership.company)
+        elif can_manage_trip_operations(self.request.user):
             queryset = ctm_trip_queryset()
         else:
             membership = get_ctm_membership_for_request(self.request)

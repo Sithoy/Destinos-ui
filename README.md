@@ -174,9 +174,30 @@ CRM:      http://localhost:5173/crm
 Useful commands:
 
 ```bash
+docker compose exec backend python manage.py bootstrap_docker_dev
 docker compose exec backend python manage.py createsuperuser
 docker compose exec backend python manage.py test crm ctm
 docker compose down
+```
+
+If `docker compose exec` hangs on Windows, use the running container name directly:
+
+```bash
+docker exec destinos-ui-backend-1 python manage.py bootstrap_docker_dev
+```
+
+The bootstrap command creates local Docker development access:
+
+```text
+DPM CRM admin: dpm.admin / admin12345
+Company ID:    DEMO
+CTM admin:     travel.admin / ctm12345
+```
+
+Override these defaults with command flags when needed:
+
+```bash
+docker compose exec backend python manage.py bootstrap_docker_dev --company-code ACME --company-name "Acme Travel" --ctm-username travel.admin
 ```
 
 ## Architecture Notes

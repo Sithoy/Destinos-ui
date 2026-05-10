@@ -1,6 +1,8 @@
 from datetime import date
+from io import StringIO
 
 from django.contrib.auth.models import User
+from django.core.management import call_command
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.authtoken.models import Token
@@ -10,6 +12,35 @@ from crm.models import Lead
 
 from .crm_handoff import sync_crm_lead_from_ctm_trip
 from .models import CompanyAccount, CompanyUser, TripQuote, TripRequest
+
+
+class BootstrapDockerDevTests(APITestCase):
+    def test_bootstrap_docker_dev_creates_admin_company_and_ctm_admin(self):
+        output = StringIO()
+
+        call_command(
+            "bootstrap_docker_dev",
+            admin_username="dpm.test.admin",
+            admin_email="admin@example.com",
+            admin_password="admin-pass123",
+            company_name="Example Corp",
+            company_code="EXAMPLE",
+            ctm_username="travel.admin",
+            ctm_email="travel.admin@example.com",
+            ctm_password="ctm-pass123",
+            stdout=output,
+        )
+
+        admin_user = User.objects.get(username="dpm.test.admin")
+        company = CompanyAccount.objects.get(account_code="EXAMPLE")
+        membership = CompanyUser.objects.get(company=company, login_username="travel.admin")
+
+        self.assertTrue(admin_user.is_superuser)
+        self.assertTrue(admin_user.groups.filter(name="crm_admin").exists())
+        self.assertEqual(company.name, "Example Corp")
+        self.assertEqual(membership.role, CompanyUser.Role.COMPANY_ADMIN)
+        self.assertTrue(membership.user.check_password("ctm-pass123"))
+        self.assertIn("Docker development data is ready.", output.getvalue())
 
 
 class CtmOpsScopeTests(APITestCase):
@@ -59,6 +90,24 @@ class CtmOpsScopeTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual({item["id"] for item in response.data}, {self.trip_a.reference_code, self.trip_b.reference_code})
+
+    def test_ops_user_with_ctm_company_context_only_lists_that_company_requests(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
+
+        response = self.client.get(reverse("ctm-trip-request-list"), HTTP_X_CTM_COMPANY_CODE=self.company_b.account_code)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([item["id"] for item in response.data], [self.trip_b.reference_code])
+
+    def test_ops_user_with_ctm_company_context_cannot_open_other_company_request(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
+
+        response = self.client.get(
+            reverse("ctm-trip-request-detail", args=[self.trip_a.reference_code]),
+            HTTP_X_CTM_COMPANY_CODE=self.company_b.account_code,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_company_user_only_lists_own_company_trip_requests(self):
         self.authenticate_company_user(self.company_user_a)
