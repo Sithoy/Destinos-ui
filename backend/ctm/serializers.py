@@ -424,13 +424,34 @@ class CorporateTravelerDirectorySerializer(serializers.Serializer):
     email = serializers.CharField()
     phone = serializers.CharField()
     nationality = serializers.CharField()
+    passportNumber = serializers.CharField(source="passport_number")
     passportExpiry = serializers.SerializerMethodField()
+    passportStatus = serializers.SerializerMethodField()
+    visaStatus = serializers.SerializerMethodField()
+    notes = serializers.CharField()
+    isActive = serializers.BooleanField(source="is_active")
     readiness = CorporateTravelerReadinessSerializer(source="*")
     tripCount = serializers.SerializerMethodField()
     nextTrip = serializers.SerializerMethodField()
 
     def get_passportExpiry(self, obj: Traveler) -> str:
-        return format_portal_date(obj.passport_expiry)
+        return obj.passport_expiry.isoformat() if obj.passport_expiry else ""
+
+    def get_passportStatus(self, obj: Traveler) -> str:
+        if obj.passport_status == Traveler.PassportStatus.OK:
+            return "OK"
+        if obj.passport_status == Traveler.PassportStatus.EXPIRED:
+            return "Expired"
+        return "Missing"
+
+    def get_visaStatus(self, obj: Traveler) -> str:
+        if obj.visa_status == Traveler.VisaStatus.OK:
+            return "OK"
+        if obj.visa_status == Traveler.VisaStatus.REQUIRED:
+            return "Required"
+        if obj.visa_status == Traveler.VisaStatus.PENDING:
+            return "Pending"
+        return "N/A"
 
     def get_tripCount(self, obj: Traveler) -> int:
         return obj.trip_requests.count()

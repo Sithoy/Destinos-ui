@@ -10,7 +10,7 @@ import { CorporateRequestsPage } from './CorporateRequestsPage';
 import { CorporateSectionPlaceholderPage } from './CorporateSectionPlaceholderPage';
 import { CorporateTravelersPage } from './CorporateTravelersPage';
 import { getCorporateCurrentTripCost } from '../../data/corporatePortal';
-import { approveCtmTripRequest, clearCtmSession, createCtmTraveler, createCtmTripDocument, createCtmTripMessage, createCtmTripRequest, CTM_AUTH_EVENT, fetchCtmBillingInvoices, fetchCtmBillingPayments, fetchCtmBillingSummary, fetchCtmContext, fetchCtmCurrentSession, fetchCtmTravelers, fetchCtmTripRequests, hasCtmApi, loginCtm, logoutCtm, readCtmSession, rejectCtmTripRequest, saveCtmSession, updateCtmTraveler } from '../../data/ctm';
+import { approveCtmTripRequest, clearCtmSession, createCtmTraveler, createCtmTripDocument, createCtmTripMessage, createCtmTripRequest, CTM_AUTH_EVENT, deactivateCtmTraveler, fetchCtmBillingInvoices, fetchCtmBillingPayments, fetchCtmBillingSummary, fetchCtmContext, fetchCtmCurrentSession, fetchCtmTravelers, fetchCtmTripRequests, hasCtmApi, loginCtm, logoutCtm, readCtmSession, rejectCtmTripRequest, saveCtmSession, updateCtmTraveler } from '../../data/ctm';
 import { ctmLegacyRoute, ctmPrimaryRoute } from '../../data/travel';
 import type {
   CorporateApprovalFilter,
@@ -337,6 +337,17 @@ export function CorporatePortalApp() {
     }
   };
 
+  const deactivateTraveler = async (id: string | number) => {
+    try {
+      await deactivateCtmTraveler(id, ctmSession);
+      setTravelers((current) => current.map((item) => (String(item.id) === String(id) ? { ...item, isActive: false } : item)));
+      setError('');
+    } catch (deactivateError) {
+      setError(deactivateError instanceof Error ? deactivateError.message : 'Could not deactivate traveler profile.');
+      throw deactivateError;
+    }
+  };
+
   const createTripDocument = async (tripId: string, input: CorporateTripDocumentInput) => {
     try {
       const document = await createCtmTripDocument(tripId, input, ctmSession);
@@ -471,7 +482,7 @@ export function CorporatePortalApp() {
         : portalPathname.startsWith('/itineraries')
           ? <CorporateSectionPlaceholderPage title="Itineraries" description="Confirmed trips, service breakdowns, and downloadable travel packs will live in this view once the booking side of CTM is connected." bullets={['Upcoming trips with hotel, transfer, and flight breakdowns', 'Live trip status for active company travelers', 'Downloadable itinerary packs and support notes']} actionLabel="Review booked request" onAction={() => openRequest('DPM-2419')} theme={theme} />
           : portalPathname.startsWith('/travelers')
-            ? <CorporateTravelersPage travelers={travelers} search={search} theme={theme} onCreateTraveler={createTraveler} onUpdateTraveler={saveTraveler} onOpenRequest={openRequest} />
+            ? <CorporateTravelersPage travelers={travelers} search={search} theme={theme} onCreateTraveler={createTraveler} onUpdateTraveler={saveTraveler} onDeactivateTraveler={deactivateTraveler} onOpenRequest={openRequest} />
           : portalPathname.startsWith('/reports')
               ? <CorporateReportsPage summary={billingSummary} invoices={billingInvoices} payments={billingPayments} theme={theme} onOpenRequest={openRequest} />
           : <CorporateDashboardPage requests={requests} stats={portalStats} activityTimeline={portalTimeline} onOpenRequest={openRequest} onOpenApprovals={openApprovals} onOpenNewTrip={openNewTrip} onStatClick={handleDashboardStatClick} theme={theme} />;

@@ -819,6 +819,15 @@ class TravelerViewSet(viewsets.ModelViewSet):
         traveler = serializer.save()
         return Response(CorporateTravelerDirectorySerializer(traveler).data)
 
+    def destroy(self, request, *args, **kwargs):
+        denied = self._ensure_manage_access(request)
+        if denied is not None:
+            return denied
+        traveler = self.get_object()
+        traveler.is_active = False
+        traveler.save(update_fields=["is_active", "updated_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class CompanyAccountViewSet(viewsets.ModelViewSet):
     permission_classes = [HasCtmAccess]

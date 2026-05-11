@@ -89,9 +89,39 @@ function readValue<T = unknown>(record: Record<string, unknown>, ...keys: string
 }
 
 function normalizeReadiness(passportStatus: unknown, visaStatus: unknown): CorporateTravelerProfile['readiness'] {
-  const passport = passportStatus === 'OK' ? 'OK' : 'Missing';
-  const visa = visaStatus === 'Required' || visaStatus === 'Pending' ? 'Required' : visaStatus === 'OK' ? 'OK' : 'N/A';
+  const passportText = String(passportStatus ?? '').toLowerCase();
+  const visaText = String(visaStatus ?? '').toLowerCase();
+  const passport = passportText === 'ok' ? 'OK' : 'Missing';
+  const visa = visaText === 'required' || visaText === 'pending' ? 'Required' : visaText === 'ok' ? 'OK' : 'N/A';
   return { passport, visa };
+}
+
+function normalizePassportStatus(value: unknown): CorporateTravelerProfile['passportStatus'] {
+  const text = String(value ?? '').toLowerCase();
+  if (text === 'ok') return 'OK';
+  if (text === 'expired') return 'Expired';
+  return 'Missing';
+}
+
+function normalizeVisaStatus(value: unknown): CorporateTravelerProfile['visaStatus'] {
+  const text = String(value ?? '').toLowerCase();
+  if (text === 'ok') return 'OK';
+  if (text === 'required') return 'Required';
+  if (text === 'pending') return 'Pending';
+  return 'N/A';
+}
+
+function toApiPassportStatus(value: CorporateTravelerProfileInput['passportStatus']) {
+  if (value === 'OK') return 'ok';
+  if (value === 'Expired') return 'expired';
+  return 'missing';
+}
+
+function toApiVisaStatus(value: CorporateTravelerProfileInput['visaStatus']) {
+  if (value === 'OK') return 'ok';
+  if (value === 'Required') return 'required';
+  if (value === 'Pending') return 'pending';
+  return 'n_a';
 }
 
 function normalizeTravelerProfile(raw: unknown): CorporateTravelerProfile {
@@ -109,8 +139,8 @@ function normalizeTravelerProfile(raw: unknown): CorporateTravelerProfile {
     nationality: String(readValue(record, 'nationality') ?? ''),
     passportNumber: readValue<string>(record, 'passportNumber', 'passport_number') ?? '',
     passportExpiry: (readValue<string>(record, 'passportExpiry', 'passport_expiry') ?? null),
-    passportStatus: passportStatus === 'Expired' ? 'Expired' : passportStatus === 'OK' ? 'OK' : 'Missing',
-    visaStatus: visaStatus === 'Pending' ? 'Pending' : visaStatus === 'Required' ? 'Required' : visaStatus === 'OK' ? 'OK' : 'N/A',
+    passportStatus: normalizePassportStatus(passportStatus),
+    visaStatus: normalizeVisaStatus(visaStatus),
     notes: readValue<string>(record, 'notes') ?? '',
     isActive: Boolean(readValue(record, 'isActive', 'is_active') ?? true),
     tripCount: Number(readValue(record, 'tripCount', 'trip_count') ?? 0),
@@ -314,17 +344,17 @@ export async function createCtmTraveler(input: CorporateTravelerProfileInput, se
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
       body: JSON.stringify({
-        full_name: input.name,
+        name: input.name,
         department: input.department,
         email: input.email,
         phone: input.phone,
         nationality: input.nationality,
-        passport_number: input.passportNumber,
-        passport_expiry: input.passportExpiry,
-        passport_status: input.passportStatus,
-        visa_status: input.visaStatus,
+        passportNumber: input.passportNumber,
+        passportExpiry: input.passportExpiry || null,
+        passportStatus: toApiPassportStatus(input.passportStatus),
+        visaStatus: toApiVisaStatus(input.visaStatus),
         notes: input.notes,
-        is_active: input.isActive,
+        isActive: input.isActive,
       }),
     }),
   );
@@ -342,22 +372,35 @@ export async function updateCtmTraveler(id: string | number, input: Partial<Corp
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
       body: JSON.stringify({
-        ...(input.name !== undefined ? { full_name: input.name } : {}),
+        ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.department !== undefined ? { department: input.department } : {}),
         ...(input.email !== undefined ? { email: input.email } : {}),
         ...(input.phone !== undefined ? { phone: input.phone } : {}),
         ...(input.nationality !== undefined ? { nationality: input.nationality } : {}),
-        ...(input.passportNumber !== undefined ? { passport_number: input.passportNumber } : {}),
-        ...(input.passportExpiry !== undefined ? { passport_expiry: input.passportExpiry } : {}),
-        ...(input.passportStatus !== undefined ? { passport_status: input.passportStatus } : {}),
-        ...(input.visaStatus !== undefined ? { visa_status: input.visaStatus } : {}),
+        ...(input.passportNumber !== undefined ? { passportNumber: input.passportNumber } : {}),
+        ...(input.passportExpiry !== undefined ? { passportExpiry: input.passportExpiry || null } : {}),
+        ...(input.passportStatus !== undefined ? { passportStatus: toApiPassportStatus(input.passportStatus) } : {}),
+        ...(input.visaStatus !== undefined ? { visaStatus: toApiVisaStatus(input.visaStatus) } : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
-        ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       }),
     }),
   );
 
   return normalizeTravelerProfile(traveler);
+}
+
+export async function deactivateCtmTraveler(id: string | number, session?: CorporatePortalSession | null): Promise<void> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  await parseApiResponse<void>(
+    await fetch(`${base}/api/ctm/travelers/${id}/`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+    }),
+  );
 }
 
 export async function fetchCtmBillingSummary(session?: CorporatePortalSession | null): Promise<CorporateBillingSummary> {

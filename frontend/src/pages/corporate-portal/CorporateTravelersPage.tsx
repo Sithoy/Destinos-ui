@@ -1,4 +1,4 @@
-import { PlusSquare, Save, ShieldAlert, UserRoundCheck, Users } from 'lucide-react';
+import { AlertCircle, CalendarDays, PlusSquare, Save, ShieldAlert, UserRoundCheck, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { corporateDepartments } from '../../data/corporatePortal';
 import type { CorporatePortalTheme, CorporateTravelerProfile, CorporateTravelerProfileInput } from '../../types/corporatePortal';
@@ -18,12 +18,40 @@ const emptyTraveler: CorporateTravelerProfileInput = {
   isActive: true,
 };
 
+function todayLocalIso() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function RequiredMark() {
+  return <span className="text-[#d9b46f]">*</span>;
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <div className="mt-2 flex items-start gap-1.5 text-xs text-rose-200">
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function formatReadableDate(value?: string | null) {
+  if (!value) return 'No expiry date selected';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 export function CorporateTravelersPage({
   travelers,
   search,
   theme,
   onCreateTraveler,
   onUpdateTraveler,
+  onDeactivateTraveler,
   onOpenRequest,
 }: {
   travelers: CorporateTravelerProfile[];
@@ -31,6 +59,7 @@ export function CorporateTravelersPage({
   theme: CorporatePortalTheme;
   onCreateTraveler: (input: CorporateTravelerProfileInput) => Promise<void>;
   onUpdateTraveler: (id: string | number, input: Partial<CorporateTravelerProfileInput>) => Promise<void>;
+  onDeactivateTraveler: (id: string | number) => Promise<void>;
   onOpenRequest: (tripId: string) => void;
 }) {
   const styles = corporatePortalThemeStyles[theme];
@@ -38,6 +67,9 @@ export function CorporateTravelersPage({
   const [isCreating, setIsCreating] = useState(false);
   const [form, setForm] = useState<CorporateTravelerProfileInput>(emptyTraveler);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeactivating, setIsDeactivating] = useState(false);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const minPassportDate = todayLocalIso();
 
   const filteredTravelers = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -58,6 +90,7 @@ export function CorporateTravelersPage({
   useEffect(() => {
     if (isCreating) {
       setForm(emptyTraveler);
+      setTouched({});
       return;
     }
     if (selectedTraveler) {
@@ -74,6 +107,7 @@ export function CorporateTravelersPage({
         notes: selectedTraveler.notes ?? '',
         isActive: selectedTraveler.isActive,
       });
+      setTouched({});
     }
   }, [isCreating, selectedTraveler]);
 
@@ -88,7 +122,34 @@ export function CorporateTravelersPage({
     setForm((current) => ({ ...current, [key]: value }));
   };
 
+  const fieldErrors = useMemo(() => {
+    const errors: Record<string, string> = {};
+    if (!form.name.trim()) errors.name = 'Full name is required.';
+    if (!form.department.trim()) errors.department = 'Department is required.';
+    if (!form.email.trim() && !form.phone.trim()) errors.contact = 'Add at least one contact: email or phone.';
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errors.email = 'Enter a valid email address.';
+    if (form.passportStatus === 'OK' && !form.passportNumber?.trim()) errors.passportNumber = 'Passport number is required when passport is marked OK.';
+    if (form.passportStatus === 'OK' && !form.passportExpiry) errors.passportExpiry = 'Passport expiry is required when passport is marked OK.';
+    if (form.passportStatus === 'OK' && form.passportExpiry && form.passportExpiry < minPassportDate) errors.passportExpiry = 'Passport expiry cannot be in the past.';
+    return errors;
+  }, [form, minPassportDate]);
+  const canSave = Object.keys(fieldErrors).length === 0;
+  const markTouched = (field: string) => setTouched((current) => ({ ...current, [field]: true }));
+  const visibleError = (field: string) => (touched[field] || isSaving ? fieldErrors[field] : '');
+  const errorClass = (field: string) => (visibleError(field) ? 'border-rose-400/50 ring-1 ring-rose-400/25' : '');
+
   const handleSave = async () => {
+    if (!canSave) {
+      setTouched({
+        name: true,
+        department: true,
+        contact: true,
+        email: true,
+        passportNumber: true,
+        passportExpiry: true,
+      });
+      return;
+    }
     setIsSaving(true);
     try {
       if (isCreating) {
@@ -99,6 +160,19 @@ export function CorporateTravelersPage({
       }
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeactivate = async () => {
+    if (!selectedTraveler) return;
+    const confirmed = window.confirm(`Deactivate ${selectedTraveler.name}? Their profile will stop appearing in new trip selection, but travel history stays available.`);
+    if (!confirmed) return;
+    setIsDeactivating(true);
+    try {
+      await onDeactivateTraveler(selectedTraveler.id);
+      setIsCreating(false);
+    } finally {
+      setIsDeactivating(false);
     }
   };
 
@@ -215,38 +289,51 @@ export function CorporateTravelersPage({
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Full name</div>
-                <input value={form.name} onChange={(event) => handleChange('name', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input}`} />
+                <div className={`mb-2 ${styles.muted}`}>Full name <RequiredMark /></div>
+                <input value={form.name} onBlur={() => markTouched('name')} onChange={(event) => handleChange('name', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} ${errorClass('name')}`} />
+                <FieldError message={visibleError('name')} />
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Department</div>
-                <select value={form.department} onChange={(event) => handleChange('department', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input}`}>
+                <div className={`mb-2 ${styles.muted}`}>Department <RequiredMark /></div>
+                <select value={form.department} onBlur={() => markTouched('department')} onChange={(event) => handleChange('department', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} ${errorClass('department')}`}>
                   {corporateDepartments.map((item) => (
                     <option key={item} value={item} className="bg-[#07111f]">
                       {item}
                     </option>
                   ))}
                 </select>
+                <FieldError message={visibleError('department')} />
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Email</div>
-                <input value={form.email} onChange={(event) => handleChange('email', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input}`} />
+                <div className={`mb-2 ${styles.muted}`}>Email <span className="text-xs opacity-70">(email or phone required)</span></div>
+                <input value={form.email} onBlur={() => { markTouched('email'); markTouched('contact'); }} onChange={(event) => handleChange('email', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} ${errorClass('email') || errorClass('contact')}`} />
+                <FieldError message={visibleError('email') || visibleError('contact')} />
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Phone</div>
-                <input value={form.phone} onChange={(event) => handleChange('phone', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input}`} />
+                <div className={`mb-2 ${styles.muted}`}>Phone <span className="text-xs opacity-70">(email or phone required)</span></div>
+                <input value={form.phone} onBlur={() => markTouched('contact')} onChange={(event) => handleChange('phone', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} ${errorClass('contact')}`} />
+                {!form.email.trim() ? <FieldError message={visibleError('contact')} /> : null}
               </label>
               <label className="text-sm">
                 <div className={`mb-2 ${styles.muted}`}>Nationality</div>
                 <input value={form.nationality} onChange={(event) => handleChange('nationality', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input}`} />
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Passport number</div>
-                <input value={form.passportNumber ?? ''} onChange={(event) => handleChange('passportNumber', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input}`} />
+                <div className={`mb-2 ${styles.muted}`}>Passport number {form.passportStatus === 'OK' ? <RequiredMark /> : null}</div>
+                <input value={form.passportNumber ?? ''} onBlur={() => markTouched('passportNumber')} onChange={(event) => handleChange('passportNumber', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} ${errorClass('passportNumber')}`} />
+                <FieldError message={visibleError('passportNumber')} />
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Passport expiry</div>
-                <input type="date" value={form.passportExpiry ?? ''} onChange={(event) => handleChange('passportExpiry', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} [color-scheme:dark]`} />
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className={styles.muted}>Passport expiry {form.passportStatus === 'OK' ? <RequiredMark /> : null}</span>
+                  <span className={`inline-flex items-center gap-1 text-xs ${styles.muted}`}>
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    {formatReadableDate(form.passportExpiry)}
+                  </span>
+                </div>
+                <input type="date" min={form.passportStatus === 'OK' ? minPassportDate : undefined} value={form.passportExpiry ?? ''} onBlur={() => markTouched('passportExpiry')} onChange={(event) => handleChange('passportExpiry', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} [color-scheme:dark] ${errorClass('passportExpiry')}`} />
+                <div className={`mt-2 text-xs ${styles.muted}`}>Use the calendar picker or type YYYY-MM-DD. If passport is OK, expiry must be today or later.</div>
+                <FieldError message={visibleError('passportExpiry')} />
               </label>
               <label className="text-sm">
                 <div className={`mb-2 ${styles.muted}`}>Passport readiness</div>
@@ -278,17 +365,28 @@ export function CorporateTravelersPage({
             </label>
 
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-              {!isCreating && selectedTraveler?.nextTripId ? (
-                <button type="button" onClick={() => onOpenRequest(selectedTraveler.nextTripId!)} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${styles.buttonGhost}`}>
-                  <UserRoundCheck className="h-4 w-4" />
-                  Open next linked request
-                </button>
-              ) : <span className={`text-sm ${styles.muted}`}>Save once, reuse from New Trip whenever this traveler travels again.</span>}
-              <button type="button" onClick={handleSave} disabled={isSaving || !form.name.trim()} className={`inline-flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-medium ${styles.buttonPrimary} disabled:opacity-50`}>
+              <div className="flex flex-wrap items-center gap-2">
+                {!isCreating && selectedTraveler?.nextTripId ? (
+                  <button type="button" onClick={() => onOpenRequest(selectedTraveler.nextTripId!)} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${styles.buttonGhost}`}>
+                    <UserRoundCheck className="h-4 w-4" />
+                    Open next linked request
+                  </button>
+                ) : <span className={`text-sm ${styles.muted}`}>Save once, reuse from New Trip whenever this traveler travels again.</span>}
+                {!isCreating && selectedTraveler?.isActive ? (
+                  <button type="button" onClick={handleDeactivate} disabled={isDeactivating} className="inline-flex h-10 items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 text-sm font-medium text-amber-100 disabled:cursor-not-allowed disabled:opacity-50">
+                    <ShieldAlert className="h-4 w-4" />
+                    {isDeactivating ? 'Deactivating...' : 'Deactivate'}
+                  </button>
+                ) : null}
+              </div>
+              <button type="button" onClick={handleSave} disabled={isSaving || !canSave} className={`inline-flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-medium ${styles.buttonPrimary} disabled:cursor-not-allowed disabled:opacity-50`}>
                 <Save className="h-4 w-4" />
                 {isSaving ? 'Saving...' : isCreating ? 'Create traveler' : 'Save changes'}
               </button>
             </div>
+            {!canSave ? (
+              <div className={`mt-3 text-xs ${styles.muted}`}>Complete required fields marked with <RequiredMark /> before saving.</div>
+            ) : null}
           </div>
 
           <div className={`rounded-xl border p-5 ${styles.panel}`}>

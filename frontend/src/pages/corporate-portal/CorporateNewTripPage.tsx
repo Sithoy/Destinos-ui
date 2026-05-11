@@ -1,10 +1,37 @@
-import { Minus, PlusSquare } from 'lucide-react';
+import { AlertCircle, CalendarDays, Minus, PlusSquare } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { corporateCostBands, corporateDepartments, corporateServiceCatalog } from '../../data/corporatePortal';
 import type { CorporatePortalTheme, CorporateTravelerProfile, CorporateTripCreateInput } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from './portalTheme';
 
 const initialTravelers = [{ profileId: undefined as string | number | undefined, name: '', email: '', department: corporateDepartments[0] }];
+
+function todayLocalIso() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function formatReadableDate(value: string) {
+  if (!value) return 'No date selected';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function RequiredMark() {
+  return <span className="text-[#d9b46f]">*</span>;
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <div className="mt-2 flex items-start gap-1.5 text-xs text-rose-200">
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
 
 export function CorporateNewTripPage({
   onCreateTrip,
@@ -24,17 +51,39 @@ export function CorporateNewTripPage({
   const [services, setServices] = useState<CorporateTripCreateInput['services']>(['Flight', 'Hotel']);
   const [travelers, setTravelers] = useState(initialTravelers);
   const [showErrors, setShowErrors] = useState(false);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const styles = corporatePortalThemeStyles[theme];
+  const minTravelDate = todayLocalIso();
+
+  const fieldErrors = useMemo(() => {
+    const errors: Record<string, string> = {};
+    if (!origin.trim()) errors.origin = 'Origin is required.';
+    if (!destination.trim()) errors.destination = 'Destination is required.';
+    if (!departureDate) errors.departureDate = 'Departure date is required.';
+    if (departureDate && departureDate < minTravelDate) errors.departureDate = 'Departure date cannot be in the past.';
+    if (!purpose.trim()) errors.purpose = 'Business purpose is required.';
+    if (services.length === 0) errors.services = 'Select at least one service.';
+    travelers.forEach((traveler, index) => {
+      if (!traveler.name.trim()) errors[`traveler-${index}-name`] = 'Traveler name is required.';
+      if (!traveler.email.trim()) errors[`traveler-${index}-email`] = 'Traveler email is required.';
+      if (traveler.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(traveler.email.trim())) {
+        errors[`traveler-${index}-email`] = 'Enter a valid email address.';
+      }
+    });
+    return errors;
+  }, [departureDate, destination, minTravelDate, origin, purpose, services.length, travelers]);
 
   const canSubmit = useMemo(() => {
-    const hasCoreFields = destination.trim() && departureDate && purpose.trim();
-    const hasServices = services.length > 0;
-    const hasTravelers = travelers.every((traveler) => traveler.name.trim() && traveler.email.trim());
-    return Boolean(hasCoreFields && hasServices && hasTravelers);
-  }, [departureDate, destination, purpose, services, travelers]);
+    return Object.keys(fieldErrors).length === 0;
+  }, [fieldErrors]);
+
+  const markTouched = (field: string) => setTouched((current) => ({ ...current, [field]: true }));
+  const visibleError = (field: string) => (showErrors || touched[field] ? fieldErrors[field] : '');
+  const errorClass = (field: string) => (visibleError(field) ? 'border-rose-400/50 ring-1 ring-rose-400/25' : '');
 
   const toggleService = (service: (typeof corporateServiceCatalog)[number]) => {
+    markTouched('services');
     setServices((current) => (current.includes(service) ? current.filter((item) => item !== service) : [...current, service]));
   };
 
@@ -127,35 +176,47 @@ export function CorporateNewTripPage({
             </select>
           </label>
 
-          <label className={`rounded-xl border p-4 text-sm ${styles.input}`}>
-            <div className={`mb-2 ${styles.muted}`}>Origin</div>
-            <input value={origin} onChange={(event) => setOrigin(event.target.value)} className="w-full bg-transparent outline-none" />
+          <label className={`rounded-xl border p-4 text-sm ${styles.input} ${errorClass('origin')}`}>
+            <div className={`mb-2 ${styles.muted}`}>Origin <RequiredMark /></div>
+            <input value={origin} onBlur={() => markTouched('origin')} onChange={(event) => setOrigin(event.target.value)} className="w-full bg-transparent outline-none" />
+            <FieldError message={visibleError('origin')} />
           </label>
 
-          <label className={`rounded-xl border p-4 text-sm ${styles.input}`}>
-            <div className={`mb-2 ${styles.muted}`}>Destination</div>
-            <input value={destination} onChange={(event) => setDestination(event.target.value)} className="w-full bg-transparent outline-none" placeholder="Johannesburg, Dubai, Cape Town..." />
+          <label className={`rounded-xl border p-4 text-sm ${styles.input} ${errorClass('destination')}`}>
+            <div className={`mb-2 ${styles.muted}`}>Destination <RequiredMark /></div>
+            <input value={destination} onBlur={() => markTouched('destination')} onChange={(event) => setDestination(event.target.value)} className="w-full bg-transparent outline-none" placeholder="Johannesburg, Dubai, Cape Town..." />
+            <FieldError message={visibleError('destination')} />
           </label>
 
-          <label className={`rounded-xl border p-4 text-sm md:col-span-2 ${styles.input}`}>
-            <div className={`mb-2 ${styles.muted}`}>Departure date</div>
-            <input type="date" value={departureDate} onChange={(event) => setDepartureDate(event.target.value)} className="w-full bg-transparent outline-none [color-scheme:dark]" />
+          <label className={`rounded-xl border p-4 text-sm md:col-span-2 ${styles.input} ${errorClass('departureDate')}`}>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className={styles.muted}>Departure date <RequiredMark /></span>
+              <span className={`inline-flex items-center gap-1 text-xs ${styles.muted}`}>
+                <CalendarDays className="h-3.5 w-3.5" />
+                {formatReadableDate(departureDate)}
+              </span>
+            </div>
+            <input type="date" min={minTravelDate} value={departureDate} onBlur={() => markTouched('departureDate')} onChange={(event) => setDepartureDate(event.target.value)} className="w-full bg-transparent outline-none [color-scheme:dark]" />
+            <div className={`mt-2 text-xs ${styles.muted}`}>Use the calendar picker or type YYYY-MM-DD. Earliest allowed: {formatReadableDate(minTravelDate)}.</div>
+            <FieldError message={visibleError('departureDate')} />
           </label>
         </div>
 
-        <label className={`mt-4 block rounded-xl border p-4 text-sm ${styles.input}`}>
-          <div className={`mb-2 ${styles.muted}`}>Business purpose</div>
+        <label className={`mt-4 block rounded-xl border p-4 text-sm ${styles.input} ${errorClass('purpose')}`}>
+          <div className={`mb-2 ${styles.muted}`}>Business purpose <RequiredMark /></div>
           <textarea
             value={purpose}
+            onBlur={() => markTouched('purpose')}
             onChange={(event) => setPurpose(event.target.value)}
             rows={4}
             className="w-full resize-none bg-transparent outline-none placeholder:text-slate-500"
             placeholder="Describe the business need, meeting, training, negotiation, or project objective."
           />
+          <FieldError message={visibleError('purpose')} />
         </label>
 
-        <div className={`mt-4 rounded-xl border p-4 ${styles.panelSoft}`}>
-          <div className="mb-3 text-sm font-medium">Services needed</div>
+        <div className={`mt-4 rounded-xl border p-4 ${styles.panelSoft} ${errorClass('services')}`}>
+          <div className="mb-3 text-sm font-medium">Services needed <RequiredMark /></div>
           <div className="grid gap-2 md:grid-cols-2">
             {corporateServiceCatalog.map((service) => {
               const checked = services.includes(service);
@@ -172,6 +233,7 @@ export function CorporateNewTripPage({
               );
             })}
           </div>
+          <FieldError message={visibleError('services')} />
         </div>
 
         <div className={`mt-4 rounded-xl border p-4 ${styles.panelSoft}`}>
@@ -232,15 +294,17 @@ export function CorporateNewTripPage({
                 <div className="grid gap-3 md:grid-cols-3">
                   <input
                     value={traveler.name}
+                    onBlur={() => markTouched(`traveler-${index}-name`)}
                     onChange={(event) => updateTraveler(index, 'name', event.target.value)}
-                    className={`rounded-xl border px-4 py-3 text-sm outline-none placeholder:text-slate-500 ${styles.input}`}
-                    placeholder="Full name"
+                    className={`rounded-xl border px-4 py-3 text-sm outline-none placeholder:text-slate-500 ${styles.input} ${errorClass(`traveler-${index}-name`)}`}
+                    placeholder="Full name *"
                   />
                   <input
                     value={traveler.email}
+                    onBlur={() => markTouched(`traveler-${index}-email`)}
                     onChange={(event) => updateTraveler(index, 'email', event.target.value)}
-                    className={`rounded-xl border px-4 py-3 text-sm outline-none placeholder:text-slate-500 ${styles.input}`}
-                    placeholder="Email"
+                    className={`rounded-xl border px-4 py-3 text-sm outline-none placeholder:text-slate-500 ${styles.input} ${errorClass(`traveler-${index}-email`)}`}
+                    placeholder="Email *"
                   />
                   <select
                     value={traveler.department}
@@ -253,6 +317,10 @@ export function CorporateNewTripPage({
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  <FieldError message={visibleError(`traveler-${index}-name`)} />
+                  <FieldError message={visibleError(`traveler-${index}-email`)} />
                 </div>
               </div>
             ))}
@@ -306,11 +374,14 @@ export function CorporateNewTripPage({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isSubmitting}
-            className={`mt-5 w-full rounded-lg px-4 py-3 text-sm font-semibold ${styles.buttonPrimary}`}
+            disabled={isSubmitting || !canSubmit}
+            className={`mt-5 w-full rounded-lg px-4 py-3 text-sm font-semibold ${styles.buttonPrimary} disabled:cursor-not-allowed disabled:opacity-55`}
           >
             {isSubmitting ? 'Submitting...' : 'Submit request for approval'}
           </button>
+          {!canSubmit ? (
+            <div className={`mt-3 text-xs ${styles.muted}`}>Complete the required fields marked with <RequiredMark /> to submit.</div>
+          ) : null}
         </div>
       </aside>
     </section>

@@ -11,7 +11,7 @@ from rest_framework.test import APITestCase
 from crm.models import Lead
 
 from .crm_handoff import sync_crm_lead_from_ctm_trip
-from .models import CompanyAccount, CompanyUser, TripApproval, TripQuote, TripRequest
+from .models import CompanyAccount, CompanyUser, Traveler, TripApproval, TripQuote, TripRequest, TripTraveler
 
 
 class BootstrapDockerDevTests(APITestCase):
@@ -129,6 +129,62 @@ class CtmOpsScopeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["tripRequestId"], self.trip_b.reference_code)
         self.assertTrue(TripQuote.objects.filter(trip_request=self.trip_b, prepared_by=self.ops_user).exists())
+
+    def test_company_user_can_create_update_and_deactivate_unlinked_traveler(self):
+        self.authenticate_company_user(self.company_user_a)
+
+        create_response = self.client.post(
+            reverse("ctm-traveler-list"),
+            {
+                "name": "Marta Uamusse",
+                "email": "marta@example.com",
+                "phone": "+258840000000",
+                "department": "Finance",
+                "nationality": "Mozambican",
+                "passportNumber": "AB123456",
+                "passportExpiry": "2028-10-12",
+                "passportStatus": Traveler.PassportStatus.OK,
+                "visaStatus": Traveler.VisaStatus.PENDING,
+                "notes": "Needs Schengen support.",
+                "isActive": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_response.data["name"], "Marta Uamusse")
+        self.assertEqual(create_response.data["passportNumber"], "AB123456")
+        self.assertEqual(create_response.data["passportStatus"], "OK")
+        self.assertEqual(create_response.data["visaStatus"], "Pending")
+
+        traveler_id = create_response.data["id"]
+        update_response = self.client.patch(
+            reverse("ctm-traveler-detail", args=[traveler_id]),
+            {"phone": "+258850000000", "passportStatus": Traveler.PassportStatus.EXPIRED},
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data["phone"], "+258850000000")
+        self.assertEqual(update_response.data["passportStatus"], "Expired")
+
+        deactivate_response = self.client.delete(reverse("ctm-traveler-detail", args=[traveler_id]))
+
+        self.assertEqual(deactivate_response.status_code, status.HTTP_204_NO_CONTENT)
+        traveler = Traveler.objects.get(pk=traveler_id)
+        self.assertFalse(traveler.is_active)
+
+    def test_deactivate_linked_traveler_preserves_trip_history(self):
+        self.authenticate_company_user(self.company_user_a)
+        traveler = Traveler.objects.create(company=self.company_a, full_name="Linked Traveler", is_active=True)
+        TripTraveler.objects.create(trip_request=self.trip_a, traveler=traveler)
+
+        response = self.client.delete(reverse("ctm-traveler-detail", args=[traveler.pk]))
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        traveler.refresh_from_db()
+        self.assertFalse(traveler.is_active)
+        self.assertTrue(TripTraveler.objects.filter(trip_request=self.trip_a, traveler=traveler).exists())
 
     def test_final_cost_approval_is_locked_until_travel_need_and_sent_quote_are_ready(self):
         self.company_user_b.role = CompanyUser.Role.FINANCE_APPROVER

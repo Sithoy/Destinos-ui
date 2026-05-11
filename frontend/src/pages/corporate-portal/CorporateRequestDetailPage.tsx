@@ -1,4 +1,4 @@
-import { AlertTriangle, Building2, CheckCircle2, CircleDot, ClipboardList, Clock3, CreditCard, FileText, MessageSquare, PlaneTakeoff, Plus, Receipt, Route, Send, ShieldCheck, UploadCloud, XCircle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Building2, CheckCircle2, CircleDot, ClipboardList, Clock3, CreditCard, FileText, MessageSquare, PlaneTakeoff, Plus, Receipt, Route, Send, ShieldCheck, UploadCloud, XCircle } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { CostLifecycleCard } from '../../components/corporate-portal/CostLifecycleCard';
 import { ServiceChipList } from '../../components/corporate-portal/ServiceChipList';
@@ -51,6 +51,20 @@ function statusTone(status: string, theme: CorporatePortalTheme) {
     return 'bg-amber-500/12 text-amber-100';
   }
   return theme === 'dark' ? 'bg-sky-500/12 text-sky-200' : 'bg-sky-50 text-sky-800';
+}
+
+function RequiredMark() {
+  return <span className="text-[#d9b46f]">*</span>;
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <div className="mt-2 flex items-start gap-1.5 text-xs text-rose-200">
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
 }
 
 function formatMoney(amount: number | null | undefined, currency = 'USD') {
@@ -341,6 +355,7 @@ export function CorporateRequestDetailPage({
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [isSavingApproval, setIsSavingApproval] = useState(false);
   const [workbenchError, setWorkbenchError] = useState('');
+  const [workbenchTouched, setWorkbenchTouched] = useState<Record<string, boolean>>({});
 
   if (!trip) {
     return (
@@ -361,6 +376,11 @@ export function CorporateRequestDetailPage({
   const pendingApprovals = trip.approvals.filter((approval) => approval.status === 'Pending');
   const actionableApprovals = pendingApprovals.filter((approval) => approval.canApprove !== false);
   const lockedApprovals = pendingApprovals.filter((approval) => approval.canApprove === false);
+  const documentTitleError = documentTitle.trim() ? '' : 'Document title is required.';
+  const messageBodyError = messageBody.trim() ? '' : 'Message text is required.';
+  const markWorkbenchTouched = (field: string) => setWorkbenchTouched((current) => ({ ...current, [field]: true }));
+  const visibleWorkbenchError = (field: 'documentTitle' | 'messageBody', message: string) => (workbenchTouched[field] ? message : '');
+  const workbenchErrorClass = (field: 'documentTitle' | 'messageBody', message: string) => (visibleWorkbenchError(field, message) ? 'border-rose-400/50 ring-1 ring-rose-400/25' : '');
   const tabItems: Array<{ id: WorkbenchTab; label: string; count: number; Icon: typeof FileText }> = [
     { id: 'documents', label: 'Documents', count: documents.length, Icon: FileText },
     { id: 'messages', label: 'Messages', count: messages.length, Icon: MessageSquare },
@@ -369,7 +389,8 @@ export function CorporateRequestDetailPage({
 
   const submitDocument = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!documentTitle.trim()) {
+    if (documentTitleError) {
+      markWorkbenchTouched('documentTitle');
       setWorkbenchError('Add a document title before saving.');
       return;
     }
@@ -391,6 +412,7 @@ export function CorporateRequestDetailPage({
       setDocumentTravelerId('');
       setDocumentFileUrl('');
       setDocumentNotes('');
+      setWorkbenchTouched((current) => ({ ...current, documentTitle: false }));
     } catch (error) {
       setWorkbenchError(error instanceof Error ? error.message : 'Could not save document.');
     } finally {
@@ -400,7 +422,8 @@ export function CorporateRequestDetailPage({
 
   const submitMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!messageBody.trim()) {
+    if (messageBodyError) {
+      markWorkbenchTouched('messageBody');
       setWorkbenchError('Write a message before sending.');
       return;
     }
@@ -409,6 +432,7 @@ export function CorporateRequestDetailPage({
     try {
       await onCreateMessage(trip.id, { body: messageBody.trim(), visibility: 'shared' });
       setMessageBody('');
+      setWorkbenchTouched((current) => ({ ...current, messageBody: false }));
     } catch (error) {
       setWorkbenchError(error instanceof Error ? error.message : 'Could not send message.');
     } finally {
@@ -697,8 +721,15 @@ export function CorporateRequestDetailPage({
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="text-sm">
-                    <div className={`mb-2 ${styles.muted}`}>Title</div>
-                    <input value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`} placeholder="Passport scan, visa letter..." />
+                    <div className={`mb-2 ${styles.muted}`}>Title <RequiredMark /></div>
+                    <input
+                      value={documentTitle}
+                      onBlur={() => markWorkbenchTouched('documentTitle')}
+                      onChange={(event) => setDocumentTitle(event.target.value)}
+                      className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input} ${workbenchErrorClass('documentTitle', documentTitleError)}`}
+                      placeholder="Passport scan, visa letter..."
+                    />
+                    <FieldError message={visibleWorkbenchError('documentTitle', documentTitleError)} />
                   </label>
                   <label className="text-sm">
                     <div className={`mb-2 ${styles.muted}`}>Traveler</div>
@@ -734,10 +765,13 @@ export function CorporateRequestDetailPage({
                   <div className={`mb-2 ${styles.muted}`}>Notes</div>
                   <textarea value={documentNotes} onChange={(event) => setDocumentNotes(event.target.value)} rows={3} className={`w-full rounded-lg border px-3 py-3 outline-none ${styles.input}`} placeholder="What is needed, received, or verified?" />
                 </label>
-                <button type="submit" disabled={isSavingDocument} className={`mt-4 inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold ${styles.buttonPrimary} disabled:opacity-55`}>
+                <button type="submit" disabled={isSavingDocument || Boolean(documentTitleError)} className={`mt-4 inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold ${styles.buttonPrimary} disabled:cursor-not-allowed disabled:opacity-55`}>
                   <FileText className="h-4 w-4" />
                   {isSavingDocument ? 'Saving...' : 'Save document'}
                 </button>
+                {documentTitleError ? (
+                  <div className={`mt-3 text-xs ${styles.muted}`}>Add the required title before saving this document record.</div>
+                ) : null}
               </form>
 
               <div className="grid gap-3">
@@ -796,15 +830,20 @@ export function CorporateRequestDetailPage({
                 </div>
                 <textarea
                   value={messageBody}
+                  onBlur={() => markWorkbenchTouched('messageBody')}
                   onChange={(event) => setMessageBody(event.target.value)}
                   rows={8}
-                  className={`w-full rounded-lg border px-3 py-3 outline-none ${styles.input}`}
+                  className={`w-full rounded-lg border px-3 py-3 outline-none ${styles.input} ${workbenchErrorClass('messageBody', messageBodyError)}`}
                   placeholder="Ask DPM a question, confirm details, or share coordination notes."
                 />
-                <button type="submit" disabled={isSendingMessage} className={`mt-4 inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold ${styles.buttonPrimary} disabled:opacity-55`}>
+                <FieldError message={visibleWorkbenchError('messageBody', messageBodyError)} />
+                <button type="submit" disabled={isSendingMessage || Boolean(messageBodyError)} className={`mt-4 inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold ${styles.buttonPrimary} disabled:cursor-not-allowed disabled:opacity-55`}>
                   <Send className="h-4 w-4" />
                   {isSendingMessage ? 'Sending...' : 'Send message'}
                 </button>
+                {messageBodyError ? (
+                  <div className={`mt-3 text-xs ${styles.muted}`}>Write a message before sending it to the shared thread.</div>
+                ) : null}
               </form>
             </div>
           ) : null}
