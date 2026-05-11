@@ -5,6 +5,7 @@ import {
   Building2,
   CalendarDays,
   CheckSquare,
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
@@ -2690,8 +2691,8 @@ export function CrmPage() {
         ? [
             {
               key: 'corporate-desk',
-              title: 'Corporate Desk Queue',
-              subtitle: 'Company travel work driven by traveler readiness, approvals, policy fit, finance, and fulfilment.',
+              title: 'Corporate Task Inbox',
+              subtitle: 'Open the active task, complete the briefing, then move the request to the next work queue.',
               leads: corporatePageLeads,
             },
           ].filter((section) => section.leads.length > 0)
@@ -4324,8 +4325,8 @@ export function CrmPage() {
             </div>
           </header>
 
-          <div className={activeNav === 'corporateAccounts' ? 'block' : activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid xl:grid-cols-[minmax(720px,1fr)_430px]'}>
-            <div className={`min-w-0 border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}>
+          <div className={activeNav === 'corporateAccounts' || activeNav === 'corporateDesk' ? 'block' : activeNav === 'leisureStudio' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid xl:grid-cols-[minmax(720px,1fr)_430px]'}>
+            <div className={`min-w-0 ${activeNav === 'corporateDesk' ? '' : `border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}`}>
           <div className="p-5">
             {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
             {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading CRM requests...</div> : null}
@@ -4881,18 +4882,72 @@ export function CrmPage() {
                               </div>
                             )}
                           </div>
+                          {activeNav === 'corporateDesk' ? (
+                            <div className={`hidden grid-cols-[minmax(170px,0.9fr)_minmax(220px,1.1fr)_minmax(220px,1.1fr)_minmax(220px,1fr)_120px_minmax(150px,0.75fr)] gap-4 border-b px-4 py-3 text-xs uppercase tracking-[0.12em] xl:grid ${styles.tableHead}`}>
+                              <div>Task</div>
+                              <div>Company</div>
+                              <div>Route / dates</div>
+                              <div>Scope</div>
+                              <div>Urgency</div>
+                              <div>Owner</div>
+                            </div>
+                          ) : null}
                           <div className={activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? 'grid' : 'grid gap-3 p-4'}>
                             {section.leads.map((lead) => {
                               const priority = fallbackPriority(lead);
                               const isSelected = selectedLead?.id === lead.id;
+                              const rowBriefing = activeNav === 'corporateDesk' ? briefingReadiness(lead) : null;
+                              const rowTaskLabel = rowBriefing?.canApprove ? 'Briefing approval' : 'Complete briefing';
                               return (
-                                activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? (
+                                activeNav === 'corporateDesk' ? (
                                   <button
                                     key={lead.id}
                                     type="button"
                                     onClick={() => {
                                       setSelectedLeadId(lead.id);
-                                      setDetailTab(activeNav === 'corporateDesk' ? 'travelers' : 'brief');
+                                      setDetailTab('brief');
+                                    }}
+                                    className={`grid w-full gap-3 border-b px-4 py-3 text-left transition xl:grid-cols-[minmax(170px,0.9fr)_minmax(220px,1.1fr)_minmax(220px,1.1fr)_minmax(220px,1fr)_120px_minmax(150px,0.75fr)] xl:items-center ${
+                                      isSelected ? styles.rowActive : styles.row
+                                    }`}
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${rowBriefing?.canApprove ? 'bg-emerald-400' : 'bg-[#d9b46f]'}`} />
+                                        <div className="truncate text-sm font-semibold">{rowTaskLabel}</div>
+                                      </div>
+                                      <div className={`mt-1 text-[11px] ${styles.muted}`}>{rowBriefing?.canApprove ? 'Needs owner validation' : 'Agent intake task'}</div>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-semibold">{lead.name}</div>
+                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.contact || lead.email || 'Requester pending'}</div>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-medium">
+                                        {lead.departureCity || 'Origin pending'} to {lead.destination || 'Destination pending'}
+                                      </div>
+                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.dates || 'Dates pending'}</div>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-medium">{lead.travelers || 'Traveler count pending'}</div>
+                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.requestedServices || 'Services pending'}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <AlertTriangle className={`h-4 w-4 ${priority === 'urgent' || priority === 'high' ? 'text-red-400' : priority === 'normal' ? 'text-sky-300' : 'text-slate-400'}`} />
+                                      <span className={`rounded-full px-2 py-0.5 text-[11px] ring-1 ${styles.priority[priority]}`}>{priorityLabels[priority]}</span>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-medium">{leadOwner(lead)}</div>
+                                      <div className={`mt-1 text-xs ${styles.muted}`}>Current owner</div>
+                                    </div>
+                                  </button>
+                                ) : activeNav === 'leisureStudio' ? (
+                                  <button
+                                    key={lead.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedLeadId(lead.id);
+                                      setDetailTab('brief');
                                     }}
                                     className={`grid w-full grid-cols-[minmax(0,1fr)_92px] gap-3 border-b px-4 py-3 text-left transition ${
                                       isSelected ? styles.rowActive : styles.row
@@ -4900,20 +4955,18 @@ export function CrmPage() {
                                   >
                                     <div className="min-w-0">
                                       <div className="flex items-center gap-2">
-                                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${activeNav === 'corporateDesk' ? 'bg-sky-400' : lead.serviceKey === 'luxury' ? 'bg-[#d4af37]' : 'bg-emerald-400'}`} />
+                                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${lead.serviceKey === 'luxury' ? 'bg-[#d4af37]' : 'bg-emerald-400'}`} />
                                         <div className="truncate text-sm font-semibold">{lead.name}</div>
                                       </div>
                                       <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || 'Destination pending'}</div>
-                                      <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{lead.dates || 'Dates pending'} - {leadLifecycleLabel(lead)}</div>
-                                      {activeNav === 'corporateDesk' ? <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{lead.travelers || 'Traveler list pending'}</div> : null}
+                                      <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{lead.destination || 'Destination pending'} - {lead.dates || 'Dates pending'}</div>
                                     </div>
                                     <div className="flex flex-col items-end justify-center gap-1">
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] ring-1 ${styles.type[lead.serviceKey]}`}>{activeNav === 'corporateDesk' ? 'CTM' : typeLabels[lead.serviceKey]}</span>
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] ring-1 ${styles.type[lead.serviceKey]}`}>{typeLabels[lead.serviceKey]}</span>
                                       <span className={`inline-flex items-center gap-1 text-[10px] ${priority === 'urgent' || priority === 'high' ? 'text-red-300' : priority === 'normal' ? styles.soft : styles.muted}`}>
                                         <span className={`${priority === 'urgent' || priority === 'high' ? 'text-red-400' : priority === 'normal' ? 'text-sky-300' : 'text-slate-400'}`}>⚑</span>
                                         {priorityLabels[priority]}
                                       </span>
-                                      {activeNav === 'corporateDesk' ? <span className={`truncate text-[10px] ${styles.muted}`}>{leadOwner(lead)}</span> : null}
                                     </div>
                                   </button>
                                 ) : (
@@ -5147,7 +5200,7 @@ export function CrmPage() {
             </div>
 
         {activeNav !== 'corporateAccounts' ? (
-        <aside className={`hidden min-h-full px-5 py-6 xl:block ${styles.rightPane}`}>
+        <aside className={`${activeNav === 'corporateDesk' ? 'block px-5 pb-6' : `hidden min-h-full px-5 py-6 xl:block ${styles.rightPane}`}`}>
           {activeNav === 'settings' ? (
             <div className="grid gap-4">
               <div className={`rounded-xl border p-5 ${styles.panel}`}>
@@ -5518,6 +5571,46 @@ export function CrmPage() {
                     : detailTab === 'finance'
                       ? corporateFinanceCards(selectedLead)
                       : corporateDocumentCards(selectedLead);
+              const corporateBriefingItems = selectedBriefing?.items ?? [];
+              const corporateBriefingReadyCount = selectedBriefing?.readyCount ?? 0;
+              const corporateBriefingTotal = selectedBriefing?.total ?? 0;
+              const corporateBriefingProgress = corporateBriefingTotal > 0 ? Math.round((corporateBriefingReadyCount / corporateBriefingTotal) * 100) : 0;
+              const corporateBriefingBlockers = corporateBriefingItems.filter((item) => !item.ready).slice(0, 4);
+              const visibleCorporateWorkbenchTabs = selectedCorporateBriefReady
+                ? corporateWorkbenchTabs
+                : corporateWorkbenchTabs.filter((tab) => tab.id === 'brief');
+              const displayCorporateLabel = selectedCorporateBriefReady ? currentCorporateLabel : 'Brief';
+
+              if (!selectedCorporateBriefReady) {
+                return (
+                  <div className="grid gap-4">
+                    <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                        <div className="min-w-0">
+                          <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Corporate Desk Task</div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <h2 className="text-2xl font-semibold">Complete corporate briefing</h2>
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>CTM request</span>
+                            <span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-100">Briefing gate</span>
+                          </div>
+                          <p className={`mt-2 max-w-3xl text-sm leading-6 ${styles.soft}`}>
+                            Collect only the information needed to prepare a reliable quote. Booking, billing, fulfilment, and travel pack work stay out of this task.
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-2xl font-semibold">{corporateBriefingProgress}%</div>
+                          <div className={`text-[11px] uppercase tracking-[0.14em] ${styles.muted}`}>{corporateBriefingReadyCount}/{corporateBriefingTotal} ready</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                        <div className="h-full rounded-full bg-[#d9b46f]" style={{ width: `${corporateBriefingProgress}%` }} />
+                      </div>
+                    </div>
+
+                    {renderBriefingGate()}
+                  </div>
+                );
+              }
 
               return (
                 <div className="grid gap-4">
@@ -5534,7 +5627,9 @@ export function CrmPage() {
                           {selectedLead.destination || 'Destination pending'} - {selectedLead.tripType || selectedLead.service} - {selectedLead.dates || 'Dates pending'}
                         </div>
                         <div className={`mt-2 text-sm ${styles.soft}`}>
-                          Keep traveler readiness, approval ownership, finance clearance, documents, and booking release visible in one operating view.
+                          {selectedCorporateBriefReady
+                            ? 'Briefing is ready. Prepare the corporate quote and keep downstream fulfilment controlled.'
+                            : 'Next step: complete the corporate briefing so DPM has enough information to prepare a quote.'}
                         </div>
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                           {selectedQuote ? (
@@ -5542,6 +5637,14 @@ export function CrmPage() {
                               <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedQuote.quoteNumber} v{selectedQuote.version}</span>
                               <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{quoteStatusLabels[selectedQuote.status]}</span>
                             </>
+                          ) : !selectedCorporateBriefReady ? (
+                            <button
+                              type="button"
+                              onClick={() => setDetailTab('brief')}
+                              className="inline-flex h-8 items-center rounded-lg bg-[#d9b46f] px-3 text-xs font-semibold text-[#07111f]"
+                            >
+                              Complete briefing
+                            </button>
                           ) : (
                             <button
                               type="button"
@@ -5594,6 +5697,72 @@ export function CrmPage() {
                     </div>
                   </div>
 
+                  <div className={`rounded-xl border p-5 ${selectedCorporateBriefReady ? styles.panel : 'border-amber-400/25 bg-amber-500/10'}`}>
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <ClipboardCheck className="h-5 w-5 text-[#d9b46f]" />
+                          <div className="font-semibold">Corporate briefing intake</div>
+                        </div>
+                        <p className={`mt-2 max-w-3xl text-sm leading-6 ${selectedCorporateBriefReady ? styles.muted : 'text-amber-100/80'}`}>
+                          Before quote preparation, DPM needs a structured brief covering objective, route, traveler scope, hotel/transport expectations, policy, budget, and approval constraints.
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-2xl font-semibold">{corporateBriefingProgress}%</div>
+                        <div className={`text-[11px] uppercase tracking-[0.14em] ${selectedCorporateBriefReady ? styles.muted : 'text-amber-100/70'}`}>
+                          {corporateBriefingReadyCount}/{corporateBriefingTotal} ready
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={`mt-4 h-2 overflow-hidden rounded-full ${selectedCorporateBriefReady ? 'bg-white/10' : 'bg-amber-950/35'}`}>
+                      <div className={`h-full rounded-full ${selectedCorporateBriefReady ? 'bg-emerald-400' : 'bg-[#d9b46f]'}`} style={{ width: `${corporateBriefingProgress}%` }} />
+                    </div>
+
+                    <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                      {corporateBriefingItems.map((item) => (
+                        <div key={item.label} className={`rounded-lg border px-3 py-3 ${item.ready ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100' : selectedCorporateBriefReady ? styles.panelSoft : 'border-amber-400/20 bg-black/10 text-amber-50'}`}>
+                          <div className="flex items-center gap-2">
+                            {item.ready ? <CheckSquare className="h-4 w-4 text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-300" />}
+                            <div className="truncate text-sm font-semibold">{item.label}</div>
+                          </div>
+                          <div className={`mt-2 line-clamp-2 text-xs ${item.ready ? 'text-emerald-100/75' : selectedCorporateBriefReady ? styles.muted : 'text-amber-50/75'}`}>
+                            {item.detail}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 flex flex-col gap-3 rounded-lg border border-inherit px-3 py-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div className="text-sm font-semibold">
+                          {selectedCorporateBriefReady ? 'Briefing complete. Quote preparation can start.' : 'Quote preparation is locked until the brief is complete.'}
+                        </div>
+                        {!selectedCorporateBriefReady ? (
+                          <div className="mt-1 text-xs text-amber-50/75">
+                            Missing: {corporateBriefingBlockers.map((item) => item.label).join(', ') || 'briefing fields'}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => setDetailTab('brief')} className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold ${styles.buttonGhost}`}>
+                          <ClipboardCheck className="h-4 w-4" />
+                          Open briefing template
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => createDraftQuoteForLead(selectedLead)}
+                          disabled={!selectedCorporateBriefReady || Boolean(selectedQuote)}
+                          className="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <FileText className="h-4 w-4" />
+                          Prepare quote
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="min-w-0">
@@ -5626,11 +5795,11 @@ export function CrmPage() {
                       {selectedCtmTrip ? (
                         <button
                           type="button"
-                          onClick={() => setDetailTab('finance')}
+                          onClick={() => setDetailTab(selectedCorporateBriefReady ? 'finance' : 'brief')}
                           className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
                         >
                           <FileText className="h-4 w-4" />
-                          Commercial output
+                          {selectedCorporateBriefReady ? 'Commercial output' : 'Complete briefing'}
                         </button>
                       ) : null}
                     </div>
@@ -5646,24 +5815,24 @@ export function CrmPage() {
                               meta: selectedCtmTrip.approvals.find((approval) => approval.status === 'Pending')?.stage || 'No pending approval',
                             },
                             {
-                              label: 'Quote',
-                              value: selectedCtmTrip.quote ? corporateQuoteStatusLabels[selectedCtmTrip.quote.status] : 'Not created',
-                              meta: selectedCtmTrip.quote ? moneyValue(selectedCtmTrip.quote.amount, selectedCtmTrip.quote.currency) : 'Prepare in CRM',
+                              label: selectedCorporateBriefReady ? 'Quote' : 'Quote locked',
+                              value: selectedCorporateBriefReady && selectedCtmTrip.quote ? corporateQuoteStatusLabels[selectedCtmTrip.quote.status] : selectedCorporateBriefReady ? 'Not created' : 'Briefing first',
+                              meta: selectedCorporateBriefReady && selectedCtmTrip.quote ? moneyValue(selectedCtmTrip.quote.amount, selectedCtmTrip.quote.currency) : selectedCorporateBriefReady ? 'Prepare in CRM' : 'Complete quote-ready brief',
                             },
                             {
-                              label: 'Booking',
-                              value: selectedCtmTrip.booking ? corporateBookingStatusLabels[selectedCtmTrip.booking.status] : 'Not created',
-                              meta: selectedCtmTrip.booking?.bookingReference || 'Supplier release pending',
+                              label: selectedCorporateBriefReady ? 'Booking' : 'Booking locked',
+                              value: selectedCorporateBriefReady && selectedCtmTrip.booking ? corporateBookingStatusLabels[selectedCtmTrip.booking.status] : selectedCorporateBriefReady ? 'Not created' : 'After quote',
+                              meta: selectedCorporateBriefReady ? selectedCtmTrip.booking?.bookingReference || 'Supplier release pending' : 'Hidden until commercial release',
                             },
                             {
-                              label: 'Invoice',
-                              value: selectedCtmTrip.invoice ? corporateInvoiceStatusLabels[selectedCtmTrip.invoice.status] : 'Not created',
-                              meta: selectedCtmTrip.invoice ? moneyValue(selectedCtmTrip.invoice.amount, selectedCtmTrip.invoice.currency) : 'Billing pending',
+                              label: selectedCorporateBriefReady ? 'Invoice' : 'Invoice locked',
+                              value: selectedCorporateBriefReady && selectedCtmTrip.invoice ? corporateInvoiceStatusLabels[selectedCtmTrip.invoice.status] : selectedCorporateBriefReady ? 'Not created' : 'After booking',
+                              meta: selectedCorporateBriefReady && selectedCtmTrip.invoice ? moneyValue(selectedCtmTrip.invoice.amount, selectedCtmTrip.invoice.currency) : selectedCorporateBriefReady ? 'Billing pending' : 'Finance follows quote approval',
                             },
                             {
-                              label: 'Payments',
-                              value: String(selectedCtmTrip.payments.length),
-                              meta: selectedCtmTrip.payments[0] ? corporatePaymentStatusLabels[selectedCtmTrip.payments[0].status] : 'No payment records',
+                              label: 'Messages',
+                              value: String(selectedCtmTrip.messages?.length ?? 0),
+                              meta: selectedCtmTrip.messages?.[0]?.body || 'Use CTM only for clarifications',
                             },
                           ].map((card) => (
                             <div key={card.label} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
@@ -5674,6 +5843,7 @@ export function CrmPage() {
                           ))}
                         </div>
 
+                        {selectedCorporateBriefReady ? (
                         <div className={`mt-4 rounded-lg border p-4 ${styles.panelSoft}`}>
                           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                             <div>
@@ -5707,6 +5877,7 @@ export function CrmPage() {
                             ))}
                           </div>
                         </div>
+                        ) : null}
                       </>
                     ) : (
                       <div className={`mt-4 rounded-lg border p-4 text-sm ${styles.panelSoft}`}>
@@ -5719,6 +5890,11 @@ export function CrmPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="font-semibold">Corporate value chain</div>
                       <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadLifecycleLabel(selectedLead)}</span>
+                    </div>
+                    <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${selectedCorporateBriefReady ? styles.panelSoft : 'border-amber-400/20 bg-amber-500/10 text-amber-100'}`}>
+                      {selectedCorporateBriefReady
+                        ? 'Briefing gate cleared. Downstream quote and fulfilment stages are available.'
+                        : 'Current focus: complete the briefing gate. Downstream quote, booking, billing, and travel pack steps stay secondary until the brief is quote-ready.'}
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
                       {lifecycleWorkflowSteps.map(([stage, label], index) => {
@@ -5765,12 +5941,12 @@ export function CrmPage() {
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="flex items-center justify-between gap-3">
                       <div className="font-semibold">Corporate work area</div>
-                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{currentCorporateLabel}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{displayCorporateLabel}</span>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-6">
-                      {corporateWorkbenchTabs.map(({ id, label, Icon }, index) => {
-                        const isDone = currentCorporateIndex > index;
-                        const isCurrent = currentCorporateIndex === index;
+                      {visibleCorporateWorkbenchTabs.map(({ id, label, Icon }, index) => {
+                        const isDone = selectedCorporateBriefReady && currentCorporateIndex > index;
+                        const isCurrent = !selectedCorporateBriefReady || currentCorporateIndex === index;
                         return (
                           <button
                             key={id}
@@ -5812,13 +5988,15 @@ export function CrmPage() {
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
-                        <div className="font-semibold">{currentCorporateLabel}</div>
-                        <div className={`mt-1 text-sm ${styles.muted}`}>{selectedNextAction || 'Move the corporate request through the active checkpoint.'}</div>
+                        <div className="font-semibold">{displayCorporateLabel}</div>
+                        <div className={`mt-1 text-sm ${styles.muted}`}>
+                          {selectedCorporateBriefReady ? selectedNextAction || 'Move the corporate request through the active checkpoint.' : 'Complete the structured corporate brief before preparing quote, booking, billing, or travel pack outputs.'}
+                        </div>
                       </div>
-                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedWorkflowState?.currentStageLabel || selectedProcess?.primaryAction || 'Working stage'}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedCorporateBriefReady ? selectedWorkflowState?.currentStageLabel || selectedProcess?.primaryAction || 'Working stage' : 'Briefing gate'}</span>
                     </div>
 
-                    {detailTab === 'itinerary' ? (
+                    {!selectedCorporateBriefReady ? renderBriefingGate() : detailTab === 'itinerary' ? (
                       <div className="grid gap-4">
                         {selectedQuote ? (
                           <div className="grid gap-3 md:grid-cols-3">

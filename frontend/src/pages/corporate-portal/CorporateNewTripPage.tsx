@@ -12,6 +12,13 @@ function todayLocalIso() {
   return local.toISOString().slice(0, 10);
 }
 
+function addDaysIso(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
 function formatReadableDate(value: string) {
   if (!value) return 'No date selected';
   const date = new Date(`${value}T00:00:00`);
@@ -55,6 +62,15 @@ export function CorporateNewTripPage({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const styles = corporatePortalThemeStyles[theme];
   const minTravelDate = todayLocalIso();
+  const optionClass = theme === 'dark' ? 'bg-[#07111f]' : 'bg-white';
+  const fieldBase = `h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`;
+  const textareaBase = `w-full rounded-lg border px-3 py-3 text-sm outline-none ${styles.input}`;
+  const sectionRule = theme === 'dark' ? 'border-white/10 text-white/55' : 'border-slate-200 text-slate-500';
+  const quickDates = [
+    { label: 'Tomorrow', value: addDaysIso(1) },
+    { label: 'Next week', value: addDaysIso(7) },
+    { label: '+30 days', value: addDaysIso(30) },
+  ];
 
   const fieldErrors = useMemo(() => {
     const errors: Record<string, string> = {};
@@ -74,10 +90,7 @@ export function CorporateNewTripPage({
     return errors;
   }, [departureDate, destination, minTravelDate, origin, purpose, services.length, travelers]);
 
-  const canSubmit = useMemo(() => {
-    return Object.keys(fieldErrors).length === 0;
-  }, [fieldErrors]);
-
+  const canSubmit = useMemo(() => Object.keys(fieldErrors).length === 0, [fieldErrors]);
   const markTouched = (field: string) => setTouched((current) => ({ ...current, [field]: true }));
   const visibleError = (field: string) => (showErrors || touched[field] ? fieldErrors[field] : '');
   const errorClass = (field: string) => (visibleError(field) ? 'border-rose-400/50 ring-1 ring-rose-400/25' : '');
@@ -144,7 +157,7 @@ export function CorporateNewTripPage({
   };
 
   return (
-    <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+    <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.82fr]">
       <div className={`rounded-xl border p-5 shadow-2xl ${styles.panel}`}>
         <div className="mb-5">
           <h2 className="text-2xl font-semibold">Create a new corporate travel request</h2>
@@ -153,177 +166,207 @@ export function CorporateNewTripPage({
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className={`rounded-xl border p-4 text-sm ${styles.input}`}>
-            <div className={`mb-2 ${styles.muted}`}>Department</div>
-            <select value={department} onChange={(event) => setDepartment(event.target.value)} className="w-full bg-transparent outline-none">
-              {corporateDepartments.map((item) => (
-                <option key={item} value={item} className="bg-[#07111f]">
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={`rounded-xl border p-4 text-sm ${styles.input}`}>
-            <div className={`mb-2 ${styles.muted}`}>Budget band</div>
-            <select value={budgetBand} onChange={(event) => setBudgetBand(event.target.value as 'lt1k' | '1k_5k' | 'gt5k')} className="w-full bg-transparent outline-none">
-              {corporateCostBands.map((item) => (
-                <option key={item.key} value={item.key} className="bg-[#07111f]">
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={`rounded-xl border p-4 text-sm ${styles.input} ${errorClass('origin')}`}>
-            <div className={`mb-2 ${styles.muted}`}>Origin <RequiredMark /></div>
-            <input value={origin} onBlur={() => markTouched('origin')} onChange={(event) => setOrigin(event.target.value)} className="w-full bg-transparent outline-none" />
-            <FieldError message={visibleError('origin')} />
-          </label>
-
-          <label className={`rounded-xl border p-4 text-sm ${styles.input} ${errorClass('destination')}`}>
-            <div className={`mb-2 ${styles.muted}`}>Destination <RequiredMark /></div>
-            <input value={destination} onBlur={() => markTouched('destination')} onChange={(event) => setDestination(event.target.value)} className="w-full bg-transparent outline-none" placeholder="Johannesburg, Dubai, Cape Town..." />
-            <FieldError message={visibleError('destination')} />
-          </label>
-
-          <label className={`rounded-xl border p-4 text-sm md:col-span-2 ${styles.input} ${errorClass('departureDate')}`}>
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <span className={styles.muted}>Departure date <RequiredMark /></span>
-              <span className={`inline-flex items-center gap-1 text-xs ${styles.muted}`}>
-                <CalendarDays className="h-3.5 w-3.5" />
-                {formatReadableDate(departureDate)}
-              </span>
+        <div className="space-y-6">
+          <div>
+            <div className={`mb-3 border-b pb-2 text-xs font-semibold uppercase tracking-[0.14em] ${sectionRule}`}>
+              Request details
             </div>
-            <input type="date" min={minTravelDate} value={departureDate} onBlur={() => markTouched('departureDate')} onChange={(event) => setDepartureDate(event.target.value)} className="w-full bg-transparent outline-none [color-scheme:dark]" />
-            <div className={`mt-2 text-xs ${styles.muted}`}>Use the calendar picker or type YYYY-MM-DD. Earliest allowed: {formatReadableDate(minTravelDate)}.</div>
-            <FieldError message={visibleError('departureDate')} />
-          </label>
-        </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="text-sm">
+                <div className={`mb-1.5 ${styles.muted}`}>Department</div>
+                <select value={department} onChange={(event) => setDepartment(event.target.value)} className={fieldBase}>
+                  {corporateDepartments.map((item) => (
+                    <option key={item} value={item} className={optionClass}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-        <label className={`mt-4 block rounded-xl border p-4 text-sm ${styles.input} ${errorClass('purpose')}`}>
-          <div className={`mb-2 ${styles.muted}`}>Business purpose <RequiredMark /></div>
-          <textarea
-            value={purpose}
-            onBlur={() => markTouched('purpose')}
-            onChange={(event) => setPurpose(event.target.value)}
-            rows={4}
-            className="w-full resize-none bg-transparent outline-none placeholder:text-slate-500"
-            placeholder="Describe the business need, meeting, training, negotiation, or project objective."
-          />
-          <FieldError message={visibleError('purpose')} />
-        </label>
+              <label className="text-sm">
+                <div className={`mb-1.5 ${styles.muted}`}>Budget band</div>
+                <select value={budgetBand} onChange={(event) => setBudgetBand(event.target.value as 'lt1k' | '1k_5k' | 'gt5k')} className={fieldBase}>
+                  {corporateCostBands.map((item) => (
+                    <option key={item.key} value={item.key} className={optionClass}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-        <div className={`mt-4 rounded-xl border p-4 ${styles.panelSoft} ${errorClass('services')}`}>
-          <div className="mb-3 text-sm font-medium">Services needed <RequiredMark /></div>
-          <div className="grid gap-2 md:grid-cols-2">
-            {corporateServiceCatalog.map((service) => {
-              const checked = services.includes(service);
-              return (
-                <label
-                  key={service}
-                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${
-                    checked ? 'border-[#d9b46f]/35 bg-[#d9b46f]/10 text-[#d9b46f]' : theme === 'dark' ? 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <input type="checkbox" checked={checked} onChange={() => toggleService(service)} className="h-4 w-4 accent-[#d9b46f]" />
-                  <span>{service}</span>
-                </label>
-              );
-            })}
-          </div>
-          <FieldError message={visibleError('services')} />
-        </div>
+              <label className="text-sm">
+                <div className={`mb-1.5 ${styles.muted}`}>Origin <RequiredMark /></div>
+                <input value={origin} onBlur={() => markTouched('origin')} onChange={(event) => setOrigin(event.target.value)} className={`${fieldBase} ${errorClass('origin')}`} />
+                <FieldError message={visibleError('origin')} />
+              </label>
 
-        <div className={`mt-4 rounded-xl border p-4 ${styles.panelSoft}`}>
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">Travelers</div>
-              <div className={`text-xs ${styles.muted}`}>Add one or more travelers for the request or reuse saved company profiles.</div>
+              <label className="text-sm">
+                <div className={`mb-1.5 ${styles.muted}`}>Destination <RequiredMark /></div>
+                <input value={destination} onBlur={() => markTouched('destination')} onChange={(event) => setDestination(event.target.value)} className={`${fieldBase} ${errorClass('destination')}`} placeholder="Johannesburg, Dubai, Cape Town..." />
+                <FieldError message={visibleError('destination')} />
+              </label>
             </div>
-            <button type="button" onClick={addTraveler} className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${styles.buttonGhost}`}>
-              <PlusSquare className="h-4 w-4" />
-              Add traveler
-            </button>
-          </div>
 
-          {availableTravelerProfiles.length > 0 ? (
-            <div className="mb-4 grid gap-2 md:grid-cols-2">
-              {availableTravelerProfiles.slice(0, 6).map((profile) => (
-                <button
-                  key={profile.id}
-                  type="button"
-                  onClick={() => addTravelerFromProfile(profile)}
-                  className={`rounded-xl border p-3 text-left transition ${theme === 'dark' ? 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08]' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{profile.name}</div>
-                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{profile.department} · {profile.email}</div>
-                    </div>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${profile.passportStatus === 'OK' ? 'bg-emerald-500/12 text-emerald-200' : 'bg-red-500/12 text-red-200'}`}>
-                      {profile.passportStatus}
+            <div className="mt-4 grid gap-4 md:grid-cols-[0.95fr_1.05fr]">
+              <div>
+                <label className="text-sm">
+                  <div className={`mb-1.5 flex items-center justify-between gap-3 ${styles.muted}`}>
+                    <span>Departure date <RequiredMark /></span>
+                    <span className="inline-flex items-center gap-1 text-xs">
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      {formatReadableDate(departureDate)}
                     </span>
                   </div>
-                  <div className={`mt-2 text-xs ${styles.muted}`}>
-                    {profile.nextTripId ? `Upcoming: ${profile.nextTripLabel ?? profile.nextTripId}` : 'Reusable profile ready'}
-                  </div>
-                </button>
-              ))}
+                  <input type="date" min={minTravelDate} value={departureDate} onBlur={() => markTouched('departureDate')} onChange={(event) => setDepartureDate(event.target.value)} className={`${fieldBase} ${errorClass('departureDate')} [color-scheme:dark]`} />
+                </label>
+                <FieldError message={visibleError('departureDate')} />
+              </div>
+              <div>
+                <div className={`mb-1.5 text-sm ${styles.muted}`}>Quick date</div>
+                <div className="flex flex-wrap gap-2">
+                  {quickDates.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => {
+                        setDepartureDate(item.value);
+                        markTouched('departureDate');
+                      }}
+                      className={`h-11 rounded-lg border px-3 text-sm transition ${departureDate === item.value ? 'border-[#d9b46f]/45 bg-[#d9b46f]/10 text-[#d9b46f]' : styles.buttonGhost}`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                <div className={`mt-2 text-xs ${styles.muted}`}>Earliest allowed: {formatReadableDate(minTravelDate)}.</div>
+              </div>
             </div>
-          ) : null}
+          </div>
 
-          <div className="space-y-3">
-            {travelers.map((traveler, index) => (
-              <div key={`traveler-${index}`} className={`rounded-xl border p-4 ${theme === 'dark' ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white'}`}>
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium">Traveler {index + 1}</div>
-                    {traveler.profileId ? <div className={`mt-1 text-xs ${styles.muted}`}>Prefilled from saved traveler profile</div> : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeTraveler(index)}
-                    className={`inline-flex items-center gap-1 rounded-xl border px-2 py-1 text-xs ${styles.buttonGhost}`}
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                    Remove
-                  </button>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <input
-                    value={traveler.name}
-                    onBlur={() => markTouched(`traveler-${index}-name`)}
-                    onChange={(event) => updateTraveler(index, 'name', event.target.value)}
-                    className={`rounded-xl border px-4 py-3 text-sm outline-none placeholder:text-slate-500 ${styles.input} ${errorClass(`traveler-${index}-name`)}`}
-                    placeholder="Full name *"
-                  />
-                  <input
-                    value={traveler.email}
-                    onBlur={() => markTouched(`traveler-${index}-email`)}
-                    onChange={(event) => updateTraveler(index, 'email', event.target.value)}
-                    className={`rounded-xl border px-4 py-3 text-sm outline-none placeholder:text-slate-500 ${styles.input} ${errorClass(`traveler-${index}-email`)}`}
-                    placeholder="Email *"
-                  />
-                  <select
-                    value={traveler.department}
-                    onChange={(event) => updateTraveler(index, 'department', event.target.value)}
-                    className={`rounded-xl border px-4 py-3 text-sm outline-none ${styles.input}`}
-                  >
-                    {corporateDepartments.map((item) => (
-                      <option key={item} value={item} className="bg-[#07111f]">
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="mt-2 grid gap-2 md:grid-cols-2">
-                  <FieldError message={visibleError(`traveler-${index}-name`)} />
-                  <FieldError message={visibleError(`traveler-${index}-email`)} />
+          <div>
+            <div className={`mb-3 border-b pb-2 text-xs font-semibold uppercase tracking-[0.14em] ${sectionRule}`}>
+              Purpose and services
+            </div>
+            <label className="block text-sm">
+              <div className={`mb-1.5 ${styles.muted}`}>Business purpose <RequiredMark /></div>
+              <textarea
+                value={purpose}
+                onBlur={() => markTouched('purpose')}
+                onChange={(event) => setPurpose(event.target.value)}
+                rows={4}
+                className={`${textareaBase} resize-none ${errorClass('purpose')}`}
+                placeholder="Describe the business need, meeting, training, negotiation, or project objective."
+              />
+              <FieldError message={visibleError('purpose')} />
+            </label>
+
+            <div className="mt-4">
+              <div className="mb-2 text-sm font-medium">Services needed <RequiredMark /></div>
+              <div className="flex flex-wrap gap-2">
+                {corporateServiceCatalog.map((service) => {
+                  const checked = services.includes(service);
+                  return (
+                    <button
+                      key={service}
+                      type="button"
+                      onClick={() => toggleService(service)}
+                      className={`inline-flex h-10 items-center rounded-lg border px-3 text-sm transition ${
+                        checked ? 'border-[#d9b46f]/45 bg-[#d9b46f]/10 text-[#d9b46f]' : styles.buttonGhost
+                      }`}
+                    >
+                      {service}
+                    </button>
+                  );
+                })}
+              </div>
+              <FieldError message={visibleError('services')} />
+            </div>
+          </div>
+
+          <div>
+            <div className={`mb-3 flex flex-wrap items-center justify-between gap-3 border-b pb-2 ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}>
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#d9b46f]">Travelers</div>
+                <div className={`mt-1 text-xs ${styles.muted}`}>Reuse saved profiles or add traveler details manually.</div>
+              </div>
+              <button type="button" onClick={addTraveler} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold ${styles.buttonGhost}`}>
+                <PlusSquare className="h-4 w-4" />
+                Add traveler
+              </button>
+            </div>
+
+            {availableTravelerProfiles.length > 0 ? (
+              <div className="mb-4">
+                <div className={`mb-2 text-xs ${styles.muted}`}>Saved profiles</div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {availableTravelerProfiles.slice(0, 8).map((profile) => (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      onClick={() => addTravelerFromProfile(profile)}
+                      className={`min-w-[190px] rounded-lg border px-3 py-2 text-left text-sm transition ${theme === 'dark' ? 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08]' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                    >
+                      <div className="truncate font-medium">{profile.name}</div>
+                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{profile.department} - {profile.email}</div>
+                    </button>
+                  ))}
                 </div>
               </div>
-            ))}
+            ) : null}
+
+            <div className="space-y-3">
+              {travelers.map((traveler, index) => (
+                <div key={`traveler-${index}`} className={`rounded-lg border px-3 py-3 ${styles.surface}`}>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="text-sm font-medium">
+                      Traveler {index + 1}
+                      {traveler.profileId ? <span className={`ml-2 text-xs font-normal ${styles.muted}`}>Saved profile</span> : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeTraveler(index)}
+                      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs ${styles.buttonGhost}`}
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                      Remove
+                    </button>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-[1fr_1fr_0.85fr]">
+                    <div>
+                      <input
+                        value={traveler.name}
+                        onBlur={() => markTouched(`traveler-${index}-name`)}
+                        onChange={(event) => updateTraveler(index, 'name', event.target.value)}
+                        className={`${fieldBase} ${errorClass(`traveler-${index}-name`)}`}
+                        placeholder="Full name *"
+                      />
+                      <FieldError message={visibleError(`traveler-${index}-name`)} />
+                    </div>
+                    <div>
+                      <input
+                        value={traveler.email}
+                        onBlur={() => markTouched(`traveler-${index}-email`)}
+                        onChange={(event) => updateTraveler(index, 'email', event.target.value)}
+                        className={`${fieldBase} ${errorClass(`traveler-${index}-email`)}`}
+                        placeholder="Email *"
+                      />
+                      <FieldError message={visibleError(`traveler-${index}-email`)} />
+                    </div>
+                    <select
+                      value={traveler.department}
+                      onChange={(event) => updateTraveler(index, 'department', event.target.value)}
+                      className={fieldBase}
+                    >
+                      {corporateDepartments.map((item) => (
+                        <option key={item} value={item} className={optionClass}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 

@@ -16,6 +16,14 @@ export type BriefingTemplateDraft = {
   budgetFlexibility: string;
   decisionPriority: string;
   servicesNeeded: string;
+  flightRequirements: string;
+  accommodationRequirements: string;
+  groundTransport: string;
+  visaDocuments: string;
+  billingRequirements: string;
+  approvalRequirements: string;
+  quoteOutput: string;
+  assumptionsExclusions: string;
   validationQuestions: string;
 };
 
@@ -166,8 +174,16 @@ export function emptyBriefingTemplateDraft(lead?: CrmLead | null): BriefingTempl
     budgetFlexibility: lead?.budget || '',
     decisionPriority: isCorporate ? 'Policy fit, timing, total cost, traveler convenience' : '',
     servicesNeeded: lead?.requestedServices || '',
+    flightRequirements: isCorporate ? 'Preferred airports, schedule windows, fare flexibility, baggage, class of service' : '',
+    accommodationRequirements: isCorporate ? 'Hotel location, policy level, room type, check-in/check-out constraints' : '',
+    groundTransport: isCorporate ? 'Airport transfers, office transfers, driver/security needs, meet-and-greet' : '',
+    visaDocuments: isCorporate ? 'Passport validity, visa needs, invitation letters, insurance, traveler document gaps' : '',
+    billingRequirements: isCorporate ? 'Cost center, PO, invoice recipient, tax details, payment terms' : '',
+    approvalRequirements: isCorporate ? 'Travel owner, finance approver, decision deadline, quote approval channel' : '',
+    quoteOutput: isCorporate ? 'Line-item quote with flights, hotels, transfers, visa/support fees, taxes, validity, assumptions' : '',
+    assumptionsExclusions: '',
     validationQuestions: isCorporate
-      ? 'Please confirm traveler names, travel dates, route, budget/policy limits, approval owner, and billing requirements before DPM prepares the quote.'
+      ? 'Please confirm traveler names, route, dates, flight/hotel policy, document readiness, billing details, approval owner, and quote format before DPM prepares the quote.'
       : 'Please confirm if this brief is correct, or tell us what should change before DPM starts trip design.',
   };
 }
@@ -184,16 +200,21 @@ export function briefingValidationSummary(lead: CrmLead, draft: BriefingTemplate
       `Travel dates: ${lead.dates || 'To confirm'} (${draft.dateFlexibility || 'Flexibility to confirm'})`,
       `Traveler scope: ${draft.travelerProfile || lead.travelers || 'To confirm'}`,
       '',
-      'Service requirements',
-      `Flights / movement: ${draft.travelStyle || 'To confirm'}`,
-      `Accommodation: ${draft.accommodationLevel || 'To confirm'}`,
+      'Quote input requirements',
+      `Flights: ${draft.flightRequirements || draft.travelStyle || 'To confirm'}`,
+      `Hotels / accommodation: ${draft.accommodationRequirements || draft.accommodationLevel || 'To confirm'}`,
       `Room requirements: ${draft.roomPreferences || 'To confirm'}`,
-      `Ground transport / visa / assistance: ${draft.servicesNeeded || lead.requestedServices || 'To confirm'}`,
+      `Ground transport: ${draft.groundTransport || 'To confirm'}`,
+      `Visa / documents / insurance: ${draft.visaDocuments || 'To confirm'}`,
+      `DPM services in scope: ${draft.servicesNeeded || lead.requestedServices || 'To confirm'}`,
       `Special requirements or risks: ${draft.specialRequirements || 'None captured yet'}`,
       '',
       'Commercial and approval controls',
       `Budget / policy / PO: ${lead.budget || 'To confirm'}${draft.budgetFlexibility ? ` - ${draft.budgetFlexibility}` : ''}`,
-      `Decision priority: ${draft.decisionPriority || 'To confirm'}`,
+      `Billing requirements: ${draft.billingRequirements || 'To confirm'}`,
+      `Approval requirements: ${draft.approvalRequirements || draft.decisionPriority || 'To confirm'}`,
+      `Quote output expected: ${draft.quoteOutput || 'To confirm'}`,
+      `Assumptions / exclusions: ${draft.assumptionsExclusions || 'None captured yet'}`,
       '',
       'Company validation needed',
       draft.validationQuestions || 'Please confirm the corporate brief before DPM prepares the quote.',

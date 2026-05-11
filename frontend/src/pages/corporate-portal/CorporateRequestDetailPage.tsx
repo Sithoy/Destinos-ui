@@ -79,11 +79,28 @@ function stageClass(state: ProcessingStageState, theme: CorporatePortalTheme) {
   return theme === 'dark' ? 'border-white/10 bg-white/[0.03] text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500';
 }
 
-function stageConnectorClass(state: ProcessingStageState) {
-  if (state === 'done') return 'bg-emerald-400/50';
-  if (state === 'active') return 'bg-sky-400/50';
-  if (state === 'blocked') return 'bg-rose-400/50';
-  return 'bg-white/10';
+function stageDotClass(state: ProcessingStageState, selected: boolean, theme: CorporatePortalTheme) {
+  const selectedRing = selected ? 'ring-2 ring-[#d9b46f]/70 ring-offset-2 ring-offset-transparent' : '';
+  if (state === 'done') return `border-emerald-400/45 bg-emerald-500/15 text-emerald-200 ${selectedRing}`;
+  if (state === 'active') return `border-sky-400/45 bg-sky-500/15 text-sky-200 ${selectedRing}`;
+  if (state === 'blocked') return `border-rose-400/45 bg-rose-500/15 text-rose-100 ${selectedRing}`;
+  return `${theme === 'dark' ? 'border-white/10 bg-white/[0.03] text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'} ${selectedRing}`;
+}
+
+function stageToneLabel(state: ProcessingStageState) {
+  if (state === 'done') return 'Done';
+  if (state === 'active') return 'In progress';
+  if (state === 'blocked') return 'Blocked';
+  return 'Pending';
+}
+
+function workflowProgress(stages: ProcessingStage[]) {
+  const weighted = stages.reduce((total, stage) => {
+    if (stage.state === 'done') return total + 1;
+    if (stage.state === 'active') return total + 0.5;
+    return total;
+  }, 0);
+  return Math.round((weighted / stages.length) * 100);
 }
 
 function approvalStatus(trip: CorporateTripRequest, stage: 'Travel need' | 'Final cost') {
@@ -99,15 +116,12 @@ function hasDocumentBlocker(trip: CorporateTripRequest) {
     || (trip.documents ?? []).some((document) => document.status === 'missing' || document.status === 'requested');
 }
 
-function buildProcessingStages(trip: CorporateTripRequest): ProcessingStage[] {
+function buildDecisionStages(trip: CorporateTripRequest): ProcessingStage[] {
   const travelNeed = approvalStatus(trip, 'Travel need');
   const finalCost = approvalStatus(trip, 'Final cost');
   const quoteReady = hasApprovalReadyQuote(trip);
   const bookingReady = Boolean(trip.booking) || trip.status === 'Booked' || trip.status === 'Completed';
-  const invoiceReady = Boolean(trip.invoice);
-  const paid = trip.invoice?.status === 'paid' || trip.payments.some((payment) => payment.status === 'received' || payment.status === 'reconciled');
   const blockedByApproval = travelNeed === 'Rejected' || finalCost === 'Rejected';
-  const blockedByDocuments = hasDocumentBlocker(trip) && (trip.status === 'Needs documents' || bookingReady);
 
   return [
     {
@@ -125,6 +139,13 @@ function buildProcessingStages(trip: CorporateTripRequest): ProcessingStage[] {
       Icon: ShieldCheck,
     },
     {
+      id: 'briefing',
+      label: 'Briefing',
+      state: quoteReady || finalCost === 'Approved' || bookingReady ? 'done' : travelNeed === 'Approved' ? 'active' : 'pending',
+      detail: quoteReady ? 'DPM has enough business detail to prepare and share pricing.' : travelNeed === 'Approved' ? 'DPM is validating requirements, policy constraints, and traveler needs.' : 'Starts after the company approves the travel need.',
+      Icon: ClipboardList,
+    },
+    {
       id: 'quote',
       label: 'Quote',
       state: quoteReady ? (trip.quote?.status === 'rejected' ? 'blocked' : trip.quote?.status === 'approved' || finalCost === 'Approved' || bookingReady ? 'done' : 'active') : travelNeed === 'Approved' ? 'active' : 'pending',
@@ -139,11 +160,64 @@ function buildProcessingStages(trip: CorporateTripRequest): ProcessingStage[] {
       Icon: CheckCircle2,
     },
     {
-      id: 'booking',
-      label: 'Booking',
-      state: trip.booking?.status === 'cancelled' ? 'blocked' : bookingReady ? (trip.booking?.status === 'ticketed' || trip.booking?.status === 'completed' ? 'done' : 'active') : finalCost === 'Approved' ? 'active' : 'pending',
-      detail: trip.booking ? `${labelize(trip.booking.status)} - ${trip.booking.bookingReference || 'reference pending'}` : 'Supplier booking has not been released.',
+      id: 'authorized',
+      label: 'Authorized',
+      state: blockedByApproval ? 'blocked' : bookingReady ? 'done' : finalCost === 'Approved' ? 'active' : 'pending',
+      detail: bookingReady ? 'The request is authorized and DPM has moved into booking execution.' : finalCost === 'Approved' ? 'DPM is authorized to proceed with supplier booking.' : 'Unlocks after final cost approval.',
       Icon: PlaneTakeoff,
+    },
+  ];
+}
+
+function buildLogisticsStages(trip: CorporateTripRequest): ProcessingStage[] {
+  const finalCost = approvalStatus(trip, 'Final cost');
+  const bookingReady = Boolean(trip.booking) || trip.status === 'Booked' || trip.status === 'Completed';
+  const blockedByDocuments = hasDocumentBlocker(trip) && (trip.status === 'Needs documents' || bookingReady);
+  const invoiceReady = Boolean(trip.invoice);
+  const paid = trip.invoice?.status === 'paid' || trip.payments.some((payment) => payment.status === 'received' || payment.status === 'reconciled');
+  const requiresFlight = trip.services.includes('Flight');
+  const requiresHotel = trip.services.includes('Hotel');
+  const requiresVisa = trip.services.includes('Visa support') || trip.travelers.some((traveler) => traveler.readiness.visa === 'Required');
+  const passportBlocked = trip.travelers.some((traveler) => traveler.readiness.passport !== 'OK');
+  const visaBlocked = trip.travelers.some((traveler) => traveler.readiness.visa === 'Required');
+  const documents = trip.documents ?? [];
+  const itineraryReady = documents.some((document) => document.documentType === 'itinerary' && ['verified', 'issued'].includes(document.status));
+
+  return [
+    {
+      id: 'travelers',
+      label: 'Travelers',
+      state: passportBlocked ? 'blocked' : 'done',
+      detail: passportBlocked ? 'At least one traveler has missing or expired passport readiness.' : `${trip.travelers.length} traveler profile${trip.travelers.length === 1 ? '' : 's'} ready for processing.`,
+      Icon: Building2,
+    },
+    {
+      id: 'documents',
+      label: 'Documents',
+      state: blockedByDocuments ? 'blocked' : documents.length > 0 ? 'done' : finalCost === 'Approved' || bookingReady ? 'active' : 'pending',
+      detail: blockedByDocuments ? 'Document records show missing or requested items.' : documents.length > 0 ? 'Shared documents are received or verified.' : 'Document collection starts as the trip moves toward booking.',
+      Icon: FileText,
+    },
+    {
+      id: 'visa',
+      label: 'Visa',
+      state: visaBlocked ? 'blocked' : requiresVisa ? 'active' : 'done',
+      detail: visaBlocked ? 'Visa readiness needs attention before travel pack completion.' : requiresVisa ? 'Visa support is in scope and should be monitored.' : 'No visa blocker is currently visible.',
+      Icon: ShieldCheck,
+    },
+    {
+      id: 'flights',
+      label: 'Flights',
+      state: !requiresFlight ? 'done' : trip.booking?.status === 'cancelled' ? 'blocked' : ['confirmed', 'ticketed', 'completed'].includes(trip.booking?.status ?? '') ? 'done' : finalCost === 'Approved' ? 'active' : 'pending',
+      detail: !requiresFlight ? 'Flights are not part of this request.' : trip.booking ? `${labelize(trip.booking.status)} - ${trip.booking.bookingReference || 'reference pending'}` : 'Flight booking starts after final approval.',
+      Icon: PlaneTakeoff,
+    },
+    {
+      id: 'hotel',
+      label: 'Hotel',
+      state: !requiresHotel ? 'done' : trip.booking?.status === 'cancelled' ? 'blocked' : ['confirmed', 'ticketed', 'completed'].includes(trip.booking?.status ?? '') ? 'done' : finalCost === 'Approved' ? 'active' : 'pending',
+      detail: !requiresHotel ? 'Accommodation is not part of this request.' : trip.booking?.supplierSummary || 'Hotel or accommodation confirmation starts after final approval.',
+      Icon: Building2,
     },
     {
       id: 'billing',
@@ -155,8 +229,8 @@ function buildProcessingStages(trip: CorporateTripRequest): ProcessingStage[] {
     {
       id: 'travel-ready',
       label: 'Travel ready',
-      state: blockedByDocuments ? 'blocked' : trip.status === 'Completed' ? 'done' : bookingReady ? 'active' : 'pending',
-      detail: blockedByDocuments ? 'Traveler documents need attention.' : bookingReady ? 'DPM is preparing final travel pack.' : 'Unlocked after booking.',
+      state: blockedByDocuments ? 'blocked' : trip.status === 'Completed' || itineraryReady ? 'done' : bookingReady ? 'active' : 'pending',
+      detail: blockedByDocuments ? 'Traveler documents need attention.' : trip.status === 'Completed' || itineraryReady ? 'Final travel pack is ready or issued.' : bookingReady ? 'DPM is preparing final travel pack.' : 'Unlocked after booking.',
       Icon: Route,
     },
   ];
@@ -356,6 +430,7 @@ export function CorporateRequestDetailPage({
   const [isSavingApproval, setIsSavingApproval] = useState(false);
   const [workbenchError, setWorkbenchError] = useState('');
   const [workbenchTouched, setWorkbenchTouched] = useState<Record<string, boolean>>({});
+  const [selectedWorkflowStageId, setSelectedWorkflowStageId] = useState('decision:qualification');
 
   if (!trip) {
     return (
@@ -369,8 +444,17 @@ export function CorporateRequestDetailPage({
   const documents = trip.documents ?? [];
   const messages = trip.messages ?? [];
   const tasks = trip.tasks ?? [];
-  const processingStages = buildProcessingStages(trip);
-  const activeProcessingStage = currentProcessingStage(processingStages);
+  const decisionStages = buildDecisionStages(trip);
+  const logisticsStages = buildLogisticsStages(trip);
+  const activeDecisionStage = currentProcessingStage(decisionStages);
+  const activeLogisticsStage = currentProcessingStage(logisticsStages);
+  const decisionProgress = workflowProgress(decisionStages);
+  const logisticsProgress = workflowProgress(logisticsStages);
+  const selectedWorkflowStage =
+    decisionStages.find((stage) => `decision:${stage.id}` === selectedWorkflowStageId)
+    ?? logisticsStages.find((stage) => `logistics:${stage.id}` === selectedWorkflowStageId)
+    ?? activeDecisionStage;
+  const selectedWorkflowTrack = decisionStages.some((stage) => `decision:${stage.id}` === selectedWorkflowStageId) ? 'Managerial flow' : logisticsStages.some((stage) => `logistics:${stage.id}` === selectedWorkflowStageId) ? 'Logistics flow' : 'Managerial flow';
   const nextClientAction = clientNextAction(trip);
   const unifiedTimeline = buildUnifiedTimeline(trip);
   const pendingApprovals = trip.approvals.filter((approval) => approval.status === 'Pending');
@@ -456,6 +540,53 @@ export function CorporateRequestDetailPage({
     }
   };
 
+  const renderWorkflowTrack = (
+    trackId: 'decision' | 'logistics',
+    label: string,
+    progress: number,
+    stages: ProcessingStage[],
+    activeStage: ProcessingStage,
+  ) => (
+    <div className={`rounded-xl border px-4 py-3 ${styles.panelSoft}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">{label}</div>
+          <div className={`mt-1 text-xs ${styles.muted}`}>Current: {activeStage.label}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-lg font-semibold">{progress}%</div>
+          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Progress</div>
+        </div>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+        <div
+          className={`h-full rounded-full ${activeStage.state === 'blocked' ? 'bg-rose-400' : activeStage.state === 'active' ? 'bg-sky-400' : 'bg-emerald-400'}`}
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="mt-3 grid grid-cols-6 gap-2 md:grid-cols-7">
+        {stages.map((stage) => {
+          const Icon = stage.Icon;
+          const selected = selectedWorkflowStageId === `${trackId}:${stage.id}`;
+          return (
+            <button
+              key={`${trackId}-${stage.id}`}
+              type="button"
+              title={`${stage.label}: ${stageToneLabel(stage.state)}`}
+              onClick={() => setSelectedWorkflowStageId(`${trackId}:${stage.id}`)}
+              className="group flex min-w-0 flex-col items-center gap-1.5 text-center"
+            >
+              <span className={`grid h-9 w-9 place-items-center rounded-full border transition group-hover:scale-105 ${stageDotClass(stage.state, selected, theme)}`}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className={`max-w-full truncate text-[10px] font-medium ${selected ? 'text-[#d9b46f]' : styles.muted}`}>{stage.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.82fr]">
       <div className="grid gap-4">
@@ -507,44 +638,43 @@ export function CorporateRequestDetailPage({
               <div>
                 <div className="flex items-center gap-2 text-base font-semibold">
                   <CircleDot className="h-4 w-4 text-[#d9b46f]" />
-                  DPM processing track
+                  Corporate workflow visibility
                 </div>
-                <p className={`mt-1 text-sm ${styles.muted}`}>Client-facing status from the shared CRM and CTM workflow.</p>
+                <p className={`mt-1 text-sm ${styles.muted}`}>Separate decision progress from operational readiness so bottlenecks stay clear.</p>
               </div>
-              <div className={`rounded-lg border px-3 py-2 text-sm ${stageClass(activeProcessingStage.state, theme)}`}>
-                <div className="text-xs uppercase tracking-[0.12em] opacity-75">Current stage</div>
-                <div className="mt-1 font-semibold">{activeProcessingStage.label}</div>
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                <div className={`rounded-lg border px-3 py-2 ${stageClass(activeDecisionStage.state, theme)}`}>
+                  <div className="text-xs uppercase tracking-[0.12em] opacity-75">Managerial</div>
+                  <div className="mt-1 font-semibold">{activeDecisionStage.label}</div>
+                </div>
+                <div className={`rounded-lg border px-3 py-2 ${stageClass(activeLogisticsStage.state, theme)}`}>
+                  <div className="text-xs uppercase tracking-[0.12em] opacity-75">Logistics</div>
+                  <div className="mt-1 font-semibold">{activeLogisticsStage.label}</div>
+                </div>
               </div>
             </div>
 
-            <div className="mt-4 grid gap-2 md:grid-cols-7">
-              {processingStages.map((stage, index) => {
-                const Icon = stage.Icon;
-                return (
-                  <div key={stage.id} className="relative min-w-0">
-                    {index > 0 ? <div className={`absolute -left-1 top-5 hidden h-px w-2 md:block ${stageConnectorClass(stage.state)}`} /> : null}
-                    <div className={`flex h-full min-h-[86px] flex-col items-center justify-center rounded-xl border px-2 py-3 text-center ${stageClass(stage.state, theme)}`}>
-                      <Icon className="h-5 w-5" />
-                      <div className="mt-2 truncate text-xs font-semibold">{stage.label}</div>
-                      <div className="mt-1 text-[10px] capitalize opacity-75">{stage.state}</div>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              {renderWorkflowTrack('decision', 'Managerial flow', decisionProgress, decisionStages, activeDecisionStage)}
+              {renderWorkflowTrack('logistics', 'Logistics flow', logisticsProgress, logisticsStages, activeLogisticsStage)}
             </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+            <div className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
               <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                 <div className={`flex items-center gap-2 text-xs uppercase tracking-[0.12em] ${styles.muted}`}>
                   <Clock3 className="h-3.5 w-3.5" />
-                  DPM status detail
+                  Selected detail
                 </div>
-                <div className="mt-2 text-sm leading-6">{activeProcessingStage.detail}</div>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] ${stageClass(selectedWorkflowStage.state, theme)}`}>{stageToneLabel(selectedWorkflowStage.state)}</span>
+                  <span className="text-sm font-semibold">{selectedWorkflowTrack} - {selectedWorkflowStage.label}</span>
+                </div>
+                <div className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedWorkflowStage.detail}</div>
               </div>
               <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                 <div className={`flex items-center gap-2 text-xs uppercase tracking-[0.12em] ${styles.muted}`}>
                   <AlertTriangle className="h-3.5 w-3.5" />
-                  Client next action
+                  Primary next action
                 </div>
                 <div className="mt-2 text-sm leading-6">{nextClientAction}</div>
               </div>
