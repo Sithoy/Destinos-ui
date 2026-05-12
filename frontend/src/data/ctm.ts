@@ -28,6 +28,8 @@ import type {
 
 const CTM_AUTH_STORAGE_KEY = 'dpm.ctm.auth.v1';
 const CTM_AUTH_EVENT = 'dpm-ctm-auth-updated';
+const CTM_DATA_STORAGE_KEY = 'dpm.ctm.data-updated.v1';
+const CTM_DATA_EVENT = 'dpm-ctm-data-updated';
 type CtmAuthSession = (Pick<CorporatePortalSession, 'token'> & Partial<Pick<CorporatePortalSession, 'company'>>) | null | undefined;
 
 function ctmApiBase() {
@@ -72,6 +74,15 @@ function hasStorage() {
 function notifyCtmAuthUpdated() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(CTM_AUTH_EVENT));
+  }
+}
+
+function notifyCtmDataUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(CTM_DATA_EVENT));
+    if (hasStorage()) {
+      window.localStorage.setItem(CTM_DATA_STORAGE_KEY, String(Date.now()));
+    }
   }
 }
 
@@ -615,4 +626,4 @@ export function rejectCtmTripRequest(referenceCode: string, stage: CorporateAppr
   return updateApproval(referenceCode, stage, 'reject', session);
 }
 
-export { CTM_AUTH_EVENT };
+export { CTM_AUTH_EVENT, CTM_DATA_EVENT, notifyCtmDataUpdated };

@@ -87,6 +87,7 @@ import {
   fetchCtmCompanyAccounts,
   fetchCtmCompanyUsers,
   fetchCtmTripRequests,
+  CTM_DATA_EVENT,
   requestCtmBriefingApproval,
   updateCtmCompanyAccount,
   updateCtmCompanyUser,
@@ -129,12 +130,6 @@ type ProcessTaskTone = 'urgent' | 'normal' | 'upcoming';
 type CommunicationKind = 'proposal' | 'payment' | 'travel_pack' | 'follow_up';
 type CommunicationChannel = 'email' | 'whatsapp' | 'phone';
 type CorporateDeskSignalTone = 'success' | 'warning' | 'danger' | 'info';
-type CorporateDeskSignal = {
-  label: string;
-  value: string;
-  meta: string;
-  tone: CorporateDeskSignalTone;
-};
 type CrmCorporateWorkflowStageState = 'done' | 'active' | 'blocked' | 'pending';
 type CrmCorporateWorkflowStage = {
   id: string;
@@ -1052,52 +1047,23 @@ function currentCrmCorporateStage(stages: CrmCorporateWorkflowStage[]) {
   return stages.find((stage) => stage.state === 'blocked') ?? stages.find((stage) => stage.state === 'active') ?? stages[stages.length - 1];
 }
 
-function buildCorporateDeskSignals(trip: CorporateTripRequest): CorporateDeskSignal[] {
-  const travelNeed = approvalValue(trip, 'Travel need');
-  const finalCost = approvalValue(trip, 'Final cost');
-  const latestDocument = latestByDate(trip.documents, (document) => document.updatedAt);
-  const latestMessage = latestByDate(trip.messages, (message) => message.createdAt);
-  const latestPayment = latestByDate(trip.payments, (payment) => payment.updatedAt || payment.createdAt);
-  const documentBlocker = hasCtmDocumentBlocker(trip);
+function crmTabForCorporateWorkflowStage(stageId: string): DetailTab {
+  if (stageId.includes('briefing')) return 'brief';
+  if (stageId.includes('approval') || stageId.includes('travel_need')) return 'approvals';
+  if (stageId.includes('design')) return 'itinerary';
+  if (stageId.includes('quote')) return 'finance';
+  if (stageId.includes('document')) return 'documents';
+  return 'history';
+}
 
-  return [
-    {
-      label: 'Company approval',
-      value: travelNeed === 'Rejected' || finalCost === 'Rejected' ? 'Rejected' : finalCost === 'Approved' ? 'Final cost approved' : travelNeed === 'Approved' ? 'Need approved' : 'Waiting',
-      meta: `Travel need: ${travelNeed} - Final cost: ${finalCost}`,
-      tone: travelNeed === 'Rejected' || finalCost === 'Rejected' ? 'danger' : finalCost === 'Approved' ? 'success' : travelNeed === 'Approved' ? 'info' : 'warning',
-    },
-    {
-      label: 'Documents',
-      value: documentBlocker ? 'Action needed' : 'Ready',
-      meta: latestDocument ? `${latestDocument.title} - ${latestDocument.status}` : 'No shared document updates',
-      tone: documentBlocker ? 'danger' : 'success',
-    },
-    {
-      label: 'Client message',
-      value: latestMessage ? latestMessage.sender : 'No message',
-      meta: latestMessage ? latestMessage.body : 'No CTM message posted yet',
-      tone: latestMessage?.senderType === 'company' ? 'warning' : 'info',
-    },
-    {
-      label: 'Commercial state',
-      value: trip.invoice ? corporateInvoiceStatusLabels[trip.invoice.status] : trip.quote ? corporateQuoteStatusLabels[trip.quote.status] : 'Quote pending',
-      meta: trip.invoice ? moneyValue(trip.invoice.amount, trip.invoice.currency) : trip.quote ? moneyValue(trip.quote.amount, trip.quote.currency) : 'Prepare quote in CRM',
-      tone: trip.invoice?.status === 'overdue' ? 'danger' : trip.quote || trip.invoice ? 'info' : 'warning',
-    },
-    {
-      label: 'Booking',
-      value: trip.booking ? corporateBookingStatusLabels[trip.booking.status] : 'Not released',
-      meta: trip.booking?.bookingReference || 'Release after final approval',
-      tone: trip.booking?.status === 'cancelled' ? 'danger' : trip.booking ? 'success' : 'warning',
-    },
-    {
-      label: 'Payment',
-      value: latestPayment ? corporatePaymentStatusLabels[latestPayment.status] : 'No payment',
-      meta: latestPayment ? moneyValue(latestPayment.amount, latestPayment.currency) : 'Payment not recorded',
-      tone: latestPayment?.status === 'failed' ? 'danger' : latestPayment?.status === 'received' || latestPayment?.status === 'reconciled' ? 'success' : 'warning',
-    },
-  ];
+function crmIconForCorporateWorkflowStage(stageId: string): LucideIcon {
+  if (stageId.includes('briefing') || stageId.includes('request')) return ClipboardCheck;
+  if (stageId.includes('approval') || stageId.includes('travel_need')) return Shield;
+  if (stageId.includes('design')) return CalendarDays;
+  if (stageId.includes('quote')) return FileText;
+  if (stageId.includes('booking')) return Briefcase;
+  if (stageId.includes('document')) return ClipboardCheck;
+  return CheckSquare;
 }
 
 function getCorporateDeskNextAction(trip: CorporateTripRequest) {
@@ -2469,11 +2435,13 @@ export function CrmPage() {
     window.addEventListener(CRM_EVENT, refresh);
     window.addEventListener(CRM_AUTH_EVENT, refresh);
     window.addEventListener(CRM_CLIENT_EVENT, refresh);
+    window.addEventListener(CTM_DATA_EVENT, refresh);
     window.addEventListener('storage', refresh);
     return () => {
       window.removeEventListener(CRM_EVENT, refresh);
       window.removeEventListener(CRM_AUTH_EVENT, refresh);
       window.removeEventListener(CRM_CLIENT_EVENT, refresh);
+      window.removeEventListener(CTM_DATA_EVENT, refresh);
       window.removeEventListener('storage', refresh);
     };
   }, [crmSession, apiEnabled]);
@@ -2648,8 +2616,7 @@ export function CrmPage() {
     ? selectedCtmReferencesByLead[selectedLead.id] ?? selectedLead.ctmRequestId ?? ctmTripRequests[0]?.id ?? null
     : null;
   const selectedCtmTrip = selectedCtmReference ? ctmTripRequests.find((trip) => trip.id === selectedCtmReference) ?? null : null;
-  const selectedCtmSignals = selectedCtmTrip ? buildCorporateDeskSignals(selectedCtmTrip) : [];
-  const selectedCtmNextAction = selectedCtmTrip ? getCorporateDeskNextAction(selectedCtmTrip) : 'Link a CTM request before processing corporate workflow actions.';
+  const selectedCtmNextAction = selectedCtmTrip?.workflow?.nextAction ?? (selectedCtmTrip ? getCorporateDeskNextAction(selectedCtmTrip) : 'Link a CTM request before processing corporate workflow actions.');
   const selectedCtmFinalCostGate = selectedCtmTrip ? finalCostGateSummary(selectedCtmTrip) : null;
   const selectedCtmOutputSignature = selectedCtmTrip
     ? [
@@ -2669,9 +2636,13 @@ export function CrmPage() {
   const selectedItineraries = selectedLead ? tripItineraries.filter((itinerary) => itinerary.leadId === selectedLead.id).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) : [];
   const selectedItinerary = selectedItineraries[0] ?? null;
   const selectedProcess = selectedLead ? processForLead(selectedLead) : null;
-  const selectedPrimaryBlocker = selectedWorkflowState?.blockers[0]?.detail || (selectedLead ? leadPrimaryBlocker(selectedLead) : '');
-  const selectedNextAction = selectedWorkflowState
-    ? selectedWorkflowState.canAdvance
+  const selectedPrimaryBlocker = activeNav === 'corporateDesk' && selectedCtmTrip?.workflow
+    ? selectedCtmTrip.workflow.bottleneck
+    : selectedWorkflowState?.blockers[0]?.detail || (selectedLead ? leadPrimaryBlocker(selectedLead) : '');
+  const selectedNextAction = activeNav === 'corporateDesk' && selectedCtmTrip?.workflow
+    ? selectedCtmTrip.workflow.nextAction
+    : selectedWorkflowState
+      ? selectedWorkflowState.canAdvance
       ? `Ready to advance to ${selectedWorkflowState.nextStageLabel || 'next stage'}.`
       : selectedWorkflowState.blockers[0]?.detail || 'Resolve workflow blockers before advancing.'
     : selectedProcess?.nextAction || '';
@@ -2685,9 +2656,12 @@ export function CrmPage() {
   const selectedBriefing = selectedLead ? briefingReadiness(selectedLead) : null;
   const selectedCorporateBriefReady = selectedLead?.serviceKey === 'corporate' ? Boolean(selectedBriefing?.canApprove) : true;
   const selectedBriefingApproval = selectedCtmTrip?.approvals.find((approval) => approval.stage === 'Briefing') ?? null;
+  const selectedBriefingApprovalWorkflow = selectedCtmTrip?.workflow?.stages.find((stage) => stage.id === 'briefing_approval') ?? null;
   const selectedBriefingApprovalPending = selectedBriefingApproval?.status === 'Pending';
   const selectedBriefingReturned = selectedBriefingApproval?.status === 'Returned';
-  const selectedBriefingOwnerApproved = selectedLead?.serviceKey === 'corporate' ? selectedBriefingApproval?.status === 'Approved' : true;
+  const selectedBriefingOwnerApproved = selectedLead?.serviceKey === 'corporate'
+    ? selectedBriefingApproval?.status === 'Approved' || selectedBriefingApprovalWorkflow?.state === 'done'
+    : true;
   const selectedHistory = selectedLead ? workflowHistory(selectedLead) : [];
   const selectedStatusCards = selectedLead ? leftRailStatusCards(selectedLead) : [];
   const selectedItinerarySummary = selectedLead ? itinerarySummaryCards(selectedLead, selectedItinerary) : [];
@@ -4010,6 +3984,291 @@ export function CrmPage() {
     }
   }
 
+  function renderCorporateTripDesignWorkspace() {
+    if (!selectedLead) return null;
+
+    return (
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+        <div className="grid gap-4">
+          <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Corporate Trip Design</div>
+                <div className="mt-2 text-xl font-semibold">{selectedItinerary?.title || selectedLead.destination || 'Route pending'}</div>
+                <div className={`mt-1 text-sm ${styles.muted}`}>
+                  {selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : selectedLead.dates || 'Dates pending'} - {selectedLead.travelers || 'Travelers pending'}
+                </div>
+              </div>
+              <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
+                {selectedItinerary ? itineraryStatusLabels[selectedItinerary.status] : 'Design draft'}
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              {selectedItinerarySummary.map((card) => (
+                <div key={card.label} className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
+                  <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{card.label}</div>
+                  <div className="mt-1 text-sm font-semibold">{card.value}</div>
+                  {card.meta ? <div className={`mt-1 line-clamp-2 text-xs ${styles.muted}`}>{card.meta}</div> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={`overflow-hidden rounded-xl border ${styles.panelSoft}`}>
+            <div className={`grid grid-cols-[60px_minmax(150px,1fr)_90px_minmax(180px,1.1fr)_minmax(150px,1fr)_100px] gap-3 border-b px-4 py-3 text-xs uppercase tracking-[0.14em] ${styles.tableHead}`}>
+              <div>Stop</div>
+              <div>City</div>
+              <div>Nights</div>
+              <div>Stay</div>
+              <div>Room</div>
+              <div>Status</div>
+            </div>
+            {selectedItineraryStops.length > 0 ? selectedItineraryStops.map((stop, index) => (
+              <div key={`${stop.city}-${index}`} className={`grid grid-cols-[60px_minmax(150px,1fr)_90px_minmax(180px,1.1fr)_minmax(150px,1fr)_100px] gap-3 border-b px-4 py-3 text-sm ${styles.panel}`}>
+                <div className="font-semibold text-[#d9b46f]">{index + 1}</div>
+                <div>
+                  <div className="font-semibold">{stop.city}</div>
+                  {stop.dates ? <div className={`mt-1 text-xs ${styles.muted}`}>{stop.dates}</div> : null}
+                </div>
+                <div>{stop.nights}</div>
+                <div className={styles.soft}>{stop.stay}</div>
+                <div className={styles.soft}>{stop.room}</div>
+                <div>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{stop.status || stop.focus}</span>
+                </div>
+              </div>
+            )) : (
+              <div className={`px-4 py-6 text-sm ${styles.muted}`}>Add city stops to shape the corporate itinerary before quote build.</div>
+            )}
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="font-semibold">Movement plan</div>
+                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedTransportSegments.length || selectedItineraryStops.length} segments</span>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {selectedTransportSegments.length > 0 ? selectedTransportSegments.map((segment) => (
+                  <div key={segment.id} className={`rounded-lg border p-3 ${styles.panel}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-medium">{segment.fromCity} to {segment.toCity}</div>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{itineraryBookingStatusLabels[segment.bookingStatus]}</span>
+                    </div>
+                    <div className={`mt-2 text-xs ${styles.muted}`}>{segment.mode} - {segment.supplier || 'Supplier pending'}</div>
+                    <div className={`mt-1 text-xs ${styles.muted}`}>{segment.reference || 'Reference pending'}</div>
+                  </div>
+                )) : (
+                  <div className={`rounded-lg border p-3 text-sm ${styles.panel}`}>
+                    Movement method, timing, and supplier are pending. Add flights, transfers, train, or car segments as the design becomes real.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="font-semibold">Meetings / activities</div>
+                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedItineraryExperiences.length} planned</span>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {selectedItineraryExperiences.length > 0 ? selectedItineraryExperiences.map((experience) => (
+                  <div key={`${experience.title}-${experience.timing}`} className={`rounded-lg border p-3 ${styles.panel}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-medium">{experience.title}</div>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{experience.status || experience.timing}</span>
+                    </div>
+                    <div className={`mt-2 text-xs ${styles.muted}`}>{experience.category} - {experience.timing}</div>
+                    <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{experience.note}</p>
+                  </div>
+                )) : (
+                  <div className={`rounded-lg border p-3 text-sm ${styles.panel}`}>
+                    Add meetings, business activities, arrival support, or optional experiences when they affect quote scope.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid content-start gap-3 xl:sticky xl:top-24">
+          <div className={`rounded-xl border p-3 ${styles.panelSoft}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold">Design readiness</div>
+              <span className={`rounded-full px-2.5 py-1 text-[11px] ${isCostingReady ? 'bg-emerald-500/15 text-emerald-200' : 'bg-red-500/15 text-red-200'}`}>
+                {isCostingReady ? 'Quote ready' : 'Before quote'}
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {selectedTripDesignReadiness.map((item) => (
+                <div key={item.label} className={`min-w-0 rounded-lg border px-2.5 py-2 ${styles.panel}`}>
+                  <div className="flex items-center gap-1.5">
+                    <CheckSquare className={`h-3.5 w-3.5 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
+                    <span className="truncate text-xs font-medium">{item.label}</span>
+                  </div>
+                  <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{item.meta}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={`rounded-xl border p-3 ${styles.panelSoft}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold">Add / edit</div>
+              <span className={`rounded-full px-2.5 py-1 text-[11px] ${styles.buttonGhost}`}>Design items</span>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-1.5">
+              {([
+                ['stop', 'City'],
+                ['stay', 'Stay'],
+                ['movement', 'Move'],
+                ['experience', 'Meeting'],
+                ['notes', 'Notes'],
+              ] as Array<[TripDesignEditor, string]>).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setActiveTripDesignEditor(id)}
+                  className={`h-9 rounded-lg px-2 text-xs transition ${activeTripDesignEditor === id ? styles.buttonActive : styles.buttonGhost}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className={`mt-3 rounded-lg border p-3 ${styles.panel}`}>
+              {activeTripDesignEditor === 'stop' ? (
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold">City stop</div>
+                  <input value={tripDesignDrafts.stop.city} onChange={(event) => updateTripDesignDraft('stop', 'city', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="City" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={tripDesignDrafts.stop.country} onChange={(event) => updateTripDesignDraft('stop', 'country', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Country" />
+                    <input value={tripDesignDrafts.stop.nights} onChange={(event) => updateTripDesignDraft('stop', 'nights', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Nights" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="date" value={tripDesignDrafts.stop.arrivalDate} min={maxDateInput(currentDateInput(), selectedTripDateRange.startDate)} max={selectedTripDateRange.endDate ?? undefined} onChange={(event) => updateTripDesignDraft('stop', 'arrivalDate', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                    <input type="date" value={tripDesignDrafts.stop.departureDate} min={maxDateInput(currentDateInput(), tripDesignDrafts.stop.arrivalDate, selectedTripDateRange.startDate)} max={selectedTripDateRange.endDate ?? undefined} onChange={(event) => updateTripDesignDraft('stop', 'departureDate', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                  </div>
+                  <select value={tripDesignDrafts.stop.purpose} onChange={(event) => updateTripDesignDraft('stop', 'purpose', event.target.value as TripDesignDrafts['stop']['purpose'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
+                    {['business', 'transit', 'event', 'extension', 'leisure'].map((purpose) => (
+                      <option key={purpose} value={purpose}>{purpose}</option>
+                    ))}
+                  </select>
+                  <textarea
+                    value={tripDesignDrafts.stop.notes}
+                    onChange={(event) => updateTripDesignDraft('stop', 'notes', event.target.value)}
+                    className={`h-20 resize-none rounded-lg border px-3 py-2 text-xs leading-5 ${styles.input}`}
+                    placeholder="Stop logic, meeting purpose, traveller constraints, or routing notes"
+                  />
+                  <button type="button" onClick={submitTripDesignStop} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
+                    Add city
+                  </button>
+                </div>
+              ) : null}
+
+              {activeTripDesignEditor === 'stay' ? (
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold">Stay</div>
+                  <select value={tripDesignDrafts.stay.stopId || selectedItinerary?.stops[0]?.id || ''} onChange={(event) => updateTripDesignDraft('stay', 'stopId', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
+                    <option value="">Choose stop</option>
+                    {selectedItinerary?.stops.map((stop) => (
+                      <option key={stop.id} value={stop.id}>{stop.city}</option>
+                    ))}
+                  </select>
+                  <input value={tripDesignDrafts.stay.name} onChange={(event) => updateTripDesignDraft('stay', 'name', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Hotel / accommodation" />
+                  <input value={tripDesignDrafts.stay.roomType} onChange={(event) => updateTripDesignDraft('stay', 'roomType', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Room type" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="date" value={tripDesignDrafts.stay.checkIn} min={maxDateInput(currentDateInput(), selectedStayStop?.arrivalDate)} max={selectedStayStop?.departureDate ?? undefined} onChange={(event) => updateTripDesignDraft('stay', 'checkIn', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                    <input type="date" value={tripDesignDrafts.stay.checkOut} min={maxDateInput(currentDateInput(), tripDesignDrafts.stay.checkIn, selectedStayStop?.arrivalDate)} max={selectedStayStop?.departureDate ?? undefined} onChange={(event) => updateTripDesignDraft('stay', 'checkOut', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={tripDesignDrafts.stay.rooms} onChange={(event) => updateTripDesignDraft('stay', 'rooms', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Rooms" />
+                    <select value={tripDesignDrafts.stay.bookingStatus} onChange={(event) => updateTripDesignDraft('stay', 'bookingStatus', event.target.value as TripDesignDrafts['stay']['bookingStatus'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
+                      {Object.keys(itineraryBookingStatusLabels).map((status) => (
+                        <option key={status} value={status}>{itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels]}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <input value={tripDesignDrafts.stay.supplier} onChange={(event) => updateTripDesignDraft('stay', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Supplier" />
+                  <button type="button" onClick={submitTripDesignStay} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
+                    Add stay
+                  </button>
+                </div>
+              ) : null}
+
+              {activeTripDesignEditor === 'movement' ? (
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold">Movement</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={tripDesignDrafts.movement.fromCity} onChange={(event) => updateTripDesignDraft('movement', 'fromCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="From" />
+                    <input value={tripDesignDrafts.movement.toCity} onChange={(event) => updateTripDesignDraft('movement', 'toCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="To" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={tripDesignDrafts.movement.mode} onChange={(event) => updateTripDesignDraft('movement', 'mode', event.target.value as TripDesignDrafts['movement']['mode'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
+                      {['flight', 'transfer', 'car', 'train', 'ferry', 'other'].map((mode) => (
+                        <option key={mode} value={mode}>{mode}</option>
+                      ))}
+                    </select>
+                    <select value={tripDesignDrafts.movement.bookingStatus} onChange={(event) => updateTripDesignDraft('movement', 'bookingStatus', event.target.value as TripDesignDrafts['movement']['bookingStatus'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
+                      {Object.keys(itineraryBookingStatusLabels).map((status) => (
+                        <option key={status} value={status}>{itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels]}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="datetime-local" value={tripDesignDrafts.movement.departureAt} min={`${maxDateInput(currentDateInput(), selectedTripDateRange.startDate) ?? currentDateInput()}T00:00`} max={selectedTripDateRange.endDate ? `${selectedTripDateRange.endDate}T23:59` : undefined} onChange={(event) => updateTripDesignDraft('movement', 'departureAt', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                    <input type="datetime-local" value={tripDesignDrafts.movement.arrivalAt} min={tripDesignDrafts.movement.departureAt || `${maxDateInput(currentDateInput(), selectedTripDateRange.startDate) ?? currentDateInput()}T00:00`} max={selectedTripDateRange.endDate ? `${selectedTripDateRange.endDate}T23:59` : undefined} onChange={(event) => updateTripDesignDraft('movement', 'arrivalAt', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
+                  </div>
+                  <input value={tripDesignDrafts.movement.supplier} onChange={(event) => updateTripDesignDraft('movement', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Supplier / airline / operator" />
+                  <button type="button" onClick={submitTripDesignMovement} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
+                    Add movement
+                  </button>
+                </div>
+              ) : null}
+
+              {activeTripDesignEditor === 'experience' ? (
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold">Meeting / activity</div>
+                  <select value={tripDesignDrafts.experience.stopId || selectedItinerary?.stops[0]?.id || ''} onChange={(event) => updateTripDesignDraft('experience', 'stopId', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
+                    <option value="">Choose stop</option>
+                    {selectedItinerary?.stops.map((stop) => (
+                      <option key={stop.id} value={stop.id}>{stop.city}</option>
+                    ))}
+                  </select>
+                  <input value={tripDesignDrafts.experience.title} onChange={(event) => updateTripDesignDraft('experience', 'title', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Meeting / activity" />
+                  <input value={tripDesignDrafts.experience.category} onChange={(event) => updateTripDesignDraft('experience', 'category', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Category" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={tripDesignDrafts.experience.supplier} onChange={(event) => updateTripDesignDraft('experience', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Supplier / host" />
+                    <select value={tripDesignDrafts.experience.status} onChange={(event) => updateTripDesignDraft('experience', 'status', event.target.value as TripDesignDrafts['experience']['status'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
+                      {Object.keys(itineraryBookingStatusLabels).map((status) => (
+                        <option key={status} value={status}>{itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels]}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button type="button" onClick={submitTripDesignExperience} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
+                    Add activity
+                  </button>
+                </div>
+              ) : null}
+
+              {activeTripDesignEditor === 'notes' ? (
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold">Design notes</div>
+                  <textarea
+                    value={selectedLead.internalNotes || ''}
+                    onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
+                    className={`h-44 w-full resize-none rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
+                    placeholder="Capture flight logic, hotel reasons, room preferences, meeting constraints, flexibility, and quote assumptions."
+                  />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   async function submitManualRequest(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const serviceKey = manualRequest.serviceKey as InquiryKind;
@@ -4946,13 +5205,14 @@ export function CrmPage() {
                             )}
                           </div>
                           {activeNav === 'corporateDesk' ? (
-                            <div className={`hidden grid-cols-[minmax(170px,0.9fr)_minmax(220px,1.1fr)_minmax(220px,1.1fr)_minmax(220px,1fr)_120px_minmax(150px,0.75fr)] gap-4 border-b px-4 py-3 text-xs uppercase tracking-[0.12em] xl:grid ${styles.tableHead}`}>
-                              <div>Task</div>
+                            <div className={`hidden grid-cols-[minmax(190px,1.1fr)_minmax(150px,0.8fr)_minmax(130px,0.75fr)_minmax(150px,0.85fr)_minmax(180px,1fr)_minmax(140px,0.75fr)_100px] gap-4 border-b px-4 py-3 text-xs uppercase tracking-[0.12em] xl:grid ${styles.tableHead}`}>
                               <div>Company</div>
-                              <div>Route / dates</div>
-                              <div>Scope</div>
+                              <div>Trip owner</div>
+                              <div>Travel date</div>
+                              <div>Current stage</div>
+                              <div>Bottleneck</div>
+                              <div>Responsible</div>
                               <div>Urgency</div>
-                              <div>Owner</div>
                             </div>
                           ) : null}
                           <div className={activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? 'grid' : 'grid gap-3 p-4'}>
@@ -4960,7 +5220,8 @@ export function CrmPage() {
                               const priority = fallbackPriority(lead);
                               const isSelected = selectedLead?.id === lead.id;
                               const rowBriefing = activeNav === 'corporateDesk' ? briefingReadiness(lead) : null;
-                              const rowTaskLabel = rowBriefing?.canApprove ? 'Briefing approval' : 'Complete briefing';
+                              const rowTaskLabel = rowBriefing?.canApprove ? 'Owner validation' : 'Briefing';
+                              const rowBottleneck = rowBriefing?.canApprove ? 'Waiting trip owner approval' : `${rowBriefing?.readyCount ?? 0}/${rowBriefing?.total ?? 0} brief fields ready`;
                               return (
                                 activeNav === 'corporateDesk' ? (
                                   <button
@@ -4971,38 +5232,42 @@ export function CrmPage() {
                                       setDetailTab('brief');
                                       setSelectedCorporateWorkflowStageId('');
                                     }}
-                                    className={`grid w-full gap-3 border-b px-4 py-3 text-left transition xl:grid-cols-[minmax(170px,0.9fr)_minmax(220px,1.1fr)_minmax(220px,1.1fr)_minmax(220px,1fr)_120px_minmax(150px,0.75fr)] xl:items-center ${
+                                    className={`grid w-full gap-3 border-b px-4 py-3 text-left transition xl:grid-cols-[minmax(190px,1.1fr)_minmax(150px,0.8fr)_minmax(130px,0.75fr)_minmax(150px,0.85fr)_minmax(180px,1fr)_minmax(140px,0.75fr)_100px] xl:items-center ${
                                       isSelected ? styles.rowActive : styles.row
                                     }`}
                                   >
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-2">
-                                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${rowBriefing?.canApprove ? 'bg-emerald-400' : 'bg-[#d9b46f]'}`} />
-                                        <div className="truncate text-sm font-semibold">{rowTaskLabel}</div>
-                                      </div>
-                                      <div className={`mt-1 text-[11px] ${styles.muted}`}>{rowBriefing?.canApprove ? 'Needs owner validation' : 'Agent intake task'}</div>
-                                    </div>
                                     <div className="min-w-0">
                                       <div className="truncate text-sm font-semibold">{lead.name}</div>
                                       <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.contact || lead.email || 'Requester pending'}</div>
                                     </div>
                                     <div className="min-w-0">
-                                      <div className="truncate text-sm font-medium">
-                                        {lead.departureCity || 'Origin pending'} to {lead.destination || 'Destination pending'}
-                                      </div>
-                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.dates || 'Dates pending'}</div>
+                                      <div className="truncate text-sm font-medium">{lead.contact || lead.email || 'Owner pending'}</div>
+                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.requestedServices || 'Department pending'}</div>
                                     </div>
                                     <div className="min-w-0">
-                                      <div className="truncate text-sm font-medium">{lead.travelers || 'Traveler count pending'}</div>
-                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.requestedServices || 'Services pending'}</div>
+                                      <div className="truncate text-sm font-medium">{lead.dates || 'Dates pending'}</div>
+                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || 'Destination pending'}</div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <AlertTriangle className={`h-4 w-4 ${priority === 'urgent' || priority === 'high' ? 'text-red-400' : priority === 'normal' ? 'text-sky-300' : 'text-slate-400'}`} />
-                                      <span className={`rounded-full px-2 py-0.5 text-[11px] ring-1 ${styles.priority[priority]}`}>{priorityLabels[priority]}</span>
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${rowBriefing?.canApprove ? 'bg-sky-400' : 'bg-[#d9b46f]'}`} />
+                                        <div className="truncate text-sm font-semibold">{rowTaskLabel}</div>
+                                      </div>
+                                      <div className={`mt-1 text-[11px] ${styles.muted}`}>{leadLifecycleLabel(lead)}</div>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-medium">
+                                        {rowBottleneck}
+                                      </div>
+                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.departureCity || 'Origin pending'} to {lead.destination || 'Destination pending'}</div>
                                     </div>
                                     <div className="min-w-0">
                                       <div className="truncate text-sm font-medium">{leadOwner(lead)}</div>
                                       <div className={`mt-1 text-xs ${styles.muted}`}>Current owner</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <AlertTriangle className={`h-4 w-4 ${priority === 'urgent' || priority === 'high' ? 'text-red-400' : priority === 'normal' ? 'text-sky-300' : 'text-slate-400'}`} />
+                                      <span className={`rounded-full px-2 py-0.5 text-[11px] ring-1 ${styles.priority[priority]}`}>{priorityLabels[priority]}</span>
                                     </div>
                                   </button>
                                 ) : activeNav === 'leisureStudio' ? (
@@ -5638,10 +5903,7 @@ export function CrmPage() {
             )
           ) : activeNav === 'corporateDesk' ? (
             selectedLead ? (() => {
-              const currentStage = leadLifecycleStage(selectedLead);
-              const nextStage = nextLifecycleStage(selectedLead);
               const currentCorporateLabel = corporateWorkbenchTabs.find((tab) => tab.id === detailTab)?.label ?? 'Travelers';
-              const bookings = mockBookingRecords(selectedLead);
               const readinessCards =
                 detailTab === 'travelers'
                   ? corporateTravelerCards(selectedLead)
@@ -5651,95 +5913,48 @@ export function CrmPage() {
                       ? corporateFinanceCards(selectedLead)
                       : corporateDocumentCards(selectedLead);
               const displayCorporateLabel = selectedBriefingOwnerApproved ? currentCorporateLabel : 'Brief';
-              const selectedFinalCostApproval = selectedCtmTrip ? approvalValue(selectedCtmTrip, 'Final cost') : 'Pending';
-              const corporateWorkflowTrace: CrmCorporateWorkflowStage[] = [
-                {
-                  id: 'brief',
-                  label: 'Briefing',
-                  Icon: ClipboardCheck,
-                  tab: 'brief' as DetailTab,
-                  state: 'done',
-                  detail: 'DPM brief captured',
-                },
-                {
-                  id: 'owner-validation',
-                  label: 'Owner validation',
-                  Icon: Shield,
-                  tab: 'approvals' as DetailTab,
-                  state: selectedBriefingOwnerApproved ? 'done' : selectedBriefingReturned ? 'blocked' : 'active',
-                  detail: selectedBriefingApproval?.status || 'Awaiting CTM owner',
-                },
-                {
-                  id: 'trip-design',
-                  label: 'Trip Design',
-                  Icon: CalendarDays,
-                  tab: 'itinerary' as DetailTab,
-                  state: selectedItinerary ? 'done' : detailTab === 'itinerary' ? 'active' : 'pending',
-                  detail: selectedItinerary ? itineraryStatusLabels[selectedItinerary.status] : 'Draft itinerary',
-                },
-                {
-                  id: 'quote-build',
-                  label: 'Quote Build',
-                  Icon: FileText,
-                  tab: 'finance' as DetailTab,
-                  state: selectedQuote ? 'done' : detailTab === 'finance' ? 'active' : 'pending',
-                  detail: selectedQuote ? quoteStatusLabels[selectedQuote.status] : 'Price itinerary',
-                },
-                {
-                  id: 'quote-approval',
-                  label: 'Quote Approval',
-                  Icon: Shield,
-                  tab: 'approvals' as DetailTab,
-                  state: selectedFinalCostApproval === 'Approved'
-                    ? 'done'
-                    : selectedCtmFinalCostGate?.ready
-                      ? 'active'
-                      : selectedCtmFinalCostGate?.tone === 'danger' || selectedCtmFinalCostGate?.tone === 'warning'
-                        ? 'blocked'
-                        : 'pending',
-                  detail: selectedCtmFinalCostGate?.label || 'Final cost gate',
-                },
-                {
-                  id: 'booking',
-                  label: 'Booking',
-                  Icon: Briefcase,
-                  tab: 'history' as DetailTab,
-                  state: selectedCtmTrip?.booking ? 'done' : selectedFinalCostApproval === 'Approved' ? 'active' : 'pending',
-                  detail: selectedCtmTrip?.booking?.bookingReference || 'After approval',
-                },
-                {
-                  id: 'documents',
-                  label: 'Documents',
-                  Icon: ClipboardCheck,
-                  tab: 'documents' as DetailTab,
-                  state: selectedCtmTrip && hasCtmDocumentBlocker(selectedCtmTrip) ? 'blocked' : selectedCtmTrip?.documents?.length ? 'done' : 'pending',
-                  detail: selectedCtmTrip && hasCtmDocumentBlocker(selectedCtmTrip) ? 'Action needed' : 'Readiness',
-                },
-                {
-                  id: 'execution',
-                  label: 'Execution',
-                  Icon: CheckSquare,
-                  tab: 'history' as DetailTab,
-                  state: selectedLead.status === 'execution' ? 'active' : currentStage === 'completed' ? 'done' : 'pending',
-                  detail: currentStage === 'completed' ? 'Completed' : 'Travel pack + service',
-                },
-              ];
-              const corporateWorkflowProgress = crmCorporateWorkflowProgress(corporateWorkflowTrace);
+              const corporateWorkflowTrace: CrmCorporateWorkflowStage[] = selectedCtmTrip?.workflow?.stages?.length
+                ? selectedCtmTrip.workflow.stages.map((stage) => ({
+                    id: stage.id,
+                    label: stage.label,
+                    state: stage.state,
+                    detail: stage.detail,
+                    Icon: crmIconForCorporateWorkflowStage(stage.id),
+                    tab: crmTabForCorporateWorkflowStage(stage.id),
+                  }))
+                : [
+                    {
+                      id: 'briefing',
+                      label: 'Briefing',
+                      Icon: ClipboardCheck,
+                      tab: 'brief' as DetailTab,
+                      state: selectedCorporateBriefReady ? 'done' : 'active',
+                      detail: 'Link the CTM request so CRM can read the canonical corporate workflow.',
+                    },
+                  ];
+              const corporateWorkflowProgress = selectedCtmTrip?.workflow?.progress ?? crmCorporateWorkflowProgress(corporateWorkflowTrace);
               const activeCorporateWorkflowStage = currentCrmCorporateStage(corporateWorkflowTrace);
               const selectedCorporateWorkflowStage =
                 corporateWorkflowTrace.find((stage) => stage.id === selectedCorporateWorkflowStageId)
                 ?? activeCorporateWorkflowStage;
-              const recentCorporateTimeline = selectedHistory.slice(0, 3);
+              const recentCorporateTimeline = [
+                ...selectedHistory.slice(0, 3).map((item) => ({
+                  id: `${item.label}-${item.meta}`,
+                  label: item.label,
+                  meta: item.meta,
+                  tone: item.tone,
+                })),
+                ...(selectedCtmTrip?.timeline ?? []).slice(0, 3).map((item) => ({
+                  id: item.id,
+                  label: item.title,
+                  meta: `${item.time} - ${item.meta}`,
+                  tone: item.type === 'done' ? 'done' : item.type === 'alert' ? 'closed' : 'current',
+                })),
+              ].slice(0, 5);
 
-              if (!selectedCorporateBriefReady) {
-                return (
-                  renderBriefingGate()
-                );
-              }
-
-              if (!selectedBriefingOwnerApproved) {
-                return (
-                  <div className="grid gap-4">
+              return (
+                <div className="grid gap-4">
+                  {selectedCorporateBriefReady && !selectedBriefingOwnerApproved ? (
                     <div className={`rounded-xl border p-5 ${selectedBriefingReturned ? 'border-amber-400/25 bg-amber-500/10' : styles.panel}`}>
                       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                         <div className="min-w-0">
@@ -5767,312 +5982,94 @@ export function CrmPage() {
                         </button>
                       </div>
                     </div>
-                    {renderBriefingGate()}
-                  </div>
-                );
-              }
+                  ) : null}
 
-              return (
-                <div className="grid gap-4">
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="min-w-0">
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">DPM Corporate Desk</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Selected request</div>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <h2 className="text-2xl font-semibold">{selectedLead.name}</h2>
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>CTM request</span>
-                          <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadLifecycleLabel(selectedLead)}</span>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>Corporate</span>
+                          <span className={`rounded-full px-2.5 py-1 text-xs ${crmCorporateStageClass(activeCorporateWorkflowStage.state)}`}>
+                            {activeCorporateWorkflowStage.label}
+                          </span>
                         </div>
                         <div className={`mt-2 text-sm ${styles.muted}`}>
-                          {selectedLead.destination || 'Destination pending'} - {selectedLead.tripType || selectedLead.service} - {selectedLead.dates || 'Dates pending'}
-                        </div>
-                        <div className={`mt-2 text-sm ${styles.soft}`}>
-                          {selectedCorporateBriefReady
-                            ? 'Briefing is approved. Build the Trip Design / Itinerary Draft before pricing starts.'
-                            : 'Next step: complete the corporate briefing so DPM has enough information to start itinerary design.'}
-                        </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          {selectedQuote ? (
-                            <>
-                              <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedQuote.quoteNumber} v{selectedQuote.version}</span>
-                              <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{quoteStatusLabels[selectedQuote.status]}</span>
-                            </>
-                          ) : !selectedCorporateBriefReady ? (
-                            <button
-                              type="button"
-                              onClick={() => setDetailTab('brief')}
-                              className="inline-flex h-8 items-center rounded-lg bg-[#d9b46f] px-3 text-xs font-semibold text-[#07111f]"
-                            >
-                              Complete briefing
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setDetailTab('itinerary')}
-                              className={`inline-flex h-8 items-center rounded-lg px-3 text-xs ${styles.buttonGhost}`}
-                            >
-                              Start Trip Design
-                            </button>
-                          )}
+                          {selectedLead.departureCity || 'Origin pending'} to {selectedLead.destination || 'Destination pending'} - {selectedLead.dates || 'Dates pending'}
                         </div>
                       </div>
-
-                      <div className="grid grid-cols-3 gap-2 text-right">
-                        <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
-                          <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Travelers</div>
-                          <div className="mt-1 text-sm font-semibold">{selectedLead.travelers || 'Pending'}</div>
-                        </div>
-                        <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
-                          <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Owner</div>
-                          <div className="mt-1 text-sm font-semibold">{managerMeta?.owner || leadOwner(selectedLead)}</div>
-                        </div>
-                        <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
-                          <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Urgency</div>
-                          <div className="mt-1 text-sm font-semibold">{priorityLabels[fallbackPriority(selectedLead)]}</div>
+                      <div className="min-w-[220px] text-left xl:text-right">
+                        <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Progress</div>
+                        <div className="mt-1 text-lg font-semibold">{corporateWorkflowProgress}%</div>
+                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+                          <div className="h-full rounded-full bg-[#d9b46f]" style={{ width: `${corporateWorkflowProgress}%` }} />
                         </div>
                       </div>
                     </div>
 
-                    <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                        <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Route</div>
-                        <div className="mt-1 text-sm font-semibold">{selectedLead.departureCity || 'Origin pending'} to {selectedLead.destination || 'Destination pending'}</div>
-                        <div className={`mt-1 text-xs ${styles.muted}`}>{selectedLead.dates || 'Dates pending'}</div>
-                      </div>
-                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                        <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Department / Scope</div>
-                        <div className="mt-1 text-sm font-semibold">{selectedLead.requestedServices || 'Scope pending'}</div>
-                        <div className={`mt-1 text-xs ${styles.muted}`}>Company-owned movement</div>
-                      </div>
-                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                        <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Finance</div>
-                        <div className="mt-1 text-sm font-semibold">{selectedQuote ? moneyValue(selectedQuote.subtotalSell, selectedQuote.currency) : selectedLead.budget || 'Budget / PO pending'}</div>
-                        <div className={`mt-1 text-xs ${styles.muted}`}>{selectedQuote ? `${quoteStatusLabels[selectedQuote.status]} quote` : 'Invoice-aware release'}</div>
-                      </div>
-                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                        <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Bottleneck</div>
-                        <div className="mt-1 text-sm font-semibold">{selectedPrimaryBlocker}</div>
-                        <div className={`mt-1 text-xs ${styles.muted}`}>{selectedWorkflowState?.responsibleOwner || selectedProcess?.primaryAction || 'Review request'}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className={`rounded-xl border p-5 ${styles.panel}`}>
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="min-w-0">
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Linked CTM request</div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <select
-                            value={selectedCtmTrip?.id ?? ''}
-                            onChange={(event) => linkCtmRequestToLead(event.target.value)}
-                            className={`h-10 min-w-[260px] rounded-lg border px-3 text-sm ${styles.select}`}
+                    <div className="mt-5 grid grid-cols-4 gap-x-2 gap-y-3 xl:grid-cols-8">
+                      {corporateWorkflowTrace.map((stage) => {
+                        const Icon = stage.Icon;
+                        const selected = selectedCorporateWorkflowStage.id === stage.id;
+                        return (
+                          <button
+                            key={stage.id}
+                            type="button"
+                            title={`${stage.label}: ${crmCorporateStageToneLabel(stage.state)}`}
+                            onClick={() => {
+                              setSelectedCorporateWorkflowStageId(stage.id);
+                              setDetailTab(stage.tab);
+                            }}
+                            className="group flex min-w-0 flex-col items-center text-center"
                           >
-                            {ctmTripRequests.length > 0 ? ctmTripRequests.map((trip) => (
-                              <option key={trip.id} value={trip.id}>{trip.id} - {trip.route}</option>
-                            )) : (
-                              <option value="">No CTM requests loaded</option>
-                            )}
-                          </select>
-                          <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
-                            {selectedLead.ctmRequestId === selectedCtmTrip?.id ? 'Saved link' : 'Link pending'}
-                          </span>
-                          {selectedCtmTrip ? (
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>{selectedCtmTrip.status}</span>
-                          ) : null}
-                        </div>
-                        <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
-                          {selectedCtmTrip
-                            ? `${selectedCtmTrip.requestedBy} from ${selectedCtmTrip.department} requested ${selectedCtmTrip.route} for ${selectedCtmTrip.travelDate}.`
-                            : 'Corporate work should be attached to a CTM request before itinerary design, quote, booking, billing, or shared client updates are processed.'}
-                        </p>
-                      </div>
-                      {selectedCtmTrip ? (
-                        <button
-                          type="button"
-                          onClick={() => setDetailTab(selectedCorporateBriefReady ? 'itinerary' : 'brief')}
-                          className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
-                        >
-                          <CalendarDays className="h-4 w-4" />
-                          {selectedCorporateBriefReady ? 'Trip Design' : 'Complete briefing'}
-                        </button>
-                      ) : null}
+                            <span className={`grid h-9 w-9 place-items-center rounded-full border transition group-hover:scale-105 ${crmCorporateStageDotClass(stage.state, selected)}`}>
+                              <Icon className="h-4 w-4" />
+                            </span>
+                            <span className={`mt-1 max-w-full truncate text-[10px] font-medium ${selected ? 'text-[#d9b46f]' : styles.muted}`}>{stage.label}</span>
+                          </button>
+                        );
+                      })}
                     </div>
-
-                    {selectedCtmTrip ? (
-                      <>
-                        <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-                          {[
-                            { label: 'Travelers', value: String(selectedCtmTrip.travelers.length), meta: selectedCtmTrip.travelers[0]?.name || 'Traveler list pending' },
-                            {
-                              label: 'Approvals',
-                              value: `${selectedCtmTrip.approvals.filter((approval) => approval.status === 'Approved').length}/${selectedCtmTrip.approvals.length}`,
-                              meta: selectedCtmTrip.approvals.find((approval) => approval.status === 'Pending')?.stage || 'No pending approval',
-                            },
-                            {
-                              label: selectedCorporateBriefReady ? 'Trip Design' : 'Design locked',
-                              value: selectedItinerary ? itineraryStatusLabels[selectedItinerary.status] : selectedCorporateBriefReady ? 'Draft needed' : 'Briefing first',
-                              meta: selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : selectedCorporateBriefReady ? 'Build route before quote' : 'Complete briefing first',
-                            },
-                            {
-                              label: selectedCorporateBriefReady ? 'Quote' : 'Quote locked',
-                              value: selectedCorporateBriefReady && selectedCtmTrip.quote ? corporateQuoteStatusLabels[selectedCtmTrip.quote.status] : selectedCorporateBriefReady ? 'After design' : 'Design first',
-                              meta: selectedCorporateBriefReady && selectedCtmTrip.quote ? moneyValue(selectedCtmTrip.quote.amount, selectedCtmTrip.quote.currency) : selectedCorporateBriefReady ? 'Price itinerary options' : 'Complete trip design first',
-                            },
-                            {
-                              label: selectedCorporateBriefReady ? 'Booking' : 'Booking locked',
-                              value: selectedCorporateBriefReady && selectedCtmTrip.booking ? corporateBookingStatusLabels[selectedCtmTrip.booking.status] : selectedCorporateBriefReady ? 'Not created' : 'After quote',
-                              meta: selectedCorporateBriefReady ? selectedCtmTrip.booking?.bookingReference || 'Supplier release pending' : 'Hidden until commercial release',
-                            },
-                            {
-                              label: selectedCorporateBriefReady ? 'Invoice' : 'Invoice locked',
-                              value: selectedCorporateBriefReady && selectedCtmTrip.invoice ? corporateInvoiceStatusLabels[selectedCtmTrip.invoice.status] : selectedCorporateBriefReady ? 'Not created' : 'After booking',
-                              meta: selectedCorporateBriefReady && selectedCtmTrip.invoice ? moneyValue(selectedCtmTrip.invoice.amount, selectedCtmTrip.invoice.currency) : selectedCorporateBriefReady ? 'Billing pending' : 'Finance follows quote approval',
-                            },
-                            {
-                              label: 'Messages',
-                              value: String(selectedCtmTrip.messages?.length ?? 0),
-                              meta: selectedCtmTrip.messages?.[0]?.body || 'Use CTM only for clarifications',
-                            },
-                          ].map((card) => (
-                            <div key={card.label} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                              <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{card.label}</div>
-                              <div className="mt-1 truncate text-sm font-semibold">{card.value}</div>
-                              <div className={`mt-1 truncate text-xs ${styles.muted}`}>{card.meta}</div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {selectedCorporateBriefReady ? (
-                        <div className={`mt-4 rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                            <div>
-                              <div className="font-semibold">CTM response loop</div>
-                              <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>
-                                Client portal actions translated into DPM operating signals for the Corporate Desk.
-                              </p>
-                            </div>
-                            <div className={`rounded-lg border px-3 py-2 text-sm ${styles.panel}`}>
-                              <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Next DPM action</div>
-                              <div className="mt-1 max-w-xl font-semibold">{selectedCtmNextAction}</div>
-                            </div>
-                          </div>
-                          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                            {selectedCtmFinalCostGate ? (
-                              <div className={`rounded-lg border px-3 py-3 ${ctmSignalToneClass(selectedCtmFinalCostGate.tone)}`}>
-                                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] opacity-75">
-                                  {selectedCtmFinalCostGate.ready ? <CheckSquare className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-                                  Final cost gate
-                                </div>
-                                <div className="mt-1 truncate text-sm font-semibold">{selectedCtmFinalCostGate.label}</div>
-                                <div className="mt-1 line-clamp-2 text-xs opacity-75">{selectedCtmFinalCostGate.detail}</div>
-                              </div>
-                            ) : null}
-                            {selectedCtmSignals.map((signal) => (
-                              <div key={signal.label} className={`rounded-lg border px-3 py-3 ${ctmSignalToneClass(signal.tone)}`}>
-                                <div className="text-[10px] uppercase tracking-[0.14em] opacity-75">{signal.label}</div>
-                                <div className="mt-1 truncate text-sm font-semibold">{signal.value}</div>
-                                <div className="mt-1 line-clamp-2 text-xs opacity-75">{signal.meta}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        ) : null}
-                      </>
-                    ) : (
-                      <div className={`mt-4 rounded-lg border p-4 text-sm ${styles.panelSoft}`}>
-                        No CTM request is available. Ask the company to submit the request in CTM, then process it from this Corporate Desk.
-                      </div>
-                    )}
                   </div>
 
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="min-w-0">
-                        <div className="font-semibold">DPM corporate workflow visibility</div>
-                        <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>
-                          Same request lifecycle as CTM, tuned for DPM execution: control progress, bottlenecks, timeline, and the next operational move.
-                        </p>
-                      </div>
-                      <div className="grid min-w-[260px] grid-cols-2 gap-2">
-                        <div className={`rounded-lg border px-3 py-2 ${crmCorporateStageClass(activeCorporateWorkflowStage.state)}`}>
-                          <div className="text-[10px] uppercase tracking-[0.14em] opacity-75">Current DPM stage</div>
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <div className={`rounded-lg border px-3 py-3 ${crmCorporateStageClass(activeCorporateWorkflowStage.state)}`}>
+                          <div className="text-[10px] uppercase tracking-[0.14em] opacity-75">Current stage</div>
                           <div className="mt-1 truncate text-sm font-semibold">{activeCorporateWorkflowStage.label}</div>
                         </div>
-                        <div className={`rounded-lg border px-3 py-2 ${selectedCorporateWorkflowStage.state === 'blocked' ? crmCorporateStageClass('blocked') : styles.panelSoft}`}>
+                        <div className={`rounded-lg border px-3 py-3 ${selectedCorporateWorkflowStage.state === 'blocked' ? crmCorporateStageClass('blocked') : styles.panelSoft}`}>
                           <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Bottleneck</div>
                           <div className="mt-1 truncate text-sm font-semibold">{selectedPrimaryBlocker}</div>
                         </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                      <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>DPM progress</div>
-                            <div className="mt-1 text-sm font-semibold">{corporateWorkflowProgress}% complete</div>
+                        <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Next action</div>
+                          <div className="mt-1 line-clamp-2 text-sm font-semibold">{selectedCtmTrip ? selectedCtmNextAction : selectedNextAction}</div>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Owner / client status</div>
+                          <div className="mt-1 truncate text-sm font-semibold">{selectedBriefingApproval?.status || selectedCtmTrip?.status || 'Not submitted'}</div>
+                          <div className={`mt-1 truncate text-xs ${styles.muted}`}>{managerMeta?.owner || leadOwner(selectedLead)}</div>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-3 md:col-span-2 xl:col-span-4 ${styles.panelSoft}`}>
+                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Selected checkpoint</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold">{selectedCorporateWorkflowStage.label}</span>
+                            <span className={`rounded-full px-2.5 py-1 text-[11px] ${crmCorporateStageClass(selectedCorporateWorkflowStage.state)}`}>
+                              {crmCorporateStageToneLabel(selectedCorporateWorkflowStage.state)}
+                            </span>
                           </div>
-                          <span className={`rounded-full px-2.5 py-1 text-[11px] ${crmCorporateStageClass(activeCorporateWorkflowStage.state)}`}>
-                            {crmCorporateStageToneLabel(activeCorporateWorkflowStage.state)}
-                          </span>
-                        </div>
-                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                          <div className="h-full rounded-full bg-[#d9b46f]" style={{ width: `${corporateWorkflowProgress}%` }} />
-                        </div>
-                        <div className="mt-4 grid grid-cols-4 gap-x-2 gap-y-3 xl:grid-cols-8">
-                          {corporateWorkflowTrace.map((stage) => {
-                            const Icon = stage.Icon;
-                            const selected = selectedCorporateWorkflowStage.id === stage.id;
-                            return (
-                              <button
-                                key={stage.id}
-                                type="button"
-                                title={`${stage.label}: ${crmCorporateStageToneLabel(stage.state)}`}
-                                onClick={() => {
-                                  setSelectedCorporateWorkflowStageId(stage.id);
-                                  setDetailTab(stage.tab);
-                                }}
-                                className="group flex min-w-0 flex-col items-center text-center"
-                              >
-                                <span className={`grid h-9 w-9 place-items-center rounded-full border transition group-hover:scale-105 ${crmCorporateStageDotClass(stage.state, selected)}`}>
-                                  <Icon className="h-4 w-4" />
-                                </span>
-                                <span className={`mt-1 max-w-full truncate text-[10px] font-medium ${selected ? 'text-[#d9b46f]' : styles.muted}`}>{stage.label}</span>
-                              </button>
-                            );
-                          })}
+                          <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedCorporateWorkflowStage.detail}</p>
                         </div>
                       </div>
 
-                      <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Selected stage</div>
-                            <div className="mt-1 truncate text-sm font-semibold">{selectedCorporateWorkflowStage.label}</div>
-                          </div>
-                          <span className={`rounded-full px-2.5 py-1 text-[11px] ${crmCorporateStageClass(selectedCorporateWorkflowStage.state)}`}>
-                            {crmCorporateStageToneLabel(selectedCorporateWorkflowStage.state)}
-                          </span>
-                        </div>
-                        <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{selectedCorporateWorkflowStage.detail}</p>
-                        <div className={`mt-4 rounded-lg border px-3 py-3 ${styles.panel}`}>
-                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Primary next action</div>
-                          <div className="mt-1 text-sm font-semibold">{selectedCtmTrip ? selectedCtmNextAction : selectedNextAction}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                       <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                        <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Current control point</div>
-                        <div className="mt-1 text-sm font-semibold">{selectedPrimaryBlocker}</div>
-                        <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedWorkflowState?.blockers[0]?.detail || selectedProcess?.stageGate || 'Keep the current corporate checkpoint controlled before release.'}</p>
-                      </div>
-                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                        <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Recent timeline</div>
+                        <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Lifecycle timeline</div>
                         <div className="mt-3 grid gap-3">
                           {recentCorporateTimeline.length > 0 ? recentCorporateTimeline.map((item) => (
-                            <div key={`${item.label}-${item.meta}`} className="flex gap-2">
+                            <div key={item.id} className="flex gap-2">
                               <span className={`mt-1 h-2 w-2 rounded-full ${item.tone === 'done' ? 'bg-emerald-400' : item.tone === 'current' ? 'bg-sky-400' : item.tone === 'closed' ? 'bg-red-400' : 'bg-white/30'}`} />
                               <div className="min-w-0">
                                 <div className="truncate text-xs font-semibold">{item.label}</div>
@@ -6085,68 +6082,54 @@ export function CrmPage() {
                         </div>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => advanceLeadLifecycle(selectedLead)}
-                      disabled={selectedWorkflowState ? !selectedWorkflowState.canAdvance : !nextStage}
-                      className="mt-4 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      <CheckSquare className="h-4 w-4" />
-                      {selectedWorkflowState?.nextStageLabel ? `Advance to ${selectedWorkflowState.nextStageLabel}` : lifecycleStageActionLabel(nextStage)}
-                    </button>
                   </div>
 
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
-                        <div className="font-semibold">{displayCorporateLabel}</div>
+                        <div className="font-semibold">{!selectedCorporateBriefReady ? 'Briefing workspace' : !selectedBriefingOwnerApproved ? 'Owner approval follow-up' : displayCorporateLabel}</div>
                         <div className={`mt-1 text-sm ${styles.muted}`}>
-                          {selectedCorporateBriefReady ? selectedNextAction || 'Build the itinerary draft before commercial pricing starts.' : 'Complete the structured corporate brief before trip design, quote, booking, billing, or travel pack outputs.'}
+                          {!selectedCorporateBriefReady
+                            ? 'Complete the structured corporate brief before trip design, quote, booking, billing, or travel pack outputs.'
+                            : !selectedBriefingOwnerApproved
+                              ? 'Track the trip owner decision in CTM before starting trip design.'
+                              : selectedNextAction || 'Build the itinerary draft before commercial pricing starts.'}
                         </div>
                       </div>
-                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedCorporateBriefReady ? selectedWorkflowState?.currentStageLabel || selectedProcess?.primaryAction || 'Working stage' : 'Briefing gate'}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{activeCorporateWorkflowStage.label}</span>
                     </div>
 
-                    {!selectedCorporateBriefReady ? renderBriefingGate() : detailTab === 'itinerary' ? (
+                    {!selectedCorporateBriefReady ? renderBriefingGate() : !selectedBriefingOwnerApproved ? (
                       <div className="grid gap-4">
-                        {selectedQuote ? (
-                          <div className="grid gap-3 md:grid-cols-3">
-                            {selectedQuote.lines.map((line) => (
-                              <div key={line.id} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="font-semibold">{line.description}</div>
-                                  <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{line.status}</span>
-                                </div>
-                                <div className={`mt-2 text-sm ${styles.muted}`}>{line.supplier || line.category}</div>
-                                <div className="mt-3 text-xs font-semibold text-[#d9b46f]">{selectedQuote.quoteNumber}</div>
-                                <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>Sell value: {moneyValue(line.totalSell, selectedQuote.currency)}</p>
+                        <div className={`rounded-lg border p-5 ${selectedBriefingReturned ? 'border-amber-400/25 bg-amber-500/10' : styles.panelSoft}`}>
+                          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                            <div className="min-w-0">
+                              <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Trip owner decision</div>
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <div className="text-xl font-semibold">{selectedBriefingReturned ? 'Briefing changes requested' : 'Waiting for owner approval'}</div>
+                                <span className={`rounded-full px-2.5 py-1 text-xs ${selectedBriefingApprovalPending ? 'bg-sky-500/15 text-sky-200' : selectedBriefingReturned ? 'bg-amber-500/15 text-amber-100' : styles.buttonGhost}`}>
+                                  {selectedBriefingApproval?.status || 'Not submitted'}
+                                </span>
                               </div>
-                            ))}
+                              <p className={`mt-2 max-w-3xl text-sm leading-6 ${selectedBriefingReturned ? 'text-amber-100/80' : styles.soft}`}>
+                                {selectedBriefingReturned
+                                  ? 'The trip owner asked DPM to revise the briefing before itinerary design starts.'
+                                  : 'Trip Design stays locked until the trip owner approves the briefing summary in CTM.'}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setDetailTab('brief')}
+                              className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
+                            >
+                              <ClipboardCheck className="h-4 w-4" />
+                              {selectedBriefingReturned ? 'Revise briefing' : 'Open briefing'}
+                            </button>
                           </div>
-                        ) : (
-                          <div className="grid gap-3 md:grid-cols-3">
-                            {bookings.map((booking) => (
-                              <div key={booking.reference} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="font-semibold">{booking.service}</div>
-                                  <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{booking.status}</span>
-                                </div>
-                                <div className={`mt-2 text-sm ${styles.muted}`}>{booking.supplier}</div>
-                                <div className="mt-3 text-xs font-semibold text-[#d9b46f]">{booking.reference}</div>
-                                <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{booking.note}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="font-semibold">Booking release rule</div>
-                          <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
-                            Release booking only when traveler names, approver sign-off, finance posture, and document readiness are visible for the account owner.
-                          </p>
                         </div>
+                        {selectedBriefingReturned ? renderBriefingGate() : null}
                       </div>
-                    ) : detailTab === 'history' ? (
+                    ) : detailTab === 'itinerary' ? renderCorporateTripDesignWorkspace() : detailTab === 'history' ? (
                       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
                         <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                           <div className="font-semibold">Fulfilment timeline</div>

@@ -10,7 +10,7 @@ import { CorporateRequestsPage } from './CorporateRequestsPage';
 import { CorporateSectionPlaceholderPage } from './CorporateSectionPlaceholderPage';
 import { CorporateTravelersPage } from './CorporateTravelersPage';
 import { getCorporateCurrentTripCost } from '../../data/corporatePortal';
-import { approveCtmTripRequest, clearCtmSession, createCtmTraveler, createCtmTripDocument, createCtmTripMessage, createCtmTripRequest, CTM_AUTH_EVENT, deactivateCtmTraveler, fetchCtmBillingInvoices, fetchCtmBillingPayments, fetchCtmBillingSummary, fetchCtmContext, fetchCtmCurrentSession, fetchCtmTravelers, fetchCtmTripRequests, hasCtmApi, loginCtm, logoutCtm, readCtmSession, rejectCtmTripRequest, saveCtmSession, updateCtmTraveler } from '../../data/ctm';
+import { approveCtmTripRequest, clearCtmSession, createCtmTraveler, createCtmTripDocument, createCtmTripMessage, createCtmTripRequest, CTM_AUTH_EVENT, deactivateCtmTraveler, fetchCtmBillingInvoices, fetchCtmBillingPayments, fetchCtmBillingSummary, fetchCtmContext, fetchCtmCurrentSession, fetchCtmTravelers, fetchCtmTripRequests, hasCtmApi, loginCtm, logoutCtm, notifyCtmDataUpdated, readCtmSession, rejectCtmTripRequest, saveCtmSession, updateCtmTraveler } from '../../data/ctm';
 import { ctmLegacyRoute, ctmPrimaryRoute } from '../../data/travel';
 import type {
   CorporateApprovalFilter,
@@ -379,6 +379,7 @@ export function CorporatePortalApp() {
     try {
       const updatedTrip = decision === 'Approved' ? await approveCtmTripRequest(tripId, stage, ctmSession) : await rejectCtmTripRequest(tripId, stage, ctmSession);
       setRequests((current) => current.map((trip) => (trip.id === tripId ? updatedTrip : trip)));
+      notifyCtmDataUpdated();
       setError('');
     } catch (approvalError) {
       setError(approvalError instanceof Error ? approvalError.message : 'Could not update approval.');

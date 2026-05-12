@@ -248,6 +248,49 @@ class CtmOpsScopeTests(APITestCase):
         self.assertEqual(approve_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(approve_response.data["detail"], "DPM quote must be sent before final cost approval.")
 
+    def test_trip_request_exposes_canonical_workflow_from_ctm_request(self):
+        TripApproval.objects.create(
+            trip_request=self.trip_b,
+            approval_type=TripApproval.ApprovalType.TRAVEL_NEED,
+            status=TripApproval.Status.APPROVED,
+        )
+        TripApproval.objects.create(
+            trip_request=self.trip_b,
+            approval_type=TripApproval.ApprovalType.FINAL_COST,
+            status=TripApproval.Status.PENDING,
+        )
+        TripQuote.objects.create(
+            trip_request=self.trip_b,
+            prepared_by=self.ops_user,
+            amount="2400.00",
+            currency="USD",
+            status=TripQuote.Status.SENT,
+            valid_until=date(2026, 9, 10),
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
+
+        response = self.client.get(reverse("ctm-trip-request-detail", args=[self.trip_b.reference_code]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["workflow"]["currentStage"], "quote_approval")
+        self.assertEqual(response.data["workflow"]["currentStageLabel"], "Quote approval")
+        self.assertTrue(response.data["workflow"]["progress"] > 0)
+        self.assertEqual(
+            [stage["id"] for stage in response.data["workflow"]["stages"]],
+            [
+                "request_received",
+                "travel_need",
+                "briefing",
+                "briefing_approval",
+                "trip_design",
+                "quote_build",
+                "quote_approval",
+                "booking",
+                "documents",
+                "execution",
+            ],
+        )
+
     def test_final_cost_approval_succeeds_after_travel_need_and_sent_quote(self):
         self.company_user_b.role = CompanyUser.Role.FINANCE_APPROVER
         self.company_user_b.access_roles = [CompanyUser.Role.FINANCE_APPROVER]

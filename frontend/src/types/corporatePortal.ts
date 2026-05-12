@@ -101,6 +101,25 @@ export type CorporateTimelineEvent = {
   type: CorporateTimelineType;
 };
 
+export type CorporateWorkflowStageState = 'done' | 'active' | 'blocked' | 'pending';
+
+export type CorporateWorkflowStage = {
+  id: string;
+  label: string;
+  state: CorporateWorkflowStageState;
+  detail: string;
+  owner: 'DPM' | 'Company' | 'System' | string;
+};
+
+export type CorporateWorkflow = {
+  currentStage: string;
+  currentStageLabel: string;
+  progress: number;
+  bottleneck: string;
+  nextAction: string;
+  stages: CorporateWorkflowStage[];
+};
+
 export type CorporateTripRequest = {
   id: string;
   requestedBy: string;
@@ -126,6 +145,7 @@ export type CorporateTripRequest = {
   messages?: CorporateTripMessage[];
   approvals: CorporateApprovalState[];
   timeline: CorporateTimelineEvent[];
+  workflow?: CorporateWorkflow;
   internalSummary: string;
 };
 

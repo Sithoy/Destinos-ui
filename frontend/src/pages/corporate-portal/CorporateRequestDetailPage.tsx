@@ -1,11 +1,11 @@
-import { AlertCircle, AlertTriangle, Building2, CheckCircle2, CircleDot, ClipboardList, Clock3, CreditCard, FileText, MessageSquare, PlaneTakeoff, Plus, Receipt, Route, Send, ShieldCheck, UploadCloud, XCircle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Building2, CheckCircle2, CircleDot, ClipboardList, Clock3, FileText, MessageSquare, PlaneTakeoff, Plus, Receipt, Send, ShieldCheck, UploadCloud, XCircle } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { CostLifecycleCard } from '../../components/corporate-portal/CostLifecycleCard';
 import { ServiceChipList } from '../../components/corporate-portal/ServiceChipList';
 import { TimelinePanel, type TimelineSource, type UnifiedTimelineEvent } from '../../components/corporate-portal/TimelinePanel';
 import { TravelerReadinessList } from '../../components/corporate-portal/TravelerReadinessList';
 import { TripStatusBadge } from '../../components/corporate-portal/TripStatusBadge';
-import type { CorporateApprovalStage, CorporateDocumentStatus, CorporateDocumentType, CorporatePortalTheme, CorporateTripDocumentInput, CorporateTripMessageInput, CorporateTripRequest } from '../../types/corporatePortal';
+import type { CorporateApprovalStage, CorporateDocumentStatus, CorporateDocumentType, CorporatePortalTheme, CorporateTripDocumentInput, CorporateTripMessageInput, CorporateTripRequest, CorporateWorkflowStage } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from './portalTheme';
 
 type WorkbenchTab = 'documents' | 'messages' | 'tasks';
@@ -177,75 +177,17 @@ function buildDecisionStages(trip: CorporateTripRequest): ProcessingStage[] {
   ];
 }
 
-function buildLogisticsStages(trip: CorporateTripRequest): ProcessingStage[] {
-  const finalCost = approvalStatus(trip, 'Final cost');
-  const bookingReady = Boolean(trip.booking) || trip.status === 'Booked' || trip.status === 'Completed';
-  const blockedByDocuments = hasDocumentBlocker(trip) && (trip.status === 'Needs documents' || bookingReady);
-  const invoiceReady = Boolean(trip.invoice);
-  const paid = trip.invoice?.status === 'paid' || trip.payments.some((payment) => payment.status === 'received' || payment.status === 'reconciled');
-  const requiresFlight = trip.services.includes('Flight');
-  const requiresHotel = trip.services.includes('Hotel');
-  const requiresVisa = trip.services.includes('Visa support') || trip.travelers.some((traveler) => traveler.readiness.visa === 'Required');
-  const passportBlocked = trip.travelers.some((traveler) => traveler.readiness.passport !== 'OK');
-  const visaBlocked = trip.travelers.some((traveler) => traveler.readiness.visa === 'Required');
-  const documents = trip.documents ?? [];
-  const itineraryReady = documents.some((document) => document.documentType === 'itinerary' && ['verified', 'issued'].includes(document.status));
-
-  return [
-    {
-      id: 'travelers',
-      label: 'Travelers',
-      state: passportBlocked ? 'blocked' : 'done',
-      detail: passportBlocked ? 'At least one traveler has missing or expired passport readiness.' : `${trip.travelers.length} traveler profile${trip.travelers.length === 1 ? '' : 's'} ready for processing.`,
-      Icon: Building2,
-    },
-    {
-      id: 'documents',
-      label: 'Documents',
-      state: blockedByDocuments ? 'blocked' : documents.length > 0 ? 'done' : finalCost === 'Approved' || bookingReady ? 'active' : 'pending',
-      detail: blockedByDocuments ? 'Document records show missing or requested items.' : documents.length > 0 ? 'Shared documents are received or verified.' : 'Document collection starts as the trip moves toward booking.',
-      Icon: FileText,
-    },
-    {
-      id: 'visa',
-      label: 'Visa',
-      state: visaBlocked ? 'blocked' : requiresVisa ? 'active' : 'done',
-      detail: visaBlocked ? 'Visa readiness needs attention before travel pack completion.' : requiresVisa ? 'Visa support is in scope and should be monitored.' : 'No visa blocker is currently visible.',
-      Icon: ShieldCheck,
-    },
-    {
-      id: 'flights',
-      label: 'Flights',
-      state: !requiresFlight ? 'done' : trip.booking?.status === 'cancelled' ? 'blocked' : ['confirmed', 'ticketed', 'completed'].includes(trip.booking?.status ?? '') ? 'done' : finalCost === 'Approved' ? 'active' : 'pending',
-      detail: !requiresFlight ? 'Flights are not part of this request.' : trip.booking ? `${labelize(trip.booking.status)} - ${trip.booking.bookingReference || 'reference pending'}` : 'Flight booking starts after final approval.',
-      Icon: PlaneTakeoff,
-    },
-    {
-      id: 'hotel',
-      label: 'Hotel',
-      state: !requiresHotel ? 'done' : trip.booking?.status === 'cancelled' ? 'blocked' : ['confirmed', 'ticketed', 'completed'].includes(trip.booking?.status ?? '') ? 'done' : finalCost === 'Approved' ? 'active' : 'pending',
-      detail: !requiresHotel ? 'Accommodation is not part of this request.' : trip.booking?.supplierSummary || 'Hotel or accommodation confirmation starts after final approval.',
-      Icon: Building2,
-    },
-    {
-      id: 'billing',
-      label: 'Billing',
-      state: paid ? 'done' : invoiceReady ? (trip.invoice?.status === 'overdue' ? 'blocked' : 'active') : bookingReady ? 'active' : 'pending',
-      detail: trip.invoice ? `${labelize(trip.invoice.status)} - ${formatMoney(trip.invoice.amount, trip.invoice.currency)}` : 'Invoice is not issued yet.',
-      Icon: CreditCard,
-    },
-    {
-      id: 'travel-ready',
-      label: 'Travel ready',
-      state: blockedByDocuments ? 'blocked' : trip.status === 'Completed' || itineraryReady ? 'done' : bookingReady ? 'active' : 'pending',
-      detail: blockedByDocuments ? 'Traveler documents need attention.' : trip.status === 'Completed' || itineraryReady ? 'Final travel pack is ready or issued.' : bookingReady ? 'DPM is preparing final travel pack.' : 'Unlocked after booking.',
-      Icon: Route,
-    },
-  ];
+function currentCorporateWorkflowStage(stages: CorporateWorkflowStage[]) {
+  return stages.find((stage) => stage.state === 'blocked') ?? stages.find((stage) => stage.state === 'active') ?? stages[stages.length - 1];
 }
 
-function currentProcessingStage(stages: ProcessingStage[]) {
-  return stages.find((stage) => stage.state === 'blocked') ?? stages.find((stage) => stage.state === 'active') ?? stages[stages.length - 1];
+function workflowStageIcon(stageId: string) {
+  if (stageId.includes('travel_need') || stageId.includes('approval')) return ShieldCheck;
+  if (stageId.includes('briefing') || stageId.includes('request')) return ClipboardList;
+  if (stageId.includes('design') || stageId.includes('booking') || stageId.includes('execution')) return PlaneTakeoff;
+  if (stageId.includes('quote')) return Receipt;
+  if (stageId.includes('document')) return FileText;
+  return CheckCircle2;
 }
 
 function clientNextAction(trip: CorporateTripRequest) {
@@ -452,18 +394,20 @@ export function CorporateRequestDetailPage({
   const documents = trip.documents ?? [];
   const messages = trip.messages ?? [];
   const tasks = trip.tasks ?? [];
-  const decisionStages = buildDecisionStages(trip);
-  const logisticsStages = buildLogisticsStages(trip);
-  const activeDecisionStage = currentProcessingStage(decisionStages);
-  const activeLogisticsStage = currentProcessingStage(logisticsStages);
-  const decisionProgress = workflowProgress(decisionStages);
-  const logisticsProgress = workflowProgress(logisticsStages);
+  const fallbackWorkflowStages = buildDecisionStages(trip);
+  const canonicalWorkflowStages: CorporateWorkflowStage[] = trip.workflow?.stages ?? fallbackWorkflowStages.map(({ id, label, state, detail }) => ({
+    id,
+    label,
+    state,
+    detail,
+    owner: id === 'received' || id === 'qualification' || id === 'approval' ? 'Company' : 'DPM',
+  }));
+  const activeWorkflowStage = currentCorporateWorkflowStage(canonicalWorkflowStages);
+  const canonicalProgress = trip.workflow?.progress ?? workflowProgress(fallbackWorkflowStages);
   const selectedWorkflowStage =
-    decisionStages.find((stage) => `decision:${stage.id}` === selectedWorkflowStageId)
-    ?? logisticsStages.find((stage) => `logistics:${stage.id}` === selectedWorkflowStageId)
-    ?? activeDecisionStage;
-  const selectedWorkflowTrack = decisionStages.some((stage) => `decision:${stage.id}` === selectedWorkflowStageId) ? 'Managerial flow' : logisticsStages.some((stage) => `logistics:${stage.id}` === selectedWorkflowStageId) ? 'Logistics flow' : 'Managerial flow';
-  const nextClientAction = clientNextAction(trip);
+    canonicalWorkflowStages.find((stage) => stage.id === selectedWorkflowStageId)
+    ?? activeWorkflowStage;
+  const nextClientAction = trip.workflow?.nextAction ?? clientNextAction(trip);
   const unifiedTimeline = buildUnifiedTimeline(trip);
   const pendingApprovals = trip.approvals.filter((approval) => approval.status === 'Pending');
   const actionableApprovals = pendingApprovals.filter((approval) => approval.canApprove !== false);
@@ -548,40 +492,34 @@ export function CorporateRequestDetailPage({
     }
   };
 
-  const renderWorkflowTrack = (
-    trackId: 'decision' | 'logistics',
-    label: string,
-    progress: number,
-    stages: ProcessingStage[],
-    activeStage: ProcessingStage,
-  ) => (
+  const renderWorkflowTrack = () => (
     <div className={`rounded-xl border px-4 py-3 ${styles.panelSoft}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold">{label}</div>
-          <div className={`mt-1 text-xs ${styles.muted}`}>Current: {activeStage.label}</div>
+          <div className="text-sm font-semibold">Shared request workflow</div>
+          <div className={`mt-1 text-xs ${styles.muted}`}>Current: {trip.workflow?.currentStageLabel ?? activeWorkflowStage.label}</div>
         </div>
         <div className="text-right">
-          <div className="text-lg font-semibold">{progress}%</div>
+          <div className="text-lg font-semibold">{canonicalProgress}%</div>
           <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Progress</div>
         </div>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
         <div
-          className={`h-full rounded-full ${activeStage.state === 'blocked' ? 'bg-rose-400' : activeStage.state === 'active' ? 'bg-sky-400' : 'bg-emerald-400'}`}
-          style={{ width: `${progress}%` }}
+          className={`h-full rounded-full ${activeWorkflowStage.state === 'blocked' ? 'bg-rose-400' : activeWorkflowStage.state === 'active' ? 'bg-sky-400' : 'bg-emerald-400'}`}
+          style={{ width: `${canonicalProgress}%` }}
         />
       </div>
-      <div className="mt-3 grid grid-cols-6 gap-2 md:grid-cols-7">
-        {stages.map((stage) => {
-          const Icon = stage.Icon;
-          const selected = selectedWorkflowStageId === `${trackId}:${stage.id}`;
+      <div className="mt-3 grid grid-cols-5 gap-2 md:grid-cols-10">
+        {canonicalWorkflowStages.map((stage) => {
+          const Icon = workflowStageIcon(stage.id);
+          const selected = selectedWorkflowStage.id === stage.id;
           return (
             <button
-              key={`${trackId}-${stage.id}`}
+              key={stage.id}
               type="button"
               title={`${stage.label}: ${stageToneLabel(stage.state)}`}
-              onClick={() => setSelectedWorkflowStageId(`${trackId}:${stage.id}`)}
+              onClick={() => setSelectedWorkflowStageId(stage.id)}
               className="group flex min-w-0 flex-col items-center gap-1.5 text-center"
             >
               <span className={`grid h-9 w-9 place-items-center rounded-full border transition group-hover:scale-105 ${stageDotClass(stage.state, selected, theme)}`}>
@@ -648,23 +586,16 @@ export function CorporateRequestDetailPage({
                   <CircleDot className="h-4 w-4 text-[#d9b46f]" />
                   Corporate workflow visibility
                 </div>
-                <p className={`mt-1 text-sm ${styles.muted}`}>Separate decision progress from operational readiness so bottlenecks stay clear.</p>
+                <p className={`mt-1 text-sm ${styles.muted}`}>Same lifecycle used by CRM and CTM, calculated from the linked CTM request.</p>
               </div>
-              <div className="grid gap-2 text-sm sm:grid-cols-2">
-                <div className={`rounded-lg border px-3 py-2 ${stageClass(activeDecisionStage.state, theme)}`}>
-                  <div className="text-xs uppercase tracking-[0.12em] opacity-75">Managerial</div>
-                  <div className="mt-1 font-semibold">{activeDecisionStage.label}</div>
-                </div>
-                <div className={`rounded-lg border px-3 py-2 ${stageClass(activeLogisticsStage.state, theme)}`}>
-                  <div className="text-xs uppercase tracking-[0.12em] opacity-75">Logistics</div>
-                  <div className="mt-1 font-semibold">{activeLogisticsStage.label}</div>
-                </div>
+              <div className={`rounded-lg border px-3 py-2 text-sm ${stageClass(activeWorkflowStage.state, theme)}`}>
+                <div className="text-xs uppercase tracking-[0.12em] opacity-75">Current stage</div>
+                <div className="mt-1 font-semibold">{trip.workflow?.currentStageLabel ?? activeWorkflowStage.label}</div>
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 xl:grid-cols-2">
-              {renderWorkflowTrack('decision', 'Managerial flow', decisionProgress, decisionStages, activeDecisionStage)}
-              {renderWorkflowTrack('logistics', 'Logistics flow', logisticsProgress, logisticsStages, activeLogisticsStage)}
+            <div className="mt-4">
+              {renderWorkflowTrack()}
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
@@ -675,7 +606,7 @@ export function CorporateRequestDetailPage({
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   <span className={`rounded-full px-2.5 py-1 text-[11px] ${stageClass(selectedWorkflowStage.state, theme)}`}>{stageToneLabel(selectedWorkflowStage.state)}</span>
-                  <span className="text-sm font-semibold">{selectedWorkflowTrack} - {selectedWorkflowStage.label}</span>
+                  <span className="text-sm font-semibold">{selectedWorkflowStage.label}</span>
                 </div>
                 <div className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedWorkflowStage.detail}</div>
               </div>

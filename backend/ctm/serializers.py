@@ -309,6 +309,176 @@ def final_cost_approval_gate(trip: TripRequest) -> dict:
     return {"ready": True, "detail": "Quote is ready for final cost approval."}
 
 
+def approval_status_for_trip(trip: TripRequest, approval_type: str) -> str:
+    approval = trip.approvals.filter(approval_type=approval_type).first()
+    return approval.status if approval else TripApproval.Status.PENDING
+
+
+def workflow_stage_label(stage_id: str) -> str:
+    return {
+        "request_received": "Request received",
+        "travel_need": "Travel need approval",
+        "briefing": "Briefing",
+        "briefing_approval": "Briefing owner approval",
+        "trip_design": "Trip design",
+        "quote_build": "Quote build",
+        "quote_approval": "Quote approval",
+        "booking": "Booking",
+        "documents": "Documents / travel pack",
+        "execution": "Execution / completed",
+    }.get(stage_id, stage_id.replace("_", " ").title())
+
+
+def workflow_progress(stages: list[dict]) -> int:
+    weighted = 0
+    for stage in stages:
+        if stage["state"] == "done":
+            weighted += 1
+        elif stage["state"] == "active":
+            weighted += 0.5
+    return round((weighted / max(1, len(stages))) * 100)
+
+
+def current_workflow_stage(stages: list[dict]) -> dict:
+    return next((stage for stage in stages if stage["state"] == "blocked"), None) or next((stage for stage in stages if stage["state"] == "active"), None) or stages[-1]
+
+
+def trip_has_document_blocker(trip: TripRequest) -> bool:
+    travelers = [assignment.traveler for assignment in trip.trip_travelers.select_related("traveler").all()]
+    traveler_blocked = any(
+        traveler.passport_status != Traveler.PassportStatus.OK
+        or traveler.visa_status in {Traveler.VisaStatus.REQUIRED, Traveler.VisaStatus.PENDING}
+        for traveler in travelers
+    )
+    document_blocked = trip.documents.filter(status__in=[TripDocument.Status.MISSING, TripDocument.Status.REQUESTED]).exists()
+    return traveler_blocked or document_blocked
+
+
+def build_corporate_workflow(trip: TripRequest) -> dict:
+    travel_need = approval_status_for_trip(trip, TripApproval.ApprovalType.TRAVEL_NEED)
+    briefing = approval_status_for_trip(trip, TripApproval.ApprovalType.BRIEFING)
+    final_cost = approval_status_for_trip(trip, TripApproval.ApprovalType.FINAL_COST)
+    quote = getattr(trip, "quote", None)
+    booking = getattr(trip, "booking", None)
+    quote_sent = bool(quote and quote.status in {TripQuote.Status.SENT, TripQuote.Status.APPROVED})
+    quote_draft = bool(quote and quote.status == TripQuote.Status.DRAFT)
+    quote_rejected = bool(quote and quote.status == TripQuote.Status.REJECTED)
+    quote_expired = bool(quote and quote.status == TripQuote.Status.EXPIRED)
+    booking_done = bool(booking and booking.status in {TripBooking.Status.CONFIRMED, TripBooking.Status.TICKETED, TripBooking.Status.COMPLETED})
+    document_blocked = trip_has_document_blocker(trip)
+    completed = trip.status == TripRequest.Status.COMPLETED or bool(booking and booking.status == TripBooking.Status.COMPLETED)
+    rejected = trip.status == TripRequest.Status.REJECTED or travel_need == TripApproval.Status.REJECTED or final_cost == TripApproval.Status.REJECTED
+
+    stages = [
+        {
+            "id": "request_received",
+            "label": workflow_stage_label("request_received"),
+            "state": "done",
+            "detail": "CTM request is registered and visible to DPM.",
+            "owner": "Company",
+        },
+        {
+            "id": "travel_need",
+            "label": workflow_stage_label("travel_need"),
+            "state": "blocked" if travel_need == TripApproval.Status.REJECTED else "done" if travel_need == TripApproval.Status.APPROVED else "active",
+            "detail": "Business travel need is approved." if travel_need == TripApproval.Status.APPROVED else "Travel need was rejected." if travel_need == TripApproval.Status.REJECTED else "Company must approve the business need before DPM starts the brief.",
+            "owner": "Company",
+        },
+        {
+            "id": "briefing",
+            "label": workflow_stage_label("briefing"),
+            "state": (
+                "done"
+                if briefing == TripApproval.Status.APPROVED or quote or booking_done or completed
+                else "blocked"
+                if briefing == TripApproval.Status.RETURNED
+                else "active"
+                if travel_need == TripApproval.Status.APPROVED
+                else "pending"
+            ),
+            "detail": "DPM captured the corporate travel brief." if trip.internal_notes.strip() else "DPM must collect route, traveler, policy, timing, and service details.",
+            "owner": "DPM",
+        },
+        {
+            "id": "briefing_approval",
+            "label": workflow_stage_label("briefing_approval"),
+            "state": (
+                "done"
+                if briefing == TripApproval.Status.APPROVED or quote or final_cost == TripApproval.Status.APPROVED or booking
+                else "blocked"
+                if briefing == TripApproval.Status.RETURNED
+                else "active"
+                if trip.internal_notes.strip() and travel_need == TripApproval.Status.APPROVED
+                else "pending"
+            ),
+            "detail": "Trip owner approved the brief." if briefing == TripApproval.Status.APPROVED else "Briefing gate has been cleared by downstream workflow progress." if quote or final_cost == TripApproval.Status.APPROVED or booking else "Trip owner requested briefing changes." if briefing == TripApproval.Status.RETURNED else "Trip owner must validate the briefing before trip design starts.",
+            "owner": "Company",
+        },
+        {
+            "id": "trip_design",
+            "label": workflow_stage_label("trip_design"),
+            "state": "done" if quote_sent or final_cost == TripApproval.Status.APPROVED or booking else "active" if briefing == TripApproval.Status.APPROVED and not quote else "pending",
+            "detail": "DPM is designing route, itinerary, supplier options, and service scope." if briefing == TripApproval.Status.APPROVED and not quote else "Trip design is complete enough for pricing." if quote else "Starts after briefing owner approval.",
+            "owner": "DPM",
+        },
+        {
+            "id": "quote_build",
+            "label": workflow_stage_label("quote_build"),
+            "state": "blocked" if quote_rejected or quote_expired else "done" if quote_sent or final_cost == TripApproval.Status.APPROVED or booking else "active" if quote_draft else "pending",
+            "detail": f"Quote is {quote.status}." if quote else "DPM prices the approved itinerary structure before company approval opens.",
+            "owner": "DPM",
+        },
+        {
+            "id": "quote_approval",
+            "label": workflow_stage_label("quote_approval"),
+            "state": "blocked" if final_cost == TripApproval.Status.REJECTED else "done" if final_cost == TripApproval.Status.APPROVED or booking else "active" if quote_sent else "pending",
+            "detail": "Final cost approved by company." if final_cost == TripApproval.Status.APPROVED else "Company rejected the final cost." if final_cost == TripApproval.Status.REJECTED else "Company reviews the sent quote and approves final cost.",
+            "owner": "Company",
+        },
+        {
+            "id": "booking",
+            "label": workflow_stage_label("booking"),
+            "state": "blocked" if booking and booking.status == TripBooking.Status.CANCELLED else "done" if booking_done else "active" if final_cost == TripApproval.Status.APPROVED else "pending",
+            "detail": f"Booking {booking.status}." if booking else "DPM books suppliers after commercial approval.",
+            "owner": "DPM",
+        },
+        {
+            "id": "documents",
+            "label": workflow_stage_label("documents"),
+            "state": "blocked" if document_blocked and (booking or trip.status == TripRequest.Status.NEEDS_DOCUMENTS) else "done" if trip.documents.exists() and not document_blocked else "active" if booking else "pending",
+            "detail": "Passport, visa, or shared document readiness needs attention." if document_blocked else "DPM prepares tickets, documents, and travel pack." if booking else "Documents start after booking release.",
+            "owner": "DPM",
+        },
+        {
+            "id": "execution",
+            "label": workflow_stage_label("execution"),
+            "state": "done" if completed else "active" if booking_done and not document_blocked else "pending",
+            "detail": "Trip completed." if completed else "DPM supports active travel and closes the service loop.",
+            "owner": "DPM",
+        },
+    ]
+
+    if rejected:
+        for stage in stages:
+            if stage["state"] == "active":
+                stage["state"] = "blocked"
+                break
+
+    current_stage = current_workflow_stage(stages)
+    bottleneck = next((stage["detail"] for stage in stages if stage["state"] == "blocked"), "")
+    if not bottleneck and current_stage["state"] == "active":
+        bottleneck = current_stage["detail"]
+
+    return {
+        "currentStage": current_stage["id"],
+        "currentStageLabel": current_stage["label"],
+        "progress": workflow_progress(stages),
+        "bottleneck": bottleneck,
+        "nextAction": current_stage["detail"],
+        "stages": stages,
+    }
+
+
 def parse_budget_estimate(value: str) -> int:
     return {
         "lt1k": 800,
@@ -966,6 +1136,7 @@ class CorporateTripRequestSerializer(serializers.Serializer):
     messages = serializers.SerializerMethodField()
     approvals = serializers.SerializerMethodField()
     timeline = serializers.SerializerMethodField()
+    workflow = serializers.SerializerMethodField()
     internalSummary = serializers.SerializerMethodField()
 
     def _can_view_internal(self) -> bool:
@@ -1048,6 +1219,9 @@ class CorporateTripRequestSerializer(serializers.Serializer):
 
     def get_timeline(self, obj: TripRequest):
         return CorporateTimelineEventSerializer(obj.timeline_events.order_by("-created_at")[:6], many=True).data
+
+    def get_workflow(self, obj: TripRequest):
+        return build_corporate_workflow(obj)
 
     def get_internalSummary(self, obj: TripRequest) -> str:
         return obj.internal_notes or obj.client_notes or "Corporate travel request tracked in the DPM workflow."
