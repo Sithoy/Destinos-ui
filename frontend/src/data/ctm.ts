@@ -579,6 +579,20 @@ export async function createCtmTripMessage(referenceCode: string, input: Corpora
   );
 }
 
+export async function requestCtmBriefingApproval(referenceCode: string, summary: string, session?: CtmAuthSession): Promise<CorporateTripRequest> {
+  const base = ctmApiBase();
+  if (!base) throw new Error('CTM API URL is not configured.');
+  if (!session?.token) throw new Error('CTM session is required.');
+
+  return parseApiResponse(
+    await fetch(`${base}/api/ctm/trip-requests/${referenceCode}/request-briefing-approval/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+      body: JSON.stringify({ summary }),
+    }),
+  );
+}
+
 async function updateApproval(referenceCode: string, stage: CorporateApprovalStage, action: 'approve' | 'reject', session?: CorporatePortalSession | null): Promise<CorporateTripRequest> {
   const base = ctmApiBase();
   if (!base) throw new Error('CTM API URL is not configured.');

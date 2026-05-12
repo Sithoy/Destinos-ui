@@ -87,6 +87,7 @@ import {
   fetchCtmCompanyAccounts,
   fetchCtmCompanyUsers,
   fetchCtmTripRequests,
+  requestCtmBriefingApproval,
   updateCtmCompanyAccount,
   updateCtmCompanyUser,
   updateCtmTripBooking,
@@ -133,6 +134,15 @@ type CorporateDeskSignal = {
   value: string;
   meta: string;
   tone: CorporateDeskSignalTone;
+};
+type CrmCorporateWorkflowStageState = 'done' | 'active' | 'blocked' | 'pending';
+type CrmCorporateWorkflowStage = {
+  id: string;
+  label: string;
+  state: CrmCorporateWorkflowStageState;
+  detail: string;
+  Icon: LucideIcon;
+  tab: DetailTab;
 };
 type UserFormState = {
   username: string;
@@ -716,11 +726,11 @@ const leisureWorkbenchTabs: Array<{ id: DetailTab; label: string; Icon: LucideIc
 
 const corporateWorkbenchTabs: Array<{ id: DetailTab; label: string; Icon: LucideIcon }> = [
   { id: 'brief', label: 'Brief', Icon: ClipboardCheck },
+  { id: 'itinerary', label: 'Trip Design', Icon: CalendarDays },
   { id: 'travelers', label: 'Travelers', Icon: Users },
   { id: 'approvals', label: 'Approvals', Icon: Shield },
   { id: 'finance', label: 'Finance', Icon: FileText },
   { id: 'documents', label: 'Documents', Icon: ClipboardCheck },
-  { id: 'itinerary', label: 'Itinerary', Icon: Briefcase },
   { id: 'history', label: 'Fulfilment', Icon: CheckSquare },
 ];
 
@@ -1005,6 +1015,41 @@ function ctmSignalToneClass(tone: CorporateDeskSignalTone) {
   if (tone === 'danger') return 'border-rose-400/25 bg-rose-500/10 text-rose-100';
   if (tone === 'warning') return 'border-amber-400/25 bg-amber-500/10 text-amber-100';
   return 'border-sky-400/25 bg-sky-500/10 text-sky-200';
+}
+
+function crmCorporateWorkflowProgress(stages: CrmCorporateWorkflowStage[]) {
+  const weighted = stages.reduce((total, stage) => {
+    if (stage.state === 'done') return total + 1;
+    if (stage.state === 'active') return total + 0.5;
+    return total;
+  }, 0);
+  return Math.round((weighted / Math.max(1, stages.length)) * 100);
+}
+
+function crmCorporateStageToneLabel(state: CrmCorporateWorkflowStageState) {
+  if (state === 'done') return 'Done';
+  if (state === 'active') return 'In progress';
+  if (state === 'blocked') return 'Blocked';
+  return 'Pending';
+}
+
+function crmCorporateStageClass(state: CrmCorporateWorkflowStageState) {
+  if (state === 'done') return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200';
+  if (state === 'active') return 'border-sky-400/35 bg-sky-500/10 text-sky-200';
+  if (state === 'blocked') return 'border-rose-400/35 bg-rose-500/10 text-rose-100';
+  return 'border-white/10 bg-white/[0.03] text-slate-400';
+}
+
+function crmCorporateStageDotClass(state: CrmCorporateWorkflowStageState, selected: boolean) {
+  const selectedRing = selected ? 'ring-2 ring-[#d9b46f]/70 ring-offset-2 ring-offset-transparent' : '';
+  if (state === 'done') return `border-emerald-400/45 bg-emerald-500/15 text-emerald-200 ${selectedRing}`;
+  if (state === 'active') return `border-sky-400/45 bg-sky-500/15 text-sky-200 ${selectedRing}`;
+  if (state === 'blocked') return `border-rose-400/45 bg-rose-500/15 text-rose-100 ${selectedRing}`;
+  return `border-white/10 bg-white/[0.03] text-slate-400 ${selectedRing}`;
+}
+
+function currentCrmCorporateStage(stages: CrmCorporateWorkflowStage[]) {
+  return stages.find((stage) => stage.state === 'blocked') ?? stages.find((stage) => stage.state === 'active') ?? stages[stages.length - 1];
 }
 
 function buildCorporateDeskSignals(trip: CorporateTripRequest): CorporateDeskSignal[] {
@@ -2338,6 +2383,7 @@ export function CrmPage() {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [selectedCorporateCompanyId, setSelectedCorporateCompanyId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
+  const [selectedCorporateWorkflowStageId, setSelectedCorporateWorkflowStageId] = useState('');
   const [page, setPage] = useState(1);
   const [theme, setTheme] = useState<CrmTheme>(() => readCrmTheme());
   const [activeNav, setActiveNav] = useState<CrmNavId>('command');
@@ -2593,14 +2639,15 @@ export function CrmPage() {
   const pageClients = filteredClients.slice(pageStart, pageStart + PAGE_SIZE);
   const pageUsers = filteredUsers.slice(pageStart, pageStart + PAGE_SIZE);
   const pageCorporateCompanies = filteredCorporateCompanies.slice(pageStart, pageStart + PAGE_SIZE);
-  const selectedLead = leadSource.find((lead) => lead.id === selectedLeadId) ?? pageLeads[0] ?? leadSource[0] ?? null;
+  const selectedLeadCandidate = selectedLeadId ? leadSource.find((lead) => lead.id === selectedLeadId) ?? null : null;
+  const selectedLead = selectedLeadCandidate ?? (activeNav === 'corporateDesk' ? null : pageLeads[0] ?? leadSource[0] ?? null);
   const selectedClient = filteredClients.find((client) => client.id === selectedClientId) ?? pageClients[0] ?? filteredClients[0] ?? null;
   const selectedCorporateCompany = isCreatingCorporateCompany ? null : filteredCorporateCompanies.find((company) => company.id === selectedCorporateCompanyId) ?? pageCorporateCompanies[0] ?? filteredCorporateCompanies[0] ?? null;
   const selectedCorporateCompanyUsers = selectedCorporateCompany ? corporateCompanyUsers.filter((user) => user.companyId === selectedCorporateCompany.id) : [];
   const selectedCtmReference = selectedLead
     ? selectedCtmReferencesByLead[selectedLead.id] ?? selectedLead.ctmRequestId ?? ctmTripRequests[0]?.id ?? null
-    : ctmTripRequests[0]?.id ?? null;
-  const selectedCtmTrip = ctmTripRequests.find((trip) => trip.id === selectedCtmReference) ?? ctmTripRequests[0] ?? null;
+    : null;
+  const selectedCtmTrip = selectedCtmReference ? ctmTripRequests.find((trip) => trip.id === selectedCtmReference) ?? null : null;
   const selectedCtmSignals = selectedCtmTrip ? buildCorporateDeskSignals(selectedCtmTrip) : [];
   const selectedCtmNextAction = selectedCtmTrip ? getCorporateDeskNextAction(selectedCtmTrip) : 'Link a CTM request before processing corporate workflow actions.';
   const selectedCtmFinalCostGate = selectedCtmTrip ? finalCostGateSummary(selectedCtmTrip) : null;
@@ -2637,6 +2684,10 @@ export function CrmPage() {
   const selectedTasks = selectedLead ? leadTasks(selectedLead) : [];
   const selectedBriefing = selectedLead ? briefingReadiness(selectedLead) : null;
   const selectedCorporateBriefReady = selectedLead?.serviceKey === 'corporate' ? Boolean(selectedBriefing?.canApprove) : true;
+  const selectedBriefingApproval = selectedCtmTrip?.approvals.find((approval) => approval.stage === 'Briefing') ?? null;
+  const selectedBriefingApprovalPending = selectedBriefingApproval?.status === 'Pending';
+  const selectedBriefingReturned = selectedBriefingApproval?.status === 'Returned';
+  const selectedBriefingOwnerApproved = selectedLead?.serviceKey === 'corporate' ? selectedBriefingApproval?.status === 'Approved' : true;
   const selectedHistory = selectedLead ? workflowHistory(selectedLead) : [];
   const selectedStatusCards = selectedLead ? leftRailStatusCards(selectedLead) : [];
   const selectedItinerarySummary = selectedLead ? itinerarySummaryCards(selectedLead, selectedItinerary) : [];
@@ -3295,7 +3346,9 @@ export function CrmPage() {
         : `${briefingReadiness(lead).readyCount}/${briefingReadiness(lead).total} brief fields ready`;
     const patch: Partial<Pick<CrmLead, 'status' | 'lifecycleStage' | 'priority' | 'internalNotes'>> =
       decision === 'approved'
-        ? { status: 'planning', lifecycleStage: 'validated' }
+        ? lead.serviceKey === 'corporate'
+          ? { status: 'proposal', lifecycleStage: 'awaiting_approval' }
+          : { status: 'planning', lifecycleStage: 'validated' }
         : decision === 'moreInfo'
           ? { status: 'contacted', lifecycleStage: 'pending_information' }
           : { status: 'lost', lifecycleStage: 'closed' };
@@ -3304,6 +3357,15 @@ export function CrmPage() {
       ...patch,
       internalNotes: appendBriefingDecisionNote(lead, decision, detail),
     });
+    if (lead.serviceKey === 'corporate' && decision === 'approved' && selectedCtmTrip) {
+      try {
+        await requestCtmBriefingApproval(selectedCtmTrip.id, decisionDetail || lead.internalNotes || detail, crmSession);
+        await reloadCtmTripRequests();
+        setCrmError('');
+      } catch (error) {
+        setCrmError(error instanceof Error ? error.message : 'Could not submit briefing for trip owner approval.');
+      }
+    }
     if (apiEnabled && crmSession?.token) {
       await reloadWorkflowState(lead.id);
     }
@@ -3416,7 +3478,9 @@ export function CrmPage() {
       setDeskView('corporate');
       setTypeFilter('corporate');
       setStatusFilter('all');
-      setDetailTab('travelers');
+      setSelectedLeadId(null);
+      setDetailTab('brief');
+      setSelectedCorporateWorkflowStageId('');
       setShowFilters(true);
       return;
     }
@@ -4130,7 +4194,6 @@ export function CrmPage() {
         styles={styles}
         owner={selectedWorkflowState?.responsibleOwner || leadOwner(selectedLead)}
         lifecycleLabel={leadLifecycleLabel(selectedLead)}
-        onNotesChange={(notes) => refreshLead(selectedLead.id, { internalNotes: notes })}
         onSaveValidationBrief={(summary) => saveBriefingValidationSummary(selectedLead, summary)}
         onDecision={(decision, detail) => applyBriefingDecision(selectedLead, decision, detail)}
       />
@@ -4326,7 +4389,7 @@ export function CrmPage() {
           </header>
 
           <div className={activeNav === 'corporateAccounts' || activeNav === 'corporateDesk' ? 'block' : activeNav === 'leisureStudio' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid xl:grid-cols-[minmax(720px,1fr)_430px]'}>
-            <div className={`min-w-0 ${activeNav === 'corporateDesk' ? '' : `border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}`}>
+            <div className={`min-w-0 ${activeNav === 'corporateDesk' && selectedLead ? 'hidden' : activeNav === 'corporateDesk' ? '' : `border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}`}>
           <div className="p-5">
             {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
             {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading CRM requests...</div> : null}
@@ -4906,6 +4969,7 @@ export function CrmPage() {
                                     onClick={() => {
                                       setSelectedLeadId(lead.id);
                                       setDetailTab('brief');
+                                      setSelectedCorporateWorkflowStageId('');
                                     }}
                                     className={`grid w-full gap-3 border-b px-4 py-3 text-left transition xl:grid-cols-[minmax(170px,0.9fr)_minmax(220px,1.1fr)_minmax(220px,1.1fr)_minmax(220px,1fr)_120px_minmax(150px,0.75fr)] xl:items-center ${
                                       isSelected ? styles.rowActive : styles.row
@@ -5199,8 +5263,25 @@ export function CrmPage() {
           </div>
             </div>
 
-        {activeNav !== 'corporateAccounts' ? (
+        {activeNav !== 'corporateAccounts' && (activeNav !== 'corporateDesk' || selectedLead) ? (
         <aside className={`${activeNav === 'corporateDesk' ? 'block px-5 pb-6' : `hidden min-h-full px-5 py-6 xl:block ${styles.rightPane}`}`}>
+          {activeNav === 'corporateDesk' && selectedLead ? (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedLeadId(null);
+                  setDetailTab('brief');
+                  setSelectedCorporateWorkflowStageId('');
+                }}
+                className={`inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Back to inbox
+              </button>
+              <div className={`text-sm ${styles.muted}`}>Focused working area</div>
+            </div>
+          ) : null}
           {activeNav === 'settings' ? (
             <div className="grid gap-4">
               <div className={`rounded-xl border p-5 ${styles.panel}`}>
@@ -5559,8 +5640,6 @@ export function CrmPage() {
             selectedLead ? (() => {
               const currentStage = leadLifecycleStage(selectedLead);
               const nextStage = nextLifecycleStage(selectedLead);
-              const currentCorporateIndex = corporateWorkbenchTabs.findIndex((tab) => tab.id === detailTab);
-              const activeCorporateIndex = lifecycleWorkflowSteps.findIndex(([stage]) => stage === currentStage);
               const currentCorporateLabel = corporateWorkbenchTabs.find((tab) => tab.id === detailTab)?.label ?? 'Travelers';
               const bookings = mockBookingRecords(selectedLead);
               const readinessCards =
@@ -5571,42 +5650,123 @@ export function CrmPage() {
                     : detailTab === 'finance'
                       ? corporateFinanceCards(selectedLead)
                       : corporateDocumentCards(selectedLead);
-              const corporateBriefingItems = selectedBriefing?.items ?? [];
-              const corporateBriefingReadyCount = selectedBriefing?.readyCount ?? 0;
-              const corporateBriefingTotal = selectedBriefing?.total ?? 0;
-              const corporateBriefingProgress = corporateBriefingTotal > 0 ? Math.round((corporateBriefingReadyCount / corporateBriefingTotal) * 100) : 0;
-              const corporateBriefingBlockers = corporateBriefingItems.filter((item) => !item.ready).slice(0, 4);
-              const visibleCorporateWorkbenchTabs = selectedCorporateBriefReady
-                ? corporateWorkbenchTabs
-                : corporateWorkbenchTabs.filter((tab) => tab.id === 'brief');
-              const displayCorporateLabel = selectedCorporateBriefReady ? currentCorporateLabel : 'Brief';
+              const displayCorporateLabel = selectedBriefingOwnerApproved ? currentCorporateLabel : 'Brief';
+              const selectedFinalCostApproval = selectedCtmTrip ? approvalValue(selectedCtmTrip, 'Final cost') : 'Pending';
+              const corporateWorkflowTrace: CrmCorporateWorkflowStage[] = [
+                {
+                  id: 'brief',
+                  label: 'Briefing',
+                  Icon: ClipboardCheck,
+                  tab: 'brief' as DetailTab,
+                  state: 'done',
+                  detail: 'DPM brief captured',
+                },
+                {
+                  id: 'owner-validation',
+                  label: 'Owner validation',
+                  Icon: Shield,
+                  tab: 'approvals' as DetailTab,
+                  state: selectedBriefingOwnerApproved ? 'done' : selectedBriefingReturned ? 'blocked' : 'active',
+                  detail: selectedBriefingApproval?.status || 'Awaiting CTM owner',
+                },
+                {
+                  id: 'trip-design',
+                  label: 'Trip Design',
+                  Icon: CalendarDays,
+                  tab: 'itinerary' as DetailTab,
+                  state: selectedItinerary ? 'done' : detailTab === 'itinerary' ? 'active' : 'pending',
+                  detail: selectedItinerary ? itineraryStatusLabels[selectedItinerary.status] : 'Draft itinerary',
+                },
+                {
+                  id: 'quote-build',
+                  label: 'Quote Build',
+                  Icon: FileText,
+                  tab: 'finance' as DetailTab,
+                  state: selectedQuote ? 'done' : detailTab === 'finance' ? 'active' : 'pending',
+                  detail: selectedQuote ? quoteStatusLabels[selectedQuote.status] : 'Price itinerary',
+                },
+                {
+                  id: 'quote-approval',
+                  label: 'Quote Approval',
+                  Icon: Shield,
+                  tab: 'approvals' as DetailTab,
+                  state: selectedFinalCostApproval === 'Approved'
+                    ? 'done'
+                    : selectedCtmFinalCostGate?.ready
+                      ? 'active'
+                      : selectedCtmFinalCostGate?.tone === 'danger' || selectedCtmFinalCostGate?.tone === 'warning'
+                        ? 'blocked'
+                        : 'pending',
+                  detail: selectedCtmFinalCostGate?.label || 'Final cost gate',
+                },
+                {
+                  id: 'booking',
+                  label: 'Booking',
+                  Icon: Briefcase,
+                  tab: 'history' as DetailTab,
+                  state: selectedCtmTrip?.booking ? 'done' : selectedFinalCostApproval === 'Approved' ? 'active' : 'pending',
+                  detail: selectedCtmTrip?.booking?.bookingReference || 'After approval',
+                },
+                {
+                  id: 'documents',
+                  label: 'Documents',
+                  Icon: ClipboardCheck,
+                  tab: 'documents' as DetailTab,
+                  state: selectedCtmTrip && hasCtmDocumentBlocker(selectedCtmTrip) ? 'blocked' : selectedCtmTrip?.documents?.length ? 'done' : 'pending',
+                  detail: selectedCtmTrip && hasCtmDocumentBlocker(selectedCtmTrip) ? 'Action needed' : 'Readiness',
+                },
+                {
+                  id: 'execution',
+                  label: 'Execution',
+                  Icon: CheckSquare,
+                  tab: 'history' as DetailTab,
+                  state: selectedLead.status === 'execution' ? 'active' : currentStage === 'completed' ? 'done' : 'pending',
+                  detail: currentStage === 'completed' ? 'Completed' : 'Travel pack + service',
+                },
+              ];
+              const corporateWorkflowProgress = crmCorporateWorkflowProgress(corporateWorkflowTrace);
+              const activeCorporateWorkflowStage = currentCrmCorporateStage(corporateWorkflowTrace);
+              const selectedCorporateWorkflowStage =
+                corporateWorkflowTrace.find((stage) => stage.id === selectedCorporateWorkflowStageId)
+                ?? activeCorporateWorkflowStage;
+              const recentCorporateTimeline = selectedHistory.slice(0, 3);
 
               if (!selectedCorporateBriefReady) {
                 return (
+                  renderBriefingGate()
+                );
+              }
+
+              if (!selectedBriefingOwnerApproved) {
+                return (
                   <div className="grid gap-4">
-                    <div className={`rounded-xl border p-5 ${styles.panel}`}>
+                    <div className={`rounded-xl border p-5 ${selectedBriefingReturned ? 'border-amber-400/25 bg-amber-500/10' : styles.panel}`}>
                       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                         <div className="min-w-0">
-                          <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Corporate Desk Task</div>
+                          <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Trip Owner Approval</div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <h2 className="text-2xl font-semibold">Complete corporate briefing</h2>
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>CTM request</span>
-                            <span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-100">Briefing gate</span>
+                            <h2 className="text-2xl font-semibold">{selectedBriefingReturned ? 'Briefing changes requested' : 'Waiting for briefing approval'}</h2>
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>CTM owner gate</span>
+                            <span className={`rounded-full px-2.5 py-1 text-xs ${selectedBriefingApprovalPending ? 'bg-sky-500/15 text-sky-200' : selectedBriefingReturned ? 'bg-amber-500/15 text-amber-100' : styles.buttonGhost}`}>
+                              {selectedBriefingApproval?.status || 'Not submitted'}
+                            </span>
                           </div>
-                          <p className={`mt-2 max-w-3xl text-sm leading-6 ${styles.soft}`}>
-                            Collect only the information needed to prepare a reliable quote. Booking, billing, fulfilment, and travel pack work stay out of this task.
+                          <p className={`mt-2 max-w-3xl text-sm leading-6 ${selectedBriefingReturned ? 'text-amber-100/80' : styles.soft}`}>
+                            {selectedBriefingReturned
+                              ? 'The trip owner asked DPM to revise the briefing before itinerary design starts.'
+                              : 'The briefing summary has been sent to CTM. Trip Design stays locked until the trip owner approves the brief.'}
                           </p>
                         </div>
-                        <div className="shrink-0 text-right">
-                          <div className="text-2xl font-semibold">{corporateBriefingProgress}%</div>
-                          <div className={`text-[11px] uppercase tracking-[0.14em] ${styles.muted}`}>{corporateBriefingReadyCount}/{corporateBriefingTotal} ready</div>
-                        </div>
-                      </div>
-                      <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-                        <div className="h-full rounded-full bg-[#d9b46f]" style={{ width: `${corporateBriefingProgress}%` }} />
+                        <button
+                          type="button"
+                          onClick={() => setDetailTab('brief')}
+                          className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
+                        >
+                          <ClipboardCheck className="h-4 w-4" />
+                          Revise briefing
+                        </button>
                       </div>
                     </div>
-
                     {renderBriefingGate()}
                   </div>
                 );
@@ -5628,8 +5788,8 @@ export function CrmPage() {
                         </div>
                         <div className={`mt-2 text-sm ${styles.soft}`}>
                           {selectedCorporateBriefReady
-                            ? 'Briefing is ready. Prepare the corporate quote and keep downstream fulfilment controlled.'
-                            : 'Next step: complete the corporate briefing so DPM has enough information to prepare a quote.'}
+                            ? 'Briefing is approved. Build the Trip Design / Itinerary Draft before pricing starts.'
+                            : 'Next step: complete the corporate briefing so DPM has enough information to start itinerary design.'}
                         </div>
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                           {selectedQuote ? (
@@ -5648,10 +5808,10 @@ export function CrmPage() {
                           ) : (
                             <button
                               type="button"
-                              onClick={() => createDraftQuoteForLead(selectedLead)}
+                              onClick={() => setDetailTab('itinerary')}
                               className={`inline-flex h-8 items-center rounded-lg px-3 text-xs ${styles.buttonGhost}`}
                             >
-                              Create draft quote
+                              Start Trip Design
                             </button>
                           )}
                         </div>
@@ -5697,72 +5857,6 @@ export function CrmPage() {
                     </div>
                   </div>
 
-                  <div className={`rounded-xl border p-5 ${selectedCorporateBriefReady ? styles.panel : 'border-amber-400/25 bg-amber-500/10'}`}>
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <ClipboardCheck className="h-5 w-5 text-[#d9b46f]" />
-                          <div className="font-semibold">Corporate briefing intake</div>
-                        </div>
-                        <p className={`mt-2 max-w-3xl text-sm leading-6 ${selectedCorporateBriefReady ? styles.muted : 'text-amber-100/80'}`}>
-                          Before quote preparation, DPM needs a structured brief covering objective, route, traveler scope, hotel/transport expectations, policy, budget, and approval constraints.
-                        </p>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <div className="text-2xl font-semibold">{corporateBriefingProgress}%</div>
-                        <div className={`text-[11px] uppercase tracking-[0.14em] ${selectedCorporateBriefReady ? styles.muted : 'text-amber-100/70'}`}>
-                          {corporateBriefingReadyCount}/{corporateBriefingTotal} ready
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className={`mt-4 h-2 overflow-hidden rounded-full ${selectedCorporateBriefReady ? 'bg-white/10' : 'bg-amber-950/35'}`}>
-                      <div className={`h-full rounded-full ${selectedCorporateBriefReady ? 'bg-emerald-400' : 'bg-[#d9b46f]'}`} style={{ width: `${corporateBriefingProgress}%` }} />
-                    </div>
-
-                    <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-                      {corporateBriefingItems.map((item) => (
-                        <div key={item.label} className={`rounded-lg border px-3 py-3 ${item.ready ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100' : selectedCorporateBriefReady ? styles.panelSoft : 'border-amber-400/20 bg-black/10 text-amber-50'}`}>
-                          <div className="flex items-center gap-2">
-                            {item.ready ? <CheckSquare className="h-4 w-4 text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-300" />}
-                            <div className="truncate text-sm font-semibold">{item.label}</div>
-                          </div>
-                          <div className={`mt-2 line-clamp-2 text-xs ${item.ready ? 'text-emerald-100/75' : selectedCorporateBriefReady ? styles.muted : 'text-amber-50/75'}`}>
-                            {item.detail}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="mt-4 flex flex-col gap-3 rounded-lg border border-inherit px-3 py-3 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <div className="text-sm font-semibold">
-                          {selectedCorporateBriefReady ? 'Briefing complete. Quote preparation can start.' : 'Quote preparation is locked until the brief is complete.'}
-                        </div>
-                        {!selectedCorporateBriefReady ? (
-                          <div className="mt-1 text-xs text-amber-50/75">
-                            Missing: {corporateBriefingBlockers.map((item) => item.label).join(', ') || 'briefing fields'}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => setDetailTab('brief')} className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold ${styles.buttonGhost}`}>
-                          <ClipboardCheck className="h-4 w-4" />
-                          Open briefing template
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => createDraftQuoteForLead(selectedLead)}
-                          disabled={!selectedCorporateBriefReady || Boolean(selectedQuote)}
-                          className="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          <FileText className="h-4 w-4" />
-                          Prepare quote
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="min-w-0">
@@ -5789,17 +5883,17 @@ export function CrmPage() {
                         <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
                           {selectedCtmTrip
                             ? `${selectedCtmTrip.requestedBy} from ${selectedCtmTrip.department} requested ${selectedCtmTrip.route} for ${selectedCtmTrip.travelDate}.`
-                            : 'Corporate work should be attached to a CTM request before quote, booking, billing, or shared client updates are processed.'}
+                            : 'Corporate work should be attached to a CTM request before itinerary design, quote, booking, billing, or shared client updates are processed.'}
                         </p>
                       </div>
                       {selectedCtmTrip ? (
                         <button
                           type="button"
-                          onClick={() => setDetailTab(selectedCorporateBriefReady ? 'finance' : 'brief')}
+                          onClick={() => setDetailTab(selectedCorporateBriefReady ? 'itinerary' : 'brief')}
                           className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
                         >
-                          <FileText className="h-4 w-4" />
-                          {selectedCorporateBriefReady ? 'Commercial output' : 'Complete briefing'}
+                          <CalendarDays className="h-4 w-4" />
+                          {selectedCorporateBriefReady ? 'Trip Design' : 'Complete briefing'}
                         </button>
                       ) : null}
                     </div>
@@ -5815,9 +5909,14 @@ export function CrmPage() {
                               meta: selectedCtmTrip.approvals.find((approval) => approval.status === 'Pending')?.stage || 'No pending approval',
                             },
                             {
+                              label: selectedCorporateBriefReady ? 'Trip Design' : 'Design locked',
+                              value: selectedItinerary ? itineraryStatusLabels[selectedItinerary.status] : selectedCorporateBriefReady ? 'Draft needed' : 'Briefing first',
+                              meta: selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : selectedCorporateBriefReady ? 'Build route before quote' : 'Complete briefing first',
+                            },
+                            {
                               label: selectedCorporateBriefReady ? 'Quote' : 'Quote locked',
-                              value: selectedCorporateBriefReady && selectedCtmTrip.quote ? corporateQuoteStatusLabels[selectedCtmTrip.quote.status] : selectedCorporateBriefReady ? 'Not created' : 'Briefing first',
-                              meta: selectedCorporateBriefReady && selectedCtmTrip.quote ? moneyValue(selectedCtmTrip.quote.amount, selectedCtmTrip.quote.currency) : selectedCorporateBriefReady ? 'Prepare in CRM' : 'Complete quote-ready brief',
+                              value: selectedCorporateBriefReady && selectedCtmTrip.quote ? corporateQuoteStatusLabels[selectedCtmTrip.quote.status] : selectedCorporateBriefReady ? 'After design' : 'Design first',
+                              meta: selectedCorporateBriefReady && selectedCtmTrip.quote ? moneyValue(selectedCtmTrip.quote.amount, selectedCtmTrip.quote.currency) : selectedCorporateBriefReady ? 'Price itinerary options' : 'Complete trip design first',
                             },
                             {
                               label: selectedCorporateBriefReady ? 'Booking' : 'Booking locked',
@@ -5887,102 +5986,115 @@ export function CrmPage() {
                   </div>
 
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="font-semibold">Corporate value chain</div>
-                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadLifecycleLabel(selectedLead)}</span>
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="font-semibold">DPM corporate workflow visibility</div>
+                        <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>
+                          Same request lifecycle as CTM, tuned for DPM execution: control progress, bottlenecks, timeline, and the next operational move.
+                        </p>
+                      </div>
+                      <div className="grid min-w-[260px] grid-cols-2 gap-2">
+                        <div className={`rounded-lg border px-3 py-2 ${crmCorporateStageClass(activeCorporateWorkflowStage.state)}`}>
+                          <div className="text-[10px] uppercase tracking-[0.14em] opacity-75">Current DPM stage</div>
+                          <div className="mt-1 truncate text-sm font-semibold">{activeCorporateWorkflowStage.label}</div>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-2 ${selectedCorporateWorkflowStage.state === 'blocked' ? crmCorporateStageClass('blocked') : styles.panelSoft}`}>
+                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Bottleneck</div>
+                          <div className="mt-1 truncate text-sm font-semibold">{selectedPrimaryBlocker}</div>
+                        </div>
+                      </div>
                     </div>
-                    <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${selectedCorporateBriefReady ? styles.panelSoft : 'border-amber-400/20 bg-amber-500/10 text-amber-100'}`}>
-                      {selectedCorporateBriefReady
-                        ? 'Briefing gate cleared. Downstream quote and fulfilment stages are available.'
-                        : 'Current focus: complete the briefing gate. Downstream quote, booking, billing, and travel pack steps stay secondary until the brief is quote-ready.'}
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-                      {lifecycleWorkflowSteps.map(([stage, label], index) => {
-                        const isDone = activeCorporateIndex >= 0 && index < activeCorporateIndex;
-                        const isCurrent = activeCorporateIndex === index;
-                        const isBlocked = isCurrent && (currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance');
-                        const StageIcon = isDone ? CheckSquare : isCurrent ? (isBlocked ? Bell : ClipboardCheck) : MoreHorizontal;
-                        return (
-                          <div key={stage} className="flex min-w-0 flex-col items-center text-center">
-                            <span
-                              className={`flex h-9 w-9 items-center justify-center rounded-full border ${
-                                isDone
-                                  ? 'border-emerald-400/60 bg-emerald-500/12 text-emerald-300'
-                                  : isCurrent
-                                    ? isBlocked
-                                      ? 'border-red-400/60 bg-red-500/12 text-red-300'
-                                      : 'border-sky-400/60 bg-sky-500/12 text-sky-300'
-                                    : 'border-white/10 bg-white/5 text-white/40'
-                              }`}
-                            >
-                              <StageIcon className="h-4 w-4" />
-                            </span>
-                            <div className={`mt-1 max-w-full text-[11px] leading-4 ${isCurrent ? styles.soft : styles.muted}`}>{label}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className={`mt-4 rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current control point</div>
-                      <div className="mt-1 text-sm font-semibold">{selectedPrimaryBlocker}</div>
-                      <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedWorkflowState?.blockers[0]?.detail || selectedProcess?.stageGate || 'Keep the current corporate checkpoint controlled before release.'}</p>
-                      <button
-                        type="button"
-                        onClick={() => advanceLeadLifecycle(selectedLead)}
-                        disabled={selectedWorkflowState ? !selectedWorkflowState.canAdvance : !nextStage}
-                        className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        <CheckSquare className="h-4 w-4" />
-                        {selectedWorkflowState?.nextStageLabel ? `Advance to ${selectedWorkflowState.nextStageLabel}` : lifecycleStageActionLabel(nextStage)}
-                      </button>
-                    </div>
-                  </div>
 
-                  <div className={`rounded-xl border p-5 ${styles.panel}`}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="font-semibold">Corporate work area</div>
-                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{displayCorporateLabel}</span>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-6">
-                      {visibleCorporateWorkbenchTabs.map(({ id, label, Icon }, index) => {
-                        const isDone = selectedCorporateBriefReady && currentCorporateIndex > index;
-                        const isCurrent = !selectedCorporateBriefReady || currentCorporateIndex === index;
-                        return (
-                          <button
-                            key={id}
-                            type="button"
-                            onClick={() => setDetailTab(id)}
-                            className={`rounded-xl border px-3 py-3 text-left transition ${
-                              isDone
-                                ? 'border-emerald-400/25 bg-emerald-500/10'
-                                : isCurrent
-                                  ? 'border-sky-400/25 bg-sky-500/10'
-                                  : `${styles.panelSoft}`
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`flex h-8 w-8 items-center justify-center rounded-full border ${
-                                  isDone
-                                    ? 'border-emerald-400/60 text-emerald-300'
-                                    : isCurrent
-                                      ? 'border-sky-400/60 text-sky-300'
-                                      : 'border-white/10 text-white/45'
-                                }`}
+                    <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                      <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>DPM progress</div>
+                            <div className="mt-1 text-sm font-semibold">{corporateWorkflowProgress}% complete</div>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] ${crmCorporateStageClass(activeCorporateWorkflowStage.state)}`}>
+                            {crmCorporateStageToneLabel(activeCorporateWorkflowStage.state)}
+                          </span>
+                        </div>
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                          <div className="h-full rounded-full bg-[#d9b46f]" style={{ width: `${corporateWorkflowProgress}%` }} />
+                        </div>
+                        <div className="mt-4 grid grid-cols-4 gap-x-2 gap-y-3 xl:grid-cols-8">
+                          {corporateWorkflowTrace.map((stage) => {
+                            const Icon = stage.Icon;
+                            const selected = selectedCorporateWorkflowStage.id === stage.id;
+                            return (
+                              <button
+                                key={stage.id}
+                                type="button"
+                                title={`${stage.label}: ${crmCorporateStageToneLabel(stage.state)}`}
+                                onClick={() => {
+                                  setSelectedCorporateWorkflowStageId(stage.id);
+                                  setDetailTab(stage.tab);
+                                }}
+                                className="group flex min-w-0 flex-col items-center text-center"
                               >
-                                <Icon className="h-4 w-4" />
-                              </span>
+                                <span className={`grid h-9 w-9 place-items-center rounded-full border transition group-hover:scale-105 ${crmCorporateStageDotClass(stage.state, selected)}`}>
+                                  <Icon className="h-4 w-4" />
+                                </span>
+                                <span className={`mt-1 max-w-full truncate text-[10px] font-medium ${selected ? 'text-[#d9b46f]' : styles.muted}`}>{stage.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Selected stage</div>
+                            <div className="mt-1 truncate text-sm font-semibold">{selectedCorporateWorkflowStage.label}</div>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] ${crmCorporateStageClass(selectedCorporateWorkflowStage.state)}`}>
+                            {crmCorporateStageToneLabel(selectedCorporateWorkflowStage.state)}
+                          </span>
+                        </div>
+                        <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{selectedCorporateWorkflowStage.detail}</p>
+                        <div className={`mt-4 rounded-lg border px-3 py-3 ${styles.panel}`}>
+                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Primary next action</div>
+                          <div className="mt-1 text-sm font-semibold">{selectedCtmTrip ? selectedCtmNextAction : selectedNextAction}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                        <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Current control point</div>
+                        <div className="mt-1 text-sm font-semibold">{selectedPrimaryBlocker}</div>
+                        <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedWorkflowState?.blockers[0]?.detail || selectedProcess?.stageGate || 'Keep the current corporate checkpoint controlled before release.'}</p>
+                      </div>
+                      <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
+                        <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Recent timeline</div>
+                        <div className="mt-3 grid gap-3">
+                          {recentCorporateTimeline.length > 0 ? recentCorporateTimeline.map((item) => (
+                            <div key={`${item.label}-${item.meta}`} className="flex gap-2">
+                              <span className={`mt-1 h-2 w-2 rounded-full ${item.tone === 'done' ? 'bg-emerald-400' : item.tone === 'current' ? 'bg-sky-400' : item.tone === 'closed' ? 'bg-red-400' : 'bg-white/30'}`} />
                               <div className="min-w-0">
-                                <div className="truncate text-sm font-medium">{label}</div>
-                                <div className={`mt-0.5 text-[11px] ${isCurrent ? styles.soft : styles.muted}`}>
-                                  {isDone ? 'Done' : isCurrent ? 'Live' : 'Upcoming'}
-                                </div>
+                                <div className="truncate text-xs font-semibold">{item.label}</div>
+                                <div className={`truncate text-[11px] ${styles.muted}`}>{item.meta}</div>
                               </div>
                             </div>
-                          </button>
-                        );
-                      })}
+                          )) : (
+                            <div className={`text-xs ${styles.muted}`}>No workflow timeline yet.</div>
+                          )}
+                        </div>
+                      </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => advanceLeadLifecycle(selectedLead)}
+                      disabled={selectedWorkflowState ? !selectedWorkflowState.canAdvance : !nextStage}
+                      className="mt-4 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <CheckSquare className="h-4 w-4" />
+                      {selectedWorkflowState?.nextStageLabel ? `Advance to ${selectedWorkflowState.nextStageLabel}` : lifecycleStageActionLabel(nextStage)}
+                    </button>
                   </div>
 
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
@@ -5990,7 +6102,7 @@ export function CrmPage() {
                       <div>
                         <div className="font-semibold">{displayCorporateLabel}</div>
                         <div className={`mt-1 text-sm ${styles.muted}`}>
-                          {selectedCorporateBriefReady ? selectedNextAction || 'Move the corporate request through the active checkpoint.' : 'Complete the structured corporate brief before preparing quote, booking, billing, or travel pack outputs.'}
+                          {selectedCorporateBriefReady ? selectedNextAction || 'Build the itinerary draft before commercial pricing starts.' : 'Complete the structured corporate brief before trip design, quote, booking, billing, or travel pack outputs.'}
                         </div>
                       </div>
                       <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedCorporateBriefReady ? selectedWorkflowState?.currentStageLabel || selectedProcess?.primaryAction || 'Working stage' : 'Briefing gate'}</span>
@@ -6106,8 +6218,8 @@ export function CrmPage() {
             })() : (
               <div className="p-8 text-center">
                 <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                <div className="mt-4 text-lg font-semibold">Select a corporate request</div>
-                <p className={`mt-2 text-sm ${styles.muted}`}>Corporate operating context appears here.</p>
+                <div className="mt-4 text-lg font-semibold">Select a corporate task</div>
+                <p className={`mt-2 text-sm ${styles.muted}`}>Choose a request from the inbox to open its focused working area.</p>
               </div>
             )
           ) : activeNav === 'leisureStudio' ? (

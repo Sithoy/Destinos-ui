@@ -93,7 +93,7 @@ export function briefingChecklistItems(lead: CrmLead) {
       {
         label: 'Corporate brief saved',
         ready: (lead.internalNotes || '').includes('[Corporate validation brief]'),
-        detail: (lead.internalNotes || '').includes('[Corporate validation brief]') ? 'Structured corporate brief saved.' : 'Save the corporate brief before quotation starts.',
+        detail: (lead.internalNotes || '').includes('[Corporate validation brief]') ? 'Structured corporate brief saved.' : 'Save the corporate brief before itinerary design starts.',
       },
     ];
   }
@@ -144,11 +144,18 @@ export function briefingReadiness(lead: CrmLead): BriefingReadiness {
 }
 
 export function appendBriefingDecisionNote(lead: CrmLead, decision: BriefingDecision, detail: string) {
-  const decisionLabels: Record<BriefingDecision, string> = {
-    approved: 'Approved for Trip Design',
-    moreInfo: 'More information requested',
-    cancelled: 'Request cancelled',
-  };
+  const decisionLabels: Record<BriefingDecision, string> =
+    lead.serviceKey === 'corporate'
+      ? {
+          approved: 'Submitted to Trip Owner',
+          moreInfo: 'Missing corporate information requested',
+          cancelled: 'Cancellation recommended',
+        }
+      : {
+          approved: 'Approved for Trip Design',
+          moreInfo: 'More information requested',
+          cancelled: 'Request cancelled',
+        };
   const stamp = new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
     month: 'short',

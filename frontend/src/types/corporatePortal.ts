@@ -1,7 +1,7 @@
 export type CorporatePortalRole = 'employee' | 'travel_coordinator' | 'manager';
 export type CorporatePortalTheme = 'dark' | 'light';
 export type CorporateRequestFilter = 'all' | 'active' | 'booked' | 'documents';
-export type CorporateApprovalFilter = 'all' | 'travelNeed' | 'finalCost';
+export type CorporateApprovalFilter = 'all' | 'travelNeed' | 'briefing' | 'finalCost';
 
 export type CorporateServiceType = 'Flight' | 'Hotel' | 'Transfer' | 'Visa support';
 export type CorporateInvoiceStatus = 'draft' | 'sent' | 'partially_paid' | 'paid' | 'void' | 'overdue';
@@ -84,9 +84,9 @@ export type CorporateCostBand = {
 };
 
 export type CorporateApprovalState = {
-  stage: 'Travel need' | 'Final cost';
+  stage: 'Travel need' | 'Briefing' | 'Final cost';
   approver: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Returned';
   canApprove?: boolean;
   blocker?: string;
 };

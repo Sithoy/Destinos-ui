@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckSquare, FileText, Mail, MoreHorizontal, X } from 'lucide-react';
+import { CheckSquare, FileText, Mail, MoreHorizontal, Send, X } from 'lucide-react';
 import type { CrmLead } from '../../../types';
 import { briefingValidationSummary, emptyBriefingTemplateDraft, hasBriefingValue, type BriefingDecision, type BriefingReadiness, type BriefingTemplateDraft } from './briefingLogic';
 
@@ -18,7 +18,6 @@ type BriefingGateProps = {
   styles: BriefingGateStyles;
   owner: string;
   lifecycleLabel: string;
-  onNotesChange: (notes: string) => void | Promise<void>;
   onSaveValidationBrief: (summary: string) => void | Promise<void>;
   onDecision: (decision: BriefingDecision, detail?: string) => void | Promise<void>;
 };
@@ -38,7 +37,6 @@ export function BriefingGate({
   styles,
   owner,
   lifecycleLabel,
-  onNotesChange,
   onSaveValidationBrief,
   onDecision,
 }: BriefingGateProps) {
@@ -59,6 +57,16 @@ export function BriefingGate({
   async function saveBriefingValidationSummary() {
     const summary = briefingValidationPreview || generateBriefingValidationPreview();
     await onSaveValidationBrief(summary);
+  }
+
+  async function submitBriefingDecision() {
+    if (isCorporate) {
+      const summary = briefingValidationPreview || generateBriefingValidationPreview();
+      await onSaveValidationBrief(summary);
+      await onDecision('approved', summary);
+      return;
+    }
+    await onDecision('approved');
   }
 
   const isClosed = lead.status === 'lost' || lead.lifecycleStage === 'closed';
@@ -93,59 +101,150 @@ export function BriefingGate({
   const templateReadyCount = templateCoreFields.filter(hasBriefingValue).length;
   const templateTotal = templateCoreFields.length;
   const templateCanApprove = templateReadyCount >= (isCorporate ? 10 : 7);
-  const canApproveBriefing = readiness.canApprove && templateCanApprove;
+  const intakeReady = isCorporate
+    ? readiness.items.filter((item) => item.label !== 'Corporate brief saved').every((item) => item.ready)
+    : readiness.canApprove;
+  const canApproveBriefing = intakeReady && templateCanApprove;
 
   return (
-    <div className={isCorporate ? 'grid gap-4' : 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]'}>
-      <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className={isCorporate ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_430px]' : 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]'}>
+        <aside className={`order-2 rounded-xl border p-4 ${styles.panelSoft}`}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="font-semibold">{isCorporate ? 'Corporate briefing gate' : 'Briefing gate'}</div>
+              <div className="text-sm font-semibold">{isCorporate ? 'Corporate briefing gate' : 'Briefing gate'}</div>
               <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>
-                {isCorporate
-                  ? 'Confirm the movement, traveler, policy, approval, and billing details before quotation.'
-                  : 'Confirm the request is clear enough before it becomes design work.'}
-              </p>
+                  {isCorporate
+                    ? 'Confirm the movement, traveler, policy, approval, and billing details before itinerary design.'
+                    : 'Confirm the request is clear enough before it becomes design work.'}
+                </p>
+            </div>
+            <span className={`rounded-full px-2.5 py-1 text-xs ${intakeReady ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
+              {readiness.readyCount}/{readiness.total} ready
+            </span>
           </div>
-          <span className={`rounded-full px-2.5 py-1 text-xs ${readiness.canApprove ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
-            {readiness.readyCount}/{readiness.total} ready
-          </span>
-        </div>
 
-        {isCorporate ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {readiness.items.map((item) => (
-              <span key={item.label} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs ${item.ready ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200' : 'border-amber-400/30 bg-amber-500/10 text-amber-200'}`}>
-                {item.ready ? <CheckSquare className="h-3.5 w-3.5" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
-                {item.label}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {readiness.items.map((item) => (
-              <div key={item.label} className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
-                <div className="flex items-center gap-2">
-                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${item.ready ? 'border-emerald-400/50 text-emerald-300' : 'border-amber-400/45 text-amber-300'}`}>
-                    {item.ready ? <CheckSquare className="h-3.5 w-3.5" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{item.label}</div>
-                    <div className={`mt-1 line-clamp-2 text-xs ${styles.muted}`}>{item.detail}</div>
+          {isCorporate ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {readiness.items.map((item) => (
+                <span key={item.label} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs ${item.ready ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200' : 'border-amber-400/30 bg-amber-500/10 text-amber-200'}`}>
+                  {item.ready ? <CheckSquare className="h-3.5 w-3.5" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
+                  {item.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {readiness.items.map((item) => (
+                <div key={item.label} className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${item.ready ? 'border-emerald-400/50 text-emerald-300' : 'border-amber-400/45 text-amber-300'}`}>
+                      {item.ready ? <CheckSquare className="h-3.5 w-3.5" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{item.label}</div>
+                      <div className={`mt-1 line-clamp-2 text-xs ${styles.muted}`}>{item.detail}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
 
-        <div className={`mt-4 rounded-xl border p-4 ${styles.panel}`}>
+          <div className={`mt-4 rounded-xl border p-4 ${styles.panel}`}>
+            <div className="font-semibold">Brief summary</div>
+            <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+              {briefingValidationPreview || 'Generate the validation summary after completing the template. This is the version the trip owner will approve before Trip Design starts.'}
+            </p>
+            <div className="mt-4 grid gap-2">
+              <button type="button" onClick={generateBriefingValidationPreview} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium ${styles.buttonGhost}`}>
+                <FileText className="h-4 w-4" />
+                Generate summary
+              </button>
+              <button type="button" onClick={saveBriefingValidationSummary} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#d4af37] px-3 text-sm font-semibold text-[#241f1b]">
+                <CheckSquare className="h-4 w-4" />
+                {isCorporate ? 'Save corporate brief' : 'Save validation brief'}
+              </button>
+            </div>
+            {briefingValidationPreview ? (
+              <textarea
+                value={briefingValidationPreview}
+                onChange={(event) => setBriefingValidationPreview(event.target.value)}
+                className={`mt-4 min-h-64 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`}
+              />
+            ) : null}
+          </div>
+
+          <div className={`mt-4 rounded-xl border p-4 ${styles.panelSoft}`}>
+            <div className="font-semibold">{isCorporate ? 'Owner validation' : 'Brief decision'}</div>
+            <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
+              {canApproveBriefing
+                ? isCorporate ? 'Send the completed brief to the corporate trip owner. Trip Design unlocks only after CTM approval.' : 'This request can move into Trip Design.'
+                : isCorporate ? 'Complete the required intake and quote-prep fields before sending this to the trip owner.' : 'Complete the core brief and request validation before assigning design work.'}
+            </p>
+
+            <div className={`mt-4 rounded-lg border p-3 ${styles.panel}`}>
+              <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>{isCorporate ? 'DPM coordinator' : 'Current owner'}</div>
+              <div className="mt-2 text-sm font-semibold">{owner}</div>
+              <div className={`mt-1 text-xs ${styles.muted}`}>{isCorporate ? 'Decision owner: corporate trip owner in CTM' : lifecycleLabel}</div>
+            </div>
+
+            {!isCorporate ? (
+            <label className="mt-4 block text-sm font-medium">
+              Cancellation reason
+              <select
+                value={briefingCancelReason}
+                onChange={(event) => setBriefingCancelReason(event.target.value as (typeof briefingCancellationReasons)[number])}
+                className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
+              >
+                {briefingCancellationReasons.map((reason) => (
+                  <option key={reason} value={reason}>{reason}</option>
+                ))}
+              </select>
+            </label>
+            ) : null}
+
+            <div className="mt-4 grid gap-2">
+              <button
+                type="button"
+                onClick={submitBriefingDecision}
+                disabled={!canApproveBriefing || isClosed}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {isCorporate ? <Send className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
+                {isCorporate ? 'Submit to Trip Owner' : 'Approve for Trip Design'}
+              </button>
+              <button
+                type="button"
+                onClick={() => onDecision('moreInfo')}
+                disabled={isClosed}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-sky-600 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Mail className="h-4 w-4" />
+                {isCorporate ? 'Request Missing Info' : 'Need More Info'}
+              </button>
+              {!isCorporate ? (
+              <button
+                type="button"
+                onClick={() => onDecision('cancelled', briefingCancelReason)}
+                disabled={isClosed}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <X className="h-4 w-4" />
+                Cancel Request
+              </button>
+              ) : null}
+            </div>
+          </div>
+        </aside>
+
+        <section className="order-1 min-w-0">
+        <div className={`rounded-xl border p-4 ${styles.panel}`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="font-semibold">{isCorporate ? 'Corporate travel brief template' : 'Pre-trip design template'}</div>
               <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>
                 {isCorporate
-                  ? 'Capture the details DPM should validate with the company before commercial quotation starts.'
+                  ? 'Capture the details DPM should validate with the company before itinerary research starts.'
                   : 'Capture the details DPM should validate with the client before itinerary design starts.'}
               </p>
             </div>
@@ -321,94 +420,9 @@ export function BriefingGate({
             </>
           )}
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" onClick={generateBriefingValidationPreview} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium ${styles.buttonGhost}`}>
-              <FileText className="h-4 w-4" />
-              Generate validation summary
-            </button>
-            <button type="button" onClick={saveBriefingValidationSummary} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#d4af37] px-3 text-sm font-semibold text-[#241f1b]">
-              <CheckSquare className="h-4 w-4" />
-              {isCorporate ? 'Save corporate brief' : 'Save validation brief'}
-            </button>
-          </div>
-
-          {briefingValidationPreview ? (
-            <textarea
-              value={briefingValidationPreview}
-              onChange={(event) => setBriefingValidationPreview(event.target.value)}
-              className={`mt-4 min-h-56 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none ${styles.input}`}
-            />
-          ) : null}
         </div>
 
-        <label className="mt-4 block">
-          <span className="text-sm font-semibold">Briefing notes</span>
-          <textarea
-            value={lead.internalNotes || ''}
-            onChange={(event) => onNotesChange(event.target.value)}
-            className={`mt-2 min-h-32 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
-            placeholder="Call notes, missing information, client intent, constraints, decision context..."
-          />
-        </label>
-      </div>
-
-      <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-        <div className="font-semibold">Brief decision</div>
-        <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
-          {canApproveBriefing
-            ? isCorporate ? 'This corporate request can move into quotation.' : 'This request can move into Trip Design.'
-            : isCorporate ? 'Complete and save the corporate brief before quotation starts.' : 'Complete the core brief and request validation before assigning design work.'}
-        </p>
-
-        <div className={`mt-4 rounded-lg border p-3 ${styles.panel}`}>
-          <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Current owner</div>
-          <div className="mt-2 text-sm font-semibold">{owner}</div>
-          <div className={`mt-1 text-xs ${styles.muted}`}>{lifecycleLabel}</div>
-        </div>
-
-        <label className="mt-4 block text-sm font-medium">
-          Cancellation reason
-          <select
-            value={briefingCancelReason}
-            onChange={(event) => setBriefingCancelReason(event.target.value as (typeof briefingCancellationReasons)[number])}
-            className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
-          >
-            {briefingCancellationReasons.map((reason) => (
-              <option key={reason} value={reason}>{reason}</option>
-            ))}
-          </select>
-        </label>
-
-        <div className="mt-4 grid gap-2">
-          <button
-            type="button"
-            onClick={() => onDecision('approved')}
-            disabled={!canApproveBriefing || isClosed}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <CheckSquare className="h-4 w-4" />
-            {isCorporate ? 'Approve for Quote Prep' : 'Approve for Trip Design'}
-          </button>
-          <button
-            type="button"
-            onClick={() => onDecision('moreInfo')}
-            disabled={isClosed}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-sky-600 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <Mail className="h-4 w-4" />
-            Need More Info
-          </button>
-          <button
-            type="button"
-            onClick={() => onDecision('cancelled', briefingCancelReason)}
-            disabled={isClosed}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <X className="h-4 w-4" />
-            Cancel Request
-          </button>
-        </div>
-      </div>
+        </section>
     </div>
   );
 }

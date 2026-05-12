@@ -222,6 +222,7 @@ export function CorporatePortalApp() {
     return searchedRequests.filter((trip) => {
       const pendingStages = trip.approvals.filter((approval) => approval.status === 'Pending');
       if (approvalFilter === 'travelNeed') return pendingStages.some((approval) => approval.stage === 'Travel need');
+      if (approvalFilter === 'briefing') return pendingStages.some((approval) => approval.stage === 'Briefing');
       if (approvalFilter === 'finalCost') return pendingStages.some((approval) => approval.stage === 'Final cost');
       return pendingStages.length > 0;
     });

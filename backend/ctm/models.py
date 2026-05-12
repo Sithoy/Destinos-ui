@@ -183,6 +183,7 @@ class TripRequest(models.Model):
     class ApprovalStage(models.TextChoices):
         NONE = "none", "None"
         TRAVEL_NEED = "travel_need", "Travel need"
+        BRIEFING = "briefing", "Briefing"
         FINAL_COST = "final_cost", "Final cost"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -300,6 +301,7 @@ class TripService(models.Model):
 class TripApproval(models.Model):
     class ApprovalType(models.TextChoices):
         TRAVEL_NEED = "travel_need", "Travel need"
+        BRIEFING = "briefing", "Briefing"
         FINAL_COST = "final_cost", "Final cost"
 
     class Status(models.TextChoices):

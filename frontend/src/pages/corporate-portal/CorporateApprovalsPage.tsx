@@ -34,6 +34,7 @@ export function CorporateApprovalsPage({
   const filterItems: Array<{ id: CorporateApprovalFilter; label: string; count: number }> = [
     { id: 'all', label: 'All approvals', count: allRequests.filter((trip) => approvalSummary(trip).length > 0).length },
     { id: 'travelNeed', label: 'Travel need', count: allRequests.filter((trip) => trip.approvals.some((approval) => approval.status === 'Pending' && approval.stage === 'Travel need')).length },
+    { id: 'briefing', label: 'Briefing', count: allRequests.filter((trip) => trip.approvals.some((approval) => approval.status === 'Pending' && approval.stage === 'Briefing')).length },
     { id: 'finalCost', label: 'Final cost', count: allRequests.filter((trip) => trip.approvals.some((approval) => approval.status === 'Pending' && approval.stage === 'Final cost')).length },
   ];
 
@@ -42,7 +43,7 @@ export function CorporateApprovalsPage({
       <div className="mb-5">
         <h2 className="text-2xl font-semibold">Approvals queue</h2>
         <p className={`mt-2 max-w-2xl text-sm leading-6 ${styles.muted}`}>
-          Review travel need and final-cost decisions without leaving the corporate workflow.
+          Review travel need, briefing, and final-cost decisions without leaving the corporate workflow.
         </p>
       </div>
       <div className="mb-4 flex flex-wrap gap-2">
@@ -107,22 +108,28 @@ export function CorporateApprovalsPage({
                           <span className={`rounded-full px-2.5 py-1 text-xs ${theme === 'dark' ? 'bg-sky-500/12 text-sky-200' : 'bg-sky-50 text-sky-800'}`}>Pending</span>
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => onApprove(trip.id, approval.stage)}
-                            className="inline-flex items-center gap-2 rounded-lg bg-emerald-500/90 px-4 py-2 text-sm font-semibold text-white"
-                          >
-                            <Check className="h-4 w-4" />
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onReject(trip.id, approval.stage)}
-                            className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold ${theme === 'dark' ? 'border-rose-300/20 bg-rose-500/10 text-rose-100' : 'border-rose-200 bg-rose-50 text-rose-700'}`}
-                          >
-                            <X className="h-4 w-4" />
-                            Reject
-                          </button>
+                          {approval.canApprove === false ? (
+                            <div className={`rounded-lg border px-3 py-2 text-xs ${styles.muted}`}>{approval.blocker || 'This approval is locked until the previous workflow gate is complete.'}</div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => onApprove(trip.id, approval.stage)}
+                                className="inline-flex items-center gap-2 rounded-lg bg-emerald-500/90 px-4 py-2 text-sm font-semibold text-white"
+                              >
+                                <Check className="h-4 w-4" />
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onReject(trip.id, approval.stage)}
+                                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold ${theme === 'dark' ? 'border-rose-300/20 bg-rose-500/10 text-rose-100' : 'border-rose-200 bg-rose-50 text-rose-700'}`}
+                              >
+                                <X className="h-4 w-4" />
+                                {approval.stage === 'Briefing' ? 'Request changes' : 'Reject'}
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     ))}

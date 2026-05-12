@@ -177,7 +177,7 @@ def can_access_ctm(user: User) -> bool:
 
 def can_approve_ctm_stage(membership: CompanyUser, stage: str) -> bool:
     roles = company_user_role_set(membership)
-    if stage == "Travel need":
+    if stage in {"Travel need", "Briefing"}:
         return bool(roles & {
             CompanyUser.Role.TRAVEL_COORDINATOR,
             CompanyUser.Role.MANAGER,
@@ -237,7 +237,34 @@ def format_trip_status(value: str) -> str:
 
 
 def parse_approval_stage(stage: str) -> str:
-    return TripApproval.ApprovalType.TRAVEL_NEED if stage == "Travel need" else TripApproval.ApprovalType.FINAL_COST
+    if stage == "Travel need":
+        return TripApproval.ApprovalType.TRAVEL_NEED
+    if stage == "Briefing":
+        return TripApproval.ApprovalType.BRIEFING
+    return TripApproval.ApprovalType.FINAL_COST
+
+
+def approval_stage_label(approval_type: str) -> str:
+    return {
+        TripApproval.ApprovalType.TRAVEL_NEED: "Travel need",
+        TripApproval.ApprovalType.BRIEFING: "Briefing",
+        TripApproval.ApprovalType.FINAL_COST: "Final cost",
+    }.get(approval_type, "Travel need")
+
+
+def briefing_approval_gate(trip: TripRequest) -> dict:
+    travel_need_approval = trip.approvals.filter(approval_type=TripApproval.ApprovalType.TRAVEL_NEED).first()
+    if travel_need_approval is None or travel_need_approval.status != TripApproval.Status.APPROVED:
+        return {
+            "ready": False,
+            "detail": "Travel need approval must be completed before briefing approval.",
+        }
+    if not trip.internal_notes.strip():
+        return {
+            "ready": False,
+            "detail": "DPM must share the briefing summary before owner approval opens.",
+        }
+    return {"ready": True, "detail": "Briefing summary is ready for owner review."}
 
 
 def final_cost_approval_gate(trip: TripRequest) -> dict:
@@ -246,6 +273,12 @@ def final_cost_approval_gate(trip: TripRequest) -> dict:
         return {
             "ready": False,
             "detail": "Travel need approval must be completed before final cost approval.",
+        }
+    briefing_approval = trip.approvals.filter(approval_type=TripApproval.ApprovalType.BRIEFING).first()
+    if briefing_approval is not None and briefing_approval.status != TripApproval.Status.APPROVED:
+        return {
+            "ready": False,
+            "detail": "Briefing approval must be completed before final cost approval.",
         }
     quote = getattr(trip, "quote", None)
     if not quote:
@@ -691,7 +724,7 @@ class CorporateApprovalSerializer(serializers.Serializer):
     blocker = serializers.SerializerMethodField()
 
     def get_stage(self, obj: TripApproval) -> str:
-        return "Travel need" if obj.approval_type == TripApproval.ApprovalType.TRAVEL_NEED else "Final cost"
+        return approval_stage_label(obj.approval_type)
 
     def get_approver(self, obj: TripApproval) -> str:
         if obj.approver:
@@ -707,6 +740,8 @@ class CorporateApprovalSerializer(serializers.Serializer):
     def _gate(self, obj: TripApproval) -> dict:
         if obj.status != TripApproval.Status.PENDING:
             return {"ready": False, "detail": ""}
+        if obj.approval_type == TripApproval.ApprovalType.BRIEFING:
+            return briefing_approval_gate(obj.trip_request)
         if obj.approval_type == TripApproval.ApprovalType.FINAL_COST:
             return final_cost_approval_gate(obj.trip_request)
         return {"ready": True, "detail": "Approval is available."}
@@ -1360,8 +1395,13 @@ def sync_trip_from_quote(trip: TripRequest, quote: TripQuote):
     trip.quoted_cost = quote.amount
     trip.currency = quote.currency or trip.currency
     if quote.status in {TripQuote.Status.SENT, TripQuote.Status.APPROVED}:
-        trip.status = TripRequest.Status.QUOTE_READY
-        trip.approval_stage = TripRequest.ApprovalStage.FINAL_COST
+        briefing_approval = trip.approvals.filter(approval_type=TripApproval.ApprovalType.BRIEFING).first()
+        if briefing_approval is not None and briefing_approval.status != TripApproval.Status.APPROVED:
+            trip.status = TripRequest.Status.APPROVED
+            trip.approval_stage = TripRequest.ApprovalStage.BRIEFING
+        else:
+            trip.status = TripRequest.Status.QUOTE_READY
+            trip.approval_stage = TripRequest.ApprovalStage.FINAL_COST
     trip.save(update_fields=["quoted_cost", "currency", "status", "approval_stage", "updated_at"])
 
 
@@ -1512,7 +1552,11 @@ class CorporateTripCreateSerializer(serializers.Serializer):
 
 
 class CorporateApprovalActionSerializer(serializers.Serializer):
-    stage = serializers.ChoiceField(choices=["Travel need", "Final cost"])
+    stage = serializers.ChoiceField(choices=["Travel need", "Briefing", "Final cost"])
+
+
+class CorporateBriefingApprovalRequestSerializer(serializers.Serializer):
+    summary = serializers.CharField(required=False, allow_blank=True)
 
 
 class CtmLoginSerializer(serializers.Serializer):

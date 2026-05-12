@@ -103,7 +103,7 @@ function workflowProgress(stages: ProcessingStage[]) {
   return Math.round((weighted / stages.length) * 100);
 }
 
-function approvalStatus(trip: CorporateTripRequest, stage: 'Travel need' | 'Final cost') {
+function approvalStatus(trip: CorporateTripRequest, stage: CorporateApprovalStage) {
   return trip.approvals.find((approval) => approval.stage === stage)?.status ?? 'Pending';
 }
 
@@ -118,6 +118,7 @@ function hasDocumentBlocker(trip: CorporateTripRequest) {
 
 function buildDecisionStages(trip: CorporateTripRequest): ProcessingStage[] {
   const travelNeed = approvalStatus(trip, 'Travel need');
+  const briefing = approvalStatus(trip, 'Briefing');
   const finalCost = approvalStatus(trip, 'Final cost');
   const quoteReady = hasApprovalReadyQuote(trip);
   const bookingReady = Boolean(trip.booking) || trip.status === 'Booked' || trip.status === 'Completed';
@@ -141,14 +142,21 @@ function buildDecisionStages(trip: CorporateTripRequest): ProcessingStage[] {
     {
       id: 'briefing',
       label: 'Briefing',
-      state: quoteReady || finalCost === 'Approved' || bookingReady ? 'done' : travelNeed === 'Approved' ? 'active' : 'pending',
-      detail: quoteReady ? 'DPM has enough business detail to prepare and share pricing.' : travelNeed === 'Approved' ? 'DPM is validating requirements, policy constraints, and traveler needs.' : 'Starts after the company approves the travel need.',
+      state: briefing === 'Approved' || quoteReady || finalCost === 'Approved' || bookingReady ? 'done' : briefing === 'Returned' ? 'blocked' : travelNeed === 'Approved' ? 'active' : 'pending',
+      detail: briefing === 'Approved' ? 'Trip owner approved the briefing summary.' : briefing === 'Returned' ? 'Trip owner requested briefing changes.' : travelNeed === 'Approved' ? 'DPM is validating requirements, policy constraints, and traveler needs.' : 'Starts after the company approves the travel need.',
       Icon: ClipboardList,
+    },
+    {
+      id: 'design',
+      label: 'Trip Design',
+      state: quoteReady || finalCost === 'Approved' || bookingReady ? 'done' : briefing === 'Approved' ? 'active' : briefing === 'Returned' ? 'blocked' : 'pending',
+      detail: quoteReady ? 'DPM shared priced options.' : briefing === 'Approved' ? 'DPM is building route, flight, hotel, and service options.' : 'Starts after briefing approval.',
+      Icon: PlaneTakeoff,
     },
     {
       id: 'quote',
       label: 'Quote',
-      state: quoteReady ? (trip.quote?.status === 'rejected' ? 'blocked' : trip.quote?.status === 'approved' || finalCost === 'Approved' || bookingReady ? 'done' : 'active') : travelNeed === 'Approved' ? 'active' : 'pending',
+      state: quoteReady ? (trip.quote?.status === 'rejected' ? 'blocked' : trip.quote?.status === 'approved' || finalCost === 'Approved' || bookingReady ? 'done' : 'active') : briefing === 'Approved' ? 'pending' : 'pending',
       detail: trip.quote ? `${labelize(trip.quote.status)} - ${formatMoney(trip.quote.amount, trip.quote.currency)}` : 'DPM has not shared a quote yet.',
       Icon: Receipt,
     },
@@ -736,7 +744,7 @@ export function CorporateRequestDetailPage({
                       className="inline-flex h-9 items-center gap-2 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55"
                     >
                       <XCircle className="h-4 w-4" />
-                      Reject
+                      {approval.stage === 'Briefing' ? 'Request changes' : 'Reject'}
                     </button>
                   </div>
                 </div>

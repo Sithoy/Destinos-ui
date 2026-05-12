@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch, Q
 from rest_framework import permissions, status, viewsets
@@ -10,6 +11,7 @@ from rest_framework.views import APIView
 
 from .serializers import (
     CorporateBillingSummarySerializer,
+    CorporateBriefingApprovalRequestSerializer,
     CorporateCompanyAccountSerializer,
     CorporateCompanyAccountWriteSerializer,
     CorporateCompanyUserSerializer,
@@ -39,6 +41,7 @@ from .serializers import (
     CtmLoginSerializer,
     CtmSessionSerializer,
     build_context_payload,
+    briefing_approval_gate,
     can_access_ctm,
     can_approve_ctm_stage,
     can_manage_company_users,
@@ -104,6 +107,34 @@ def ctm_payment_queryset():
     return TripPayment.objects.select_related("invoice__trip_request__company", "invoice__trip_request", "recorded_by").order_by("-received_at", "-created_at")
 
 
+def sync_trip_approval_state(trip: TripRequest):
+    pending_approvals = list(trip.approvals.filter(status=TripApproval.Status.PENDING))
+    if trip.approvals.filter(status=TripApproval.Status.REJECTED).exists():
+        trip.status = TripRequest.Status.REJECTED
+        trip.approval_stage = TripRequest.ApprovalStage.NONE
+    elif any(approval.approval_type == TripApproval.ApprovalType.BRIEFING for approval in pending_approvals):
+        trip.status = TripRequest.Status.APPROVED
+        trip.approval_stage = TripRequest.ApprovalStage.BRIEFING
+    elif any(approval.approval_type == TripApproval.ApprovalType.FINAL_COST for approval in pending_approvals):
+        quote = getattr(trip, "quote", None)
+        if quote and quote.status in {TripQuote.Status.SENT, TripQuote.Status.APPROVED}:
+            trip.status = TripRequest.Status.FINAL_APPROVAL
+            trip.approval_stage = TripRequest.ApprovalStage.FINAL_COST
+        else:
+            trip.status = TripRequest.Status.APPROVED
+            trip.approval_stage = TripRequest.ApprovalStage.NONE
+    elif any(approval.approval_type == TripApproval.ApprovalType.TRAVEL_NEED for approval in pending_approvals):
+        trip.status = TripRequest.Status.PENDING_APPROVAL
+        trip.approval_stage = TripRequest.ApprovalStage.TRAVEL_NEED
+    else:
+        trip.status = TripRequest.Status.APPROVED
+        trip.approval_stage = TripRequest.ApprovalStage.NONE
+
+    if trip.status == TripRequest.Status.APPROVED and trip.trip_travelers.filter(document_status__in=[TripTraveler.DocumentStatus.MISSING_PASSPORT, TripTraveler.DocumentStatus.VISA_REQUIRED, TripTraveler.DocumentStatus.PENDING_DOCS]).exists():
+        trip.status = TripRequest.Status.NEEDS_DOCUMENTS
+    trip.save(update_fields=["status", "approval_stage", "internal_notes", "updated_at"])
+
+
 def get_active_company_membership(request) -> CompanyUser | None:
     if not get_request_company_code(request):
         return None
@@ -112,7 +143,7 @@ def get_active_company_membership(request) -> CompanyUser | None:
 
 class HasCtmAccess(permissions.BasePermission):
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and can_access_ctm(request.user))
+        return bool(request.user and request.user.is_authenticated and (can_access_ctm(request.user) or can_manage_trip_operations(request.user)))
 
 
 class CtmAuthLoginView(APIView):
@@ -649,6 +680,8 @@ class TripRequestViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == "create":
             return CorporateTripCreateSerializer
+        if self.action == "request_briefing_approval":
+            return CorporateBriefingApprovalRequestSerializer
         if self.action in {"approve", "reject"}:
             return CorporateApprovalActionSerializer
         return CorporateTripRequestSerializer
@@ -688,6 +721,55 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         trip = serializer.save()
         return Response(CorporateTripRequestSerializer(trip, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["post"], url_path="request-briefing-approval")
+    def request_briefing_approval(self, request, reference_code=None):
+        if not can_manage_trip_operations(request.user):
+            return Response({"detail": "Only DPM operations can request briefing approval."}, status=status.HTTP_403_FORBIDDEN)
+
+        trip = self.get_object()
+        serializer = CorporateBriefingApprovalRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        summary = serializer.validated_data.get("summary", "").strip()
+        if summary:
+            trip.internal_notes = summary
+
+        approval, created = TripApproval.objects.get_or_create(
+            trip_request=trip,
+            approval_type=TripApproval.ApprovalType.BRIEFING,
+            defaults={
+                "approver": trip.requested_by,
+                "status": TripApproval.Status.PENDING,
+                "decision_notes": "Approval owner: Trip owner",
+            },
+        )
+        if not created:
+            approval.status = TripApproval.Status.PENDING
+            approval.approver = approval.approver or trip.requested_by
+            approval.decided_at = None
+            approval.save(update_fields=["status", "approver", "decided_at", "updated_at"])
+
+        if summary:
+            TripMessage.objects.create(
+                trip_request=trip,
+                sender_type=TripMessage.SenderType.DPM,
+                sender_user=request.user,
+                visibility=TripMessage.Visibility.SHARED,
+                body=f"Briefing summary ready for trip owner approval:\n\n{summary}",
+            )
+
+        trip.internal_notes = trip.internal_notes or "Briefing summary submitted to the trip owner for approval."
+        sync_trip_approval_state(trip)
+
+        TripTimelineEvent.objects.create(
+            trip_request=trip,
+            actor_type=TripTimelineEvent.ActorType.DPM,
+            actor_user=request.user,
+            event_type=TripTimelineEvent.EventType.UPDATED,
+            title="Briefing submitted for owner approval",
+            description="Trip owner should approve the briefing before DPM starts Trip Design.",
+        )
+        return Response(CorporateTripRequestSerializer(trip, context={"request": request}).data)
+
     @action(detail=True, methods=["post"])
     def approve(self, request, reference_code=None):
         trip = self.get_object()
@@ -700,28 +782,28 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         approval = trip.approvals.filter(approval_type=approval_type, status=TripApproval.Status.PENDING).first()
         if approval is None:
             return Response({"detail": "No pending approval was found for this stage."}, status=status.HTTP_400_BAD_REQUEST)
+        if approval_type == TripApproval.ApprovalType.BRIEFING:
+            gate = briefing_approval_gate(trip)
+            if not gate["ready"]:
+                return Response({"detail": gate["detail"]}, status=status.HTTP_400_BAD_REQUEST)
         if approval_type == TripApproval.ApprovalType.FINAL_COST:
             gate = final_cost_approval_gate(trip)
             if not gate["ready"]:
                 return Response({"detail": gate["detail"]}, status=status.HTTP_400_BAD_REQUEST)
 
         approval.status = TripApproval.Status.APPROVED
-        approval.save(update_fields=["status", "updated_at"])
+        approval.decided_at = timezone.now()
+        approval.save(update_fields=["status", "decided_at", "updated_at"])
 
-        remaining_pending = trip.approvals.filter(status=TripApproval.Status.PENDING).exists()
-        trip.status = TripRequest.Status.FINAL_APPROVAL if remaining_pending else TripRequest.Status.APPROVED
-        if trip.status == TripRequest.Status.APPROVED and trip.trip_travelers.filter(document_status__in=[TripTraveler.DocumentStatus.MISSING_PASSPORT, TripTraveler.DocumentStatus.VISA_REQUIRED, TripTraveler.DocumentStatus.PENDING_DOCS]).exists():
-            trip.status = TripRequest.Status.NEEDS_DOCUMENTS
-        trip.approval_stage = TripRequest.ApprovalStage.FINAL_COST if remaining_pending else TripRequest.ApprovalStage.NONE
         trip.internal_notes = "Company approval updated. DPM can continue the next operational step from this request."
-        trip.save(update_fields=["status", "approval_stage", "internal_notes", "updated_at"])
+        sync_trip_approval_state(trip)
 
         TripTimelineEvent.objects.create(
             trip_request=trip,
             actor_type=TripTimelineEvent.ActorType.COMPANY,
             event_type=TripTimelineEvent.EventType.APPROVED,
             title=f"{serializer.validated_data['stage']} approved",
-            description=f"{trip.requested_by.job_title or trip.requested_by.user.username} can move to the next workflow step.",
+            description="DPM can continue to the next workflow step.",
         )
         return Response(CorporateTripRequestSerializer(trip, context={"request": request}).data)
 
@@ -738,19 +820,35 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         if approval is None:
             return Response({"detail": "No pending approval was found for this stage."}, status=status.HTTP_400_BAD_REQUEST)
 
-        approval.status = TripApproval.Status.REJECTED
-        approval.save(update_fields=["status", "updated_at"])
+        if approval_type == TripApproval.ApprovalType.BRIEFING:
+            approval.status = TripApproval.Status.RETURNED
+            approval.decided_at = timezone.now()
+            approval.save(update_fields=["status", "decided_at", "updated_at"])
+            trip.internal_notes = "Briefing changes requested by the trip owner. DPM should revise the brief before itinerary design starts."
+            trip.approval_stage = TripRequest.ApprovalStage.BRIEFING
+            trip.save(update_fields=["approval_stage", "internal_notes", "updated_at"])
+            event_type = TripTimelineEvent.EventType.RETURNED
+            title = "Briefing changes requested"
+            description = "Trip owner requested changes to the briefing summary before Trip Design."
+        else:
+            approval.status = TripApproval.Status.REJECTED
+            approval.decided_at = timezone.now()
+            approval.save(update_fields=["status", "decided_at", "updated_at"])
 
-        trip.status = TripRequest.Status.REJECTED
-        trip.internal_notes = "Request has been rejected in the company approval flow. DPM should hold movement until the request is revised."
-        trip.save(update_fields=["status", "internal_notes", "updated_at"])
+            trip.status = TripRequest.Status.REJECTED
+            trip.approval_stage = TripRequest.ApprovalStage.NONE
+            trip.internal_notes = "Request has been rejected in the company approval flow. DPM should hold movement until the request is revised."
+            trip.save(update_fields=["status", "approval_stage", "internal_notes", "updated_at"])
+            event_type = TripTimelineEvent.EventType.REJECTED
+            title = f"{serializer.validated_data['stage']} rejected"
+            description = "Request returned for revision before DPM can continue."
 
         TripTimelineEvent.objects.create(
             trip_request=trip,
             actor_type=TripTimelineEvent.ActorType.COMPANY,
-            event_type=TripTimelineEvent.EventType.REJECTED,
-            title=f"{serializer.validated_data['stage']} rejected",
-            description="Request returned for revision before DPM can continue.",
+            event_type=event_type,
+            title=title,
+            description=description,
         )
         return Response(CorporateTripRequestSerializer(trip, context={"request": request}).data)
 
