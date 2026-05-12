@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from crm.models import Lead
+from crm.models import AccommodationBlock, ItineraryStop, Lead, TransportSegment, TripItinerary
 
 from .crm_handoff import sync_crm_lead_from_ctm_trip
 from .models import CompanyAccount, CompanyUser, Traveler, TripApproval, TripQuote, TripRequest, TripTraveler
@@ -374,6 +374,55 @@ class CtmOpsScopeTests(APITestCase):
         self.assertEqual(Lead.objects.filter(ctm_request_reference=self.trip_a.reference_code).count(), 1)
         first_lead.refresh_from_db()
         self.assertEqual(first_lead.destination, "Porto")
+
+    def test_trip_request_exposes_read_only_crm_itinerary_draft(self):
+        lead = sync_crm_lead_from_ctm_trip(self.trip_a)
+        itinerary = TripItinerary.objects.create(
+            lead=lead,
+            title="Executive Maputo to Lisbon draft",
+            status=TripItinerary.Status.DRAFT,
+            start_date=date(2026, 9, 12),
+            end_date=date(2026, 9, 18),
+            notes="Drafted by DPM after briefing approval.",
+        )
+        stop = ItineraryStop.objects.create(
+            itinerary=itinerary,
+            sequence_number=1,
+            city="Lisbon",
+            country="Portugal",
+            arrival_date=date(2026, 9, 12),
+            departure_date=date(2026, 9, 18),
+            nights=6,
+            purpose=ItineraryStop.Purpose.BUSINESS,
+            notes="Meetings near Avenida da Liberdade.",
+        )
+        AccommodationBlock.objects.create(
+            stop=stop,
+            name="Lisbon Business Hotel",
+            room_type="Executive king",
+            check_in=date(2026, 9, 12),
+            check_out=date(2026, 9, 18),
+            rooms=2,
+            supplier="DPM hotel desk",
+            booking_status=AccommodationBlock.BookingStatus.QUOTED,
+        )
+        TransportSegment.objects.create(
+            itinerary=itinerary,
+            sequence_number=1,
+            mode=TransportSegment.Mode.FLIGHT,
+            from_city="Maputo",
+            to_city="Lisbon",
+            booking_status=TransportSegment.BookingStatus.DRAFT,
+        )
+        self.authenticate_company_user(self.company_user_a)
+
+        response = self.client.get(reverse("ctm-trip-request-detail", args=[self.trip_a.reference_code]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["itineraryDraft"]["title"], "Executive Maputo to Lisbon draft")
+        self.assertEqual(response.data["itineraryDraft"]["stops"][0]["city"], "Lisbon")
+        self.assertEqual(response.data["itineraryDraft"]["stops"][0]["accommodations"][0]["name"], "Lisbon Business Hotel")
+        self.assertEqual(response.data["itineraryDraft"]["transports"][0]["fromCity"], "Maputo")
 
     def test_ops_user_can_create_company_account(self):
         self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)

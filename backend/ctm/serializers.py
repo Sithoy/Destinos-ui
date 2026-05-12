@@ -6,6 +6,8 @@ from django.contrib.auth.models import User
 from django.db.models import Q
 from rest_framework import serializers
 
+from crm.models import TripItinerary
+
 from .bootstrap import ensure_default_ctm_context
 from .crm_handoff import sync_crm_lead_from_ctm_trip
 from .models import CompanyAccount, CompanyUser, Traveler, TripApproval, TripBooking, TripDocument, TripInvoice, TripMessage, TripPayment, TripQuote, TripRequest, TripService, TripTask, TripTimelineEvent, TripTraveler, normalize_company_code
@@ -15,6 +17,14 @@ def format_portal_date(value):
     if not value:
         return ""
     return value.strftime("%d %b %Y")
+
+
+def iso_date(value):
+    return value.isoformat() if value else None
+
+
+def iso_datetime(value):
+    return value.isoformat() if value else None
 
 
 def format_passport_status(value: str) -> str:
@@ -476,6 +486,77 @@ def build_corporate_workflow(trip: TripRequest) -> dict:
         "bottleneck": bottleneck,
         "nextAction": current_stage["detail"],
         "stages": stages,
+    }
+
+
+def serialize_itinerary_draft(itinerary: TripItinerary | None) -> dict | None:
+    if itinerary is None:
+        return None
+
+    return {
+        "id": str(itinerary.id),
+        "title": itinerary.title,
+        "status": itinerary.status,
+        "startDate": iso_date(itinerary.start_date),
+        "endDate": iso_date(itinerary.end_date),
+        "notes": itinerary.notes,
+        "updatedAt": iso_datetime(itinerary.updated_at),
+        "stops": [
+            {
+                "id": str(stop.id),
+                "sequenceNumber": stop.sequence_number,
+                "city": stop.city,
+                "country": stop.country,
+                "arrivalDate": iso_date(stop.arrival_date),
+                "departureDate": iso_date(stop.departure_date),
+                "nights": stop.nights,
+                "purpose": stop.purpose,
+                "notes": stop.notes,
+                "accommodations": [
+                    {
+                        "id": str(accommodation.id),
+                        "name": accommodation.name,
+                        "roomType": accommodation.room_type,
+                        "checkIn": iso_date(accommodation.check_in),
+                        "checkOut": iso_date(accommodation.check_out),
+                        "rooms": accommodation.rooms,
+                        "supplier": accommodation.supplier,
+                        "bookingStatus": accommodation.booking_status,
+                        "notes": accommodation.notes,
+                    }
+                    for accommodation in stop.accommodations.all()
+                ],
+                "experiences": [
+                    {
+                        "id": str(experience.id),
+                        "title": experience.title,
+                        "category": experience.category,
+                        "startAt": iso_datetime(experience.start_at),
+                        "supplier": experience.supplier,
+                        "status": experience.status,
+                        "notes": experience.notes,
+                    }
+                    for experience in stop.experiences.all()
+                ],
+            }
+            for stop in itinerary.stops.all()
+        ],
+        "transports": [
+            {
+                "id": str(transport.id),
+                "sequenceNumber": transport.sequence_number,
+                "mode": transport.mode,
+                "fromCity": transport.from_city,
+                "toCity": transport.to_city,
+                "departureAt": iso_datetime(transport.departure_at),
+                "arrivalAt": iso_datetime(transport.arrival_at),
+                "supplier": transport.supplier,
+                "bookingStatus": transport.booking_status,
+                "reference": transport.reference,
+                "notes": transport.notes,
+            }
+            for transport in itinerary.transports.all()
+        ],
     }
 
 
@@ -1137,6 +1218,7 @@ class CorporateTripRequestSerializer(serializers.Serializer):
     approvals = serializers.SerializerMethodField()
     timeline = serializers.SerializerMethodField()
     workflow = serializers.SerializerMethodField()
+    itineraryDraft = serializers.SerializerMethodField()
     internalSummary = serializers.SerializerMethodField()
 
     def _can_view_internal(self) -> bool:
@@ -1222,6 +1304,16 @@ class CorporateTripRequestSerializer(serializers.Serializer):
 
     def get_workflow(self, obj: TripRequest):
         return build_corporate_workflow(obj)
+
+    def get_itineraryDraft(self, obj: TripRequest):
+        itinerary = (
+            TripItinerary.objects
+            .filter(lead__ctm_request_reference=obj.reference_code)
+            .prefetch_related("stops__accommodations", "stops__experiences", "transports")
+            .order_by("-updated_at")
+            .first()
+        )
+        return serialize_itinerary_draft(itinerary)
 
     def get_internalSummary(self, obj: TripRequest) -> str:
         return obj.internal_notes or obj.client_notes or "Corporate travel request tracked in the DPM workflow."

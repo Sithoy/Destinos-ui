@@ -8,7 +8,7 @@ import { TripStatusBadge } from '../../components/corporate-portal/TripStatusBad
 import type { CorporateApprovalStage, CorporateDocumentStatus, CorporateDocumentType, CorporatePortalTheme, CorporateTripDocumentInput, CorporateTripMessageInput, CorporateTripRequest, CorporateWorkflowStage } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from './portalTheme';
 
-type WorkbenchTab = 'documents' | 'messages' | 'tasks';
+type WorkbenchTab = 'itinerary' | 'documents' | 'messages' | 'tasks';
 type ProcessingStageState = 'done' | 'active' | 'blocked' | 'pending';
 
 type ProcessingStage = {
@@ -70,6 +70,16 @@ function FieldError({ message }: { message?: string }) {
 function formatMoney(amount: number | null | undefined, currency = 'USD') {
   if (amount === null || amount === undefined) return 'Pending';
   return `${currency} ${amount.toLocaleString('en-US')}`;
+}
+
+function formatDraftDate(value?: string | null) {
+  if (!value) return 'Date pending';
+  return new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatDraftDateTime(value?: string | null) {
+  if (!value) return 'Time pending';
+  return new Date(value).toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 function stageClass(state: ProcessingStageState, theme: CorporatePortalTheme) {
@@ -367,7 +377,7 @@ export function CorporateRequestDetailPage({
   onReject: (tripId: string, stage: CorporateApprovalStage) => Promise<void>;
 }) {
   const styles = corporatePortalThemeStyles[theme];
-  const [activeTab, setActiveTab] = useState<WorkbenchTab>('documents');
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>('itinerary');
   const [documentTitle, setDocumentTitle] = useState('');
   const [documentType, setDocumentType] = useState<CorporateDocumentType>('passport');
   const [documentStatus, setDocumentStatus] = useState<CorporateDocumentStatus>('requested');
@@ -394,6 +404,12 @@ export function CorporateRequestDetailPage({
   const documents = trip.documents ?? [];
   const messages = trip.messages ?? [];
   const tasks = trip.tasks ?? [];
+  const itineraryDraft = trip.itineraryDraft ?? null;
+  const itineraryItemCount = itineraryDraft
+    ? itineraryDraft.stops.length
+      + itineraryDraft.transports.length
+      + itineraryDraft.stops.reduce((total, stop) => total + stop.accommodations.length + stop.experiences.length, 0)
+    : 0;
   const fallbackWorkflowStages = buildDecisionStages(trip);
   const canonicalWorkflowStages: CorporateWorkflowStage[] = trip.workflow?.stages ?? fallbackWorkflowStages.map(({ id, label, state, detail }) => ({
     id,
@@ -418,6 +434,7 @@ export function CorporateRequestDetailPage({
   const visibleWorkbenchError = (field: 'documentTitle' | 'messageBody', message: string) => (workbenchTouched[field] ? message : '');
   const workbenchErrorClass = (field: 'documentTitle' | 'messageBody', message: string) => (visibleWorkbenchError(field, message) ? 'border-rose-400/50 ring-1 ring-rose-400/25' : '');
   const tabItems: Array<{ id: WorkbenchTab; label: string; count: number; Icon: typeof FileText }> = [
+    { id: 'itinerary', label: 'Itinerary', count: itineraryItemCount, Icon: PlaneTakeoff },
     { id: 'documents', label: 'Documents', count: documents.length, Icon: FileText },
     { id: 'messages', label: 'Messages', count: messages.length, Icon: MessageSquare },
     { id: 'tasks', label: 'Tasks', count: tasks.length, Icon: ClipboardList },
@@ -778,6 +795,132 @@ export function CorporateRequestDetailPage({
           {workbenchError ? (
             <div className="mx-4 mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               {workbenchError}
+            </div>
+          ) : null}
+
+          {activeTab === 'itinerary' ? (
+            <div className="grid gap-4 p-4 xl:grid-cols-[1.25fr_0.75fr]">
+              {itineraryDraft ? (
+                <>
+                  <div className="grid gap-4">
+                    <div className={`rounded-xl border p-4 ${styles.surface}`}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">DPM itinerary draft</div>
+                          <h3 className="mt-2 text-lg font-semibold">{itineraryDraft.title}</h3>
+                          <p className={`mt-1 text-sm ${styles.muted}`}>
+                            {formatDraftDate(itineraryDraft.startDate)} - {formatDraftDate(itineraryDraft.endDate)}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs capitalize ${statusTone(itineraryDraft.status, theme)}`}>
+                          {labelize(itineraryDraft.status)}
+                        </span>
+                      </div>
+                      {itineraryDraft.notes ? <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{itineraryDraft.notes}</p> : null}
+                    </div>
+
+                    <div className={`overflow-hidden rounded-xl border ${styles.surface}`}>
+                      <div className={`grid grid-cols-[52px_minmax(150px,1fr)_110px_minmax(180px,1.1fr)] gap-3 border-b border-inherit px-4 py-3 text-xs uppercase tracking-[0.14em] ${styles.muted}`}>
+                        <div>Stop</div>
+                        <div>City</div>
+                        <div>Nights</div>
+                        <div>Stay</div>
+                      </div>
+                      {itineraryDraft.stops.length > 0 ? itineraryDraft.stops.map((stop) => {
+                        const firstStay = stop.accommodations[0];
+                        return (
+                          <div key={stop.id} className="grid grid-cols-[52px_minmax(150px,1fr)_110px_minmax(180px,1.1fr)] gap-3 border-b border-inherit px-4 py-3 text-sm last:border-b-0">
+                            <div className="font-semibold text-[#d9b46f]">{stop.sequenceNumber}</div>
+                            <div>
+                              <div className="font-semibold">{stop.city}{stop.country ? `, ${stop.country}` : ''}</div>
+                              <div className={`mt-1 text-xs ${styles.muted}`}>{formatDraftDate(stop.arrivalDate)} - {formatDraftDate(stop.departureDate)}</div>
+                              {stop.notes ? <div className={`mt-2 line-clamp-2 text-xs ${styles.soft}`}>{stop.notes}</div> : null}
+                            </div>
+                            <div>{stop.nights || 'Pending'}</div>
+                            <div>
+                              <div className="font-medium">{firstStay?.name || 'Accommodation pending'}</div>
+                              <div className={`mt-1 text-xs ${styles.muted}`}>
+                                {firstStay ? `${firstStay.roomType || 'Room pending'} - ${firstStay.rooms} room(s)` : 'DPM is still shaping the stay.'}
+                              </div>
+                              {firstStay ? (
+                                <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] capitalize ${statusTone(firstStay.bookingStatus, theme)}`}>
+                                  {labelize(firstStay.bookingStatus)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      }) : (
+                        <div className={`px-4 py-6 text-sm ${styles.muted}`}>DPM has not added city stops yet.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid content-start gap-4">
+                    <div className={`rounded-xl border p-4 ${styles.surface}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-semibold">Movement plan</div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{itineraryDraft.transports.length} segments</span>
+                      </div>
+                      <div className="mt-4 grid gap-3">
+                        {itineraryDraft.transports.length > 0 ? itineraryDraft.transports.map((segment) => (
+                          <div key={segment.id} className={`rounded-lg border p-3 ${styles.panelSoft}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="font-medium capitalize">{segment.mode} - {segment.fromCity} to {segment.toCity}</div>
+                                <div className={`mt-1 text-xs ${styles.muted}`}>{formatDraftDateTime(segment.departureAt)} - {formatDraftDateTime(segment.arrivalAt)}</div>
+                              </div>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] capitalize ${statusTone(segment.bookingStatus, theme)}`}>{labelize(segment.bookingStatus)}</span>
+                            </div>
+                            <div className={`mt-2 text-xs ${styles.muted}`}>{segment.supplier || 'Supplier pending'}{segment.reference ? ` - ${segment.reference}` : ''}</div>
+                          </div>
+                        )) : (
+                          <div className={`rounded-lg border p-3 text-sm ${styles.panelSoft} ${styles.muted}`}>Flights, transfers, or other movement details are still being designed.</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className={`rounded-xl border p-4 ${styles.surface}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-semibold">Meetings / activities</div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
+                          {itineraryDraft.stops.reduce((total, stop) => total + stop.experiences.length, 0)} planned
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-3">
+                        {itineraryDraft.stops.flatMap((stop) => stop.experiences.map((experience) => ({ ...experience, city: stop.city }))).length > 0 ? (
+                          itineraryDraft.stops.flatMap((stop) => stop.experiences.map((experience) => ({ ...experience, city: stop.city }))).map((experience) => (
+                            <div key={experience.id} className={`rounded-lg border p-3 ${styles.panelSoft}`}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="font-medium">{experience.title}</div>
+                                  <div className={`mt-1 text-xs ${styles.muted}`}>{experience.city} - {experience.category || 'Activity'}</div>
+                                </div>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] capitalize ${statusTone(experience.status, theme)}`}>{labelize(experience.status)}</span>
+                              </div>
+                              {experience.notes ? <div className={`mt-2 text-xs ${styles.soft}`}>{experience.notes}</div> : null}
+                            </div>
+                          ))
+                        ) : (
+                          <div className={`rounded-lg border p-3 text-sm ${styles.panelSoft} ${styles.muted}`}>Meetings and activities will appear here if they affect the itinerary scope.</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className={`rounded-xl border p-5 text-sm xl:col-span-2 ${styles.surface}`}>
+                  <div className="flex items-start gap-3">
+                    <PlaneTakeoff className="mt-0.5 h-5 w-5 text-[#d9b46f]" />
+                    <div>
+                      <div className="font-semibold">Itinerary draft not published yet</div>
+                      <p className={`mt-2 leading-6 ${styles.muted}`}>
+                        DPM will show the route, stays, movements, and meetings here once the Trip Design workspace has enough information.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : null}
 

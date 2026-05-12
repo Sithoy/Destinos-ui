@@ -120,6 +120,68 @@ export type CorporateWorkflow = {
   stages: CorporateWorkflowStage[];
 };
 
+export type CorporateItineraryAccommodation = {
+  id: string;
+  name: string;
+  roomType: string;
+  checkIn?: string | null;
+  checkOut?: string | null;
+  rooms: number;
+  supplier: string;
+  bookingStatus: 'draft' | 'quoted' | 'held' | 'confirmed' | 'cancelled';
+  notes: string;
+};
+
+export type CorporateItineraryExperience = {
+  id: string;
+  title: string;
+  category: string;
+  startAt?: string | null;
+  supplier: string;
+  status: 'draft' | 'quoted' | 'held' | 'confirmed' | 'cancelled';
+  notes: string;
+};
+
+export type CorporateItineraryStop = {
+  id: string;
+  sequenceNumber: number;
+  city: string;
+  country: string;
+  arrivalDate?: string | null;
+  departureDate?: string | null;
+  nights: number;
+  purpose: 'leisure' | 'business' | 'transit' | 'event' | 'extension';
+  notes: string;
+  accommodations: CorporateItineraryAccommodation[];
+  experiences: CorporateItineraryExperience[];
+};
+
+export type CorporateItineraryTransport = {
+  id: string;
+  sequenceNumber: number;
+  mode: 'flight' | 'train' | 'car' | 'ferry' | 'transfer' | 'other';
+  fromCity: string;
+  toCity: string;
+  departureAt?: string | null;
+  arrivalAt?: string | null;
+  supplier: string;
+  bookingStatus: 'draft' | 'quoted' | 'held' | 'confirmed' | 'cancelled';
+  reference: string;
+  notes: string;
+};
+
+export type CorporateItineraryDraft = {
+  id: string;
+  title: string;
+  status: 'draft' | 'proposed' | 'confirmed' | 'in_travel' | 'completed';
+  startDate?: string | null;
+  endDate?: string | null;
+  notes: string;
+  updatedAt: string;
+  stops: CorporateItineraryStop[];
+  transports: CorporateItineraryTransport[];
+};
+
 export type CorporateTripRequest = {
   id: string;
   requestedBy: string;
@@ -146,6 +208,7 @@ export type CorporateTripRequest = {
   approvals: CorporateApprovalState[];
   timeline: CorporateTimelineEvent[];
   workflow?: CorporateWorkflow;
+  itineraryDraft?: CorporateItineraryDraft | null;
   internalSummary: string;
 };
 
