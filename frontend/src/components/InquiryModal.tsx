@@ -74,9 +74,11 @@ const formProfiles: Record<
 
 export function InquiryModal({
   kind,
+  initialDestination = '',
   onClose,
 }: {
   kind: InquiryKind | null;
+  initialDestination?: string;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -200,7 +202,7 @@ export function InquiryModal({
           >
             <div className="flex items-start justify-between gap-6">
               <div>
-                <Badge className="rounded-full bg-[#d4af37]/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[#7a5a08]">
+                <Badge className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] ${kind === 'classic' ? 'bg-orange-100 text-orange-800' : 'bg-[#d4af37]/15 text-[#7a5a08]'}`}>
                   {label}
                 </Badge>
                 <h2 id="inquiry-title" className="mt-4 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl md:text-4xl">
@@ -247,7 +249,7 @@ export function InquiryModal({
                 </label>
                 <label className="text-sm font-medium text-slate-700">
                   {t(formProfile.destinationLabelKey)}
-                  <input name="destination" className={inputClass} placeholder={t('inquiry.placeholders.destination')} required />
+                  <input name="destination" defaultValue={initialDestination} className={inputClass} placeholder={t('inquiry.placeholders.destination')} required />
                 </label>
                 <label className="text-sm font-medium text-slate-700">
                   {t(formProfile.travelWindowLabelKey)}
@@ -297,7 +299,7 @@ export function InquiryModal({
                 >
                   {t('inquiry.cancel')}
                 </Button>
-                <Button type="submit" className="w-full rounded-full bg-[#d4af37] px-7 text-[#241f1b] hover:bg-[#e0bc4e] sm:w-auto" disabled={isSending}>
+                <Button type="submit" className={`w-full rounded-full px-7 sm:w-auto ${kind === 'classic' ? 'bg-[#f47c48] text-[#35180f] hover:bg-[#ff9765]' : 'bg-[#d4af37] text-[#241f1b] hover:bg-[#e0bc4e]'}`} disabled={isSending}>
                   {isSending ? t('inquiry.submitSending') : t('inquiry.submit')}
                 </Button>
               </div>

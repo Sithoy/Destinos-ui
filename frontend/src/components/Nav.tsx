@@ -36,16 +36,45 @@ export function Nav({
   page,
   goHome,
   openPrestige,
+  openInquiry,
   setPrestigePage,
 }: {
   page: Page;
   goHome: () => void;
   openPrestige: () => void;
+  openInquiry: () => void;
   setPrestigePage: (page: PrestigePage) => void;
 }) {
   const { t } = useTranslation();
   const isPrestige = page === 'luxury' || page === 'corporate';
   const isCrm = page === 'crm';
+
+  if (page === 'home') {
+    return (
+      <header className="sticky top-0 z-50 border-b border-[#eadcc8] bg-[#fffaf2] text-[#163e52]">
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-3 focus:text-slate-950">{t('landing.skip')}</a>
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
+          <Link to="/" aria-label="Destinos pelo Mundo" className="min-w-0">
+            <BrandLockup theme="dark" src={pageMeta.home.logo} alt={t('brand.classicAlt')} compact gapClass="gap-3" logoSize="h-9 sm:h-10" logoArtScale="scale-[1.45]" taglineClassName="hidden" />
+          </Link>
+          <nav aria-label={t('landing.navLabel')} className="hidden items-center gap-7 text-sm text-[#365766] lg:flex">
+            <a href="#services" className="py-2 hover:text-[#c2410c]">{t('landing.leisure')}</a>
+            <Link to="/prestige/luxury" className="py-2 hover:text-[#c2410c]">{t('landing.luxury')}</Link>
+            <Link to="/prestige/corporate" className="py-2 hover:text-[#c2410c]">{t('landing.corporate')}</Link>
+          </nav>
+          <div className="flex shrink-0 items-center gap-4">
+            <LanguageToggle compact light />
+            <button type="button" onClick={openInquiry} className="hidden min-h-11 rounded-full bg-[#f47c48] px-5 text-sm font-semibold text-[#35180f] hover:bg-[#ff9765] md:inline-flex md:items-center">{t('landing.plan')}</button>
+          </div>
+        </div>
+        <nav aria-label={t('landing.navLabel')} className="flex items-center justify-center gap-8 border-t border-[#eadcc8] px-4 text-sm text-[#365766] lg:hidden">
+          <a href="#services" className="py-3 hover:text-[#c2410c]">{t('landing.leisure')}</a>
+          <Link to="/prestige/luxury" className="py-3 hover:text-[#c2410c]">{t('landing.luxury')}</Link>
+          <Link to="/prestige/corporate" className="py-3 hover:text-[#c2410c]">{t('landing.corporate')}</Link>
+        </nav>
+      </header>
+    );
+  }
 
   return (
     <div className="sticky top-0 z-50 border-b border-white/10 bg-[#07111d]/95 backdrop-blur-xl">

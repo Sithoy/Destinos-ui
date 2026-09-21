@@ -4,3 +4,11 @@
   outline: 2px solid #d4af37;
   outline-offset: 4px;
 }
+
+.classic-theme :where(a, button, input, select, textarea):focus-visible {
+  outline-color: #f97316;
+}
+
+.classic-theme :where(input, select, textarea):focus {
+  border-color: #c2410c;
+}

@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { supportedLanguages, type SupportedLanguage } from '../i18n';
 
-export function LanguageToggle({ compact = false }: { compact?: boolean }) {
+export function LanguageToggle({ compact = false, light = false }: { compact?: boolean; light?: boolean }) {
   const { i18n, t } = useTranslation();
   const currentLanguage = i18n.resolvedLanguage === 'pt' ? 'pt' : 'en';
 
@@ -11,7 +11,7 @@ export function LanguageToggle({ compact = false }: { compact?: boolean }) {
 
   return (
     <div
-      className={`inline-flex shrink-0 items-center rounded-full border border-white/10 bg-white/5 p-1 ${compact ? 'gap-0.5' : 'gap-1'}`}
+      className={`inline-flex shrink-0 items-center rounded-full border p-1 ${light ? 'border-[#e7d8c3] bg-[#f4eadc]' : 'border-white/10 bg-white/5'} ${compact ? 'gap-0.5' : 'gap-1'}`}
       aria-label={t('language.label')}
     >
       {supportedLanguages.map((language) => {
@@ -24,7 +24,9 @@ export function LanguageToggle({ compact = false }: { compact?: boolean }) {
             type="button"
             onClick={() => changeLanguage(language)}
             className={`rounded-full py-1.5 text-xs font-semibold transition ${compact ? 'px-2 sm:px-3' : 'px-3'} ${
-              isActive ? 'bg-white text-slate-950' : 'text-white/70 hover:bg-white/10 hover:text-white'
+              light
+                ? isActive ? 'bg-white text-[#9a3412] shadow-sm' : 'text-[#365766] hover:bg-white/70'
+                : isActive ? 'bg-white text-slate-950' : 'text-white/70 hover:bg-white/10 hover:text-white'
             }`}
             aria-pressed={isActive}
           >

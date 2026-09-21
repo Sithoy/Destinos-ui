@@ -1,300 +1,134 @@
-import { ArrowRight, Headphones } from 'lucide-react';
+import { ArrowDown, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import {
-  champagneImage,
-  classicDestinations,
-  classicLogo,
-  heroImage,
-  hotelImage,
-  luxuryLogo,
-  maldivesImage,
-  monacoImage,
-  retreatImage,
-  serviceIcons,
-  whyChooseUs,
-} from '../data/travel';
+import { classicDestinations, maldivesImage, champagneImage } from '../data/travel';
 import type { InquiryKind } from '../types';
-import { Button, Card, PrestigeIdentity, SectionTitle, SmartImage } from '../components/ui';
-export function ClassicHome({
-  openPrestige,
-  openInquiry,
-}: {
-  openPrestige: () => void;
-  openInquiry: (kind: InquiryKind) => void;
-}) {
+import { Button, SmartImage } from '../components/ui';
+
+const escapes = [
+  { key: 'island', image: maldivesImage },
+  { key: 'romantic', image: champagneImage },
+  { key: 'family', image: '/images/dpm-family-memories.webp' },
+] as const;
+const focusLink = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#f97316]';
+
+export function ClassicHome({ openInquiry }: { openInquiry: (kind: InquiryKind, destination?: string) => void }) {
   const { t } = useTranslation();
-
   return (
-    <div className="bg-white text-slate-900">
-      <section className="relative min-h-[calc(100svh-84px)] overflow-hidden bg-[#06101d] md:min-h-[700px] xl:min-h-[720px]">
-        <SmartImage
-          priority
-          src={heroImage}
-          alt={t('home.hero.imageAlt')}
-          className="absolute inset-0 h-full w-full object-cover"
-          fallbackClassName="opacity-100"
-        />
-        <div className="absolute inset-0 bg-slate-950/42 sm:bg-slate-950/28" />
-        <div className="absolute inset-0 bg-[linear-gradient(105deg,rgba(4,15,31,0.92)_0%,rgba(4,15,31,0.68)_38%,rgba(4,15,31,0.24)_72%,rgba(4,15,31,0.12)_100%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_26%)]" />
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#03101f]/35 to-transparent" />
-
-        <div className="relative mx-auto grid min-h-[calc(100svh-84px)] max-w-7xl items-start gap-10 px-4 pb-8 pt-10 sm:pb-10 sm:pt-12 md:min-h-[700px] md:px-6 md:pb-12 md:pt-14 xl:min-h-[720px] xl:grid-cols-[1.2fr_0.8fr] xl:items-center xl:py-20">
-          <div className="min-w-0 max-w-4xl">
-            <div className="mb-8 sm:mb-10">
-              <PrestigeIdentity
-                compact
-                src={classicLogo}
-                alt={t('brand.classicAlt')}
-                descriptor={t('brand.turismo')}
-                ribbonLabel={null}
-                theme="classic"
-              />
-            </div>
-            <h1 className="max-w-[21rem] text-3xl font-semibold leading-[1.04] tracking-tight text-white sm:max-w-3xl sm:text-5xl md:text-6xl 2xl:text-7xl">
-              {t('home.hero.title')}
-            </h1>
-            <p className="mt-5 max-w-[21rem] text-base leading-7 text-white/82 sm:max-w-2xl sm:text-lg md:mt-6 md:text-xl md:leading-8">
-              {t('home.hero.text')}
-            </p>
-            <div className="mt-8 grid max-w-[22rem] gap-3 sm:mt-9 sm:flex sm:max-w-none sm:flex-wrap">
-              <Button
-                size="lg"
-                className="w-full rounded-full bg-[#c2410c] px-7 text-white hover:bg-[#9a3412] sm:w-auto"
-                onClick={() => openInquiry('classic')}
-              >
-                {t('home.hero.primaryCta')}
-              </Button>
-              <Button
-                size="lg"
-                variant="secondary"
-                className="w-full rounded-full border border-white/15 bg-white/10 px-7 text-white backdrop-blur-sm hover:bg-white/15 sm:w-auto"
-                onClick={openPrestige}
-              >
-                {t('nav.enterPrestige')} <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
+    <main id="main-content" className="bg-[#fff9f2] text-[#102337]">
+      <section aria-labelledby="home-title" className="relative isolate flex min-h-[660px] flex-col justify-end overflow-hidden bg-[#164b59] text-white sm:min-h-[740px] lg:min-h-[min(820px,90svh)]">
+        <SmartImage priority src="/images/dpm-sunset-hero.webp" alt={t('landing.collectionHeroAlt')} className="absolute inset-0 -z-20 h-full w-full object-cover" />
+        <div className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(8,31,39,0.65),rgba(8,31,39,0.25)_65%,rgba(8,31,39,0.08))]" />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-t from-[#352018]/65 via-transparent to-transparent" />
+        <div className="mx-auto w-full max-w-7xl px-5 pb-12 pt-20 sm:px-8 sm:pb-16 lg:pb-20">
+          <p className="text-xs font-medium uppercase tracking-[0.24em] text-white/90">{t('landing.collectionEyebrow')}</p>
+          <h1 id="home-title" className="mt-6 max-w-3xl font-serif text-[clamp(2.4rem,6.1vw,5.5rem)] font-normal leading-[0.98] tracking-[-0.035em]">
+            {t('landing.collectionTitle')} <span className="mt-2 block italic">{t('landing.collectionAccent')}</span>
+          </h1>
+          <p className="mt-7 max-w-md text-base leading-7 text-white/90 sm:text-lg sm:leading-8">{t('landing.collectionIntro')}</p>
+          <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:gap-7">
+            <Button size="lg" onClick={() => openInquiry('classic')} className="gap-3 rounded-full bg-[#f47c48] px-7 font-semibold text-[#35180f] hover:bg-[#ff9765]">
+              {t('landing.plan')}<ArrowRight aria-hidden="true" className="h-4 w-4" />
+            </Button>
+            <a href="#services" className={`inline-flex min-h-12 items-center justify-center gap-2 text-sm font-medium text-white underline decoration-white/50 underline-offset-8 hover:decoration-white ${focusLink}`}>
+              {t('landing.collectionExplore')}<ArrowDown aria-hidden="true" className="h-4 w-4" />
+            </a>
           </div>
+          <p className="mt-10 text-xs tracking-wide text-white/80">{t('landing.holidayReassurance')}</p>
+        </div>
+      </section>
 
-          <div className="flex justify-start xl:justify-end">
-            <div className="w-full max-w-[380px] rounded-[30px] border border-white/12 bg-white/10 p-6 text-white shadow-2xl backdrop-blur-md">
-              <div className="text-xs uppercase tracking-[0.35em] text-white/60">{t('home.hero.cardEyebrow')}</div>
-              <div className="mt-3 text-2xl font-semibold leading-tight">{t('home.hero.cardTitle')}</div>
-              <div className="mt-6 grid gap-3 text-sm text-white/78">
-                <div className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">{t('home.hero.cardItems.flights')}</div>
-                <div className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">{t('home.hero.cardItems.luxury')}</div>
-                <div className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">{t('home.hero.cardItems.corporate')}</div>
-              </div>
-              <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-white/55">{t('home.hero.supportDesk.eyebrow')}</div>
-                    <div className="mt-2 text-sm leading-6 text-white/78">{t('home.hero.supportDesk.text')}</div>
+      <section id="services" aria-labelledby="collections-title" className="scroll-mt-28 border-b border-[#efdccc] bg-[#fff3e7]">
+        <div className="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-20">
+          <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+            <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9a3412]">{t('landing.collectionLabel')}</p>
+              <h2 id="collections-title" className="mt-4 max-w-xl font-serif text-4xl leading-tight sm:text-5xl">{t('landing.collectionHeading')}</h2>
+            </div>
+            <p className="max-w-sm text-sm leading-7 text-slate-600">{t('landing.collectionText')}</p>
+          </div>
+          <div className="mt-9 grid gap-6 md:grid-cols-3">
+            {([
+              { key: 'classic', image: '/images/dpm-sunset-hero.webp', href: '#holiday-inspiration' },
+              { key: 'luxury', image: '/images/dpm-luxury-terrace.webp', href: '/prestige/luxury' },
+              { key: 'corporate', image: '/images/dpm-corporate-lounge.webp', href: '/prestige/corporate' },
+            ] as const).map(({ key, image, href }) => (
+              <article key={key} className="group">
+                <div className="relative aspect-[4/5] overflow-hidden bg-[#254954]">
+                  <SmartImage src={image} alt={t(`landing.collections.${key}.alt`)} className="h-full w-full object-cover transition duration-700 motion-safe:group-hover:scale-[1.03]" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-transparent" />
+                  <div className="absolute inset-x-0 bottom-0 p-6 text-white sm:p-7">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em]">{t(`landing.collections.${key}.brand`)}</p>
+                    <h3 className="mt-3 font-serif text-3xl">{t(`landing.collections.${key}.title`)}</h3>
                   </div>
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-white">
-                    <Headphones className="h-4 w-4" />
-                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => openInquiry('classic')}
-                  className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#07111d] shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition hover:bg-[#f8fafc] hover:shadow-[0_18px_42px_rgba(0,0,0,0.28)]"
-                >
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#d4af37] text-[#241f1b]">
-                    <Headphones className="h-4 w-4" />
-                  </span>
-                  <span>{t('home.contact.cta')}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:py-20 md:px-6 md:py-24">
-        <SectionTitle
-          eyebrow={t('home.destinations.eyebrow')}
-          title={t('home.destinations.title')}
-          text={t('home.destinations.text')}
-        />
-        <div className="mt-10 grid gap-5 sm:mt-12 md:grid-cols-2 md:gap-6 xl:grid-cols-4">
-          {classicDestinations.map((item) => (
-            <Card key={item.nameKey} className="group overflow-hidden rounded-[28px] shadow-[0_20px_60px_rgba(2,8,23,0.08)]">
-              <div className="relative h-[320px] overflow-hidden bg-slate-200 sm:h-[380px] lg:h-[420px]">
-                <SmartImage src={item.image} alt={t(item.nameKey)} className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.04]" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/18 to-transparent" />
-                <div className="absolute bottom-0 p-6 text-white">
-                  <div className="text-sm text-white/72">{t(item.tagKey)}</div>
-                  <div className="mt-2 text-2xl font-semibold">{t(item.nameKey)}</div>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 py-8 md:px-6 md:py-12">
-        <div className="grid gap-10 md:grid-cols-[0.92fr_1.08fr] md:items-center">
-          <div>
-            <SectionTitle
-              eyebrow={t('home.offer.eyebrow')}
-              title={t('home.offer.title')}
-              text={t('home.offer.text')}
-            />
-            <div className="mt-8 grid gap-4 sm:grid-cols-2">
-              {serviceIcons.map(([labelKey, Icon]) => (
-                <div key={labelKey} className="flex items-center gap-4 rounded-[22px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#1e88e5]/10 text-[#1e88e5]">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div className="font-medium text-slate-900">{t(labelKey)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:gap-6 md:grid-cols-[0.95fr_1.05fr]">
-            <div className="overflow-hidden rounded-[30px] shadow-[0_20px_60px_rgba(2,8,23,0.08)] bg-slate-200">
-              <SmartImage src={hotelImage} alt={t('home.offer.hotelAlt')} className="h-full min-h-[240px] w-full object-cover sm:min-h-[260px]" />
-            </div>
-            <div className="grid gap-6">
-              <div className="overflow-hidden rounded-[30px] shadow-[0_20px_60px_rgba(2,8,23,0.08)] bg-slate-200">
-                <SmartImage src={maldivesImage} alt={t('home.offer.maldivesAlt')} className="h-[180px] w-full object-cover sm:h-[190px]" />
-              </div>
-              <div className="overflow-hidden rounded-[30px] shadow-[0_20px_60px_rgba(2,8,23,0.08)] bg-slate-200">
-                <SmartImage src={champagneImage} alt={t('home.offer.champagneAlt')} className="h-[180px] w-full object-cover sm:h-[190px]" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-10 bg-[#071428] text-white">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:py-20 md:grid-cols-[1.05fr_0.95fr] md:items-center md:px-6">
-          <div className="order-2 md:order-1">
-            <PrestigeIdentity
-              src={luxuryLogo}
-              alt={t('brand.prestigeAlt')}
-              descriptor={t('brand.corporateLuxuryTravel')}
-              compact
-              className="mb-8"
-            />
-            <div className="text-sm uppercase tracking-[0.3em] text-white/60">{t('home.prestige.eyebrow')}</div>
-            <h3 className="mt-3 max-w-2xl text-3xl font-semibold leading-tight sm:text-4xl md:text-5xl">
-              {t('home.prestige.title')}
-            </h3>
-            <p className="mt-5 max-w-xl text-base leading-7 text-white/72 sm:text-lg sm:leading-8">
-              {t('home.prestige.text')}
-            </p>
-            <div className="mt-8">
-              <Button onClick={openPrestige} className="w-full rounded-full bg-[#d4af37] px-7 text-[#241f1b] hover:bg-[#e0bc4e] sm:w-auto">
-                {t('nav.enterPrestige')} <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          <div className="order-1 overflow-hidden rounded-[32px] border border-white/10 shadow-2xl md:order-2 bg-slate-700">
-            <div className="relative min-h-[280px] sm:min-h-[360px] lg:min-h-[420px]">
-              <SmartImage src={monacoImage} alt={t('home.prestige.imageAlt')} className="absolute inset-0 h-full w-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:py-20 md:px-6 md:py-24">
-        <SectionTitle
-          eyebrow={t('home.signature.eyebrow')}
-          title={t('home.signature.title')}
-          text={t('home.signature.text')}
-        />
-        <div className="mt-10 grid gap-5 sm:mt-12 sm:gap-6 lg:grid-cols-[1.12fr_0.88fr]">
-          <div className="overflow-hidden rounded-[32px] shadow-[0_20px_60px_rgba(2,8,23,0.08)] bg-slate-200">
-            <div className="relative h-[380px] sm:h-[460px] lg:h-[560px]">
-              <SmartImage src={retreatImage} alt={t('home.signature.retreatAlt')} className="h-full w-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent" />
-              <div className="absolute bottom-0 p-6 text-white sm:p-8 md:p-10">
-                <div className="text-xs uppercase tracking-[0.35em] text-white/60">{t('home.signature.retreatEyebrow')}</div>
-                <div className="mt-3 text-2xl font-semibold sm:text-3xl md:text-4xl">{t('home.signature.retreatTitle')}</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-6">
-            <div className="overflow-hidden rounded-[32px] shadow-[0_20px_60px_rgba(2,8,23,0.08)] bg-slate-200">
-              <div className="relative h-[240px] sm:h-[267px]">
-                <SmartImage src={champagneImage} alt={t('home.signature.celebrationAlt')} className="h-full w-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
-                <div className="absolute bottom-0 p-6 text-white sm:p-7">
-                  <div className="text-xs uppercase tracking-[0.35em] text-white/60">{t('home.signature.celebrationEyebrow')}</div>
-                  <div className="mt-2 text-xl font-semibold sm:text-2xl">{t('home.signature.celebrationTitle')}</div>
-                </div>
-              </div>
-            </div>
-            <div className="overflow-hidden rounded-[32px] shadow-[0_20px_60px_rgba(2,8,23,0.08)] bg-slate-200">
-              <div className="relative h-[240px] sm:h-[267px]">
-                <SmartImage src={hotelImage} alt={t('home.signature.stayAlt')} className="h-full w-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
-                <div className="absolute bottom-0 p-6 text-white sm:p-7">
-                  <div className="text-xs uppercase tracking-[0.35em] text-white/60">{t('home.signature.stayEyebrow')}</div>
-                  <div className="mt-2 text-xl font-semibold sm:text-2xl">{t('home.signature.stayTitle')}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-slate-50">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:py-20 md:grid-cols-[0.95fr_1.05fr] md:px-6 md:py-24">
-          <div>
-            <SectionTitle
-              eyebrow={t('home.why.eyebrow')}
-              title={t('home.why.title')}
-              text={t('home.why.text')}
-            />
-          </div>
-          <div className="grid gap-5 sm:grid-cols-2">
-            {whyChooseUs.map(([labelKey, Icon]) => (
-              <div key={labelKey} className="rounded-[24px] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#1e88e5]/10 text-[#1e88e5]">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="mt-4 text-lg font-medium text-slate-900">{t(labelKey)}</div>
-              </div>
+                <p className="mt-4 text-sm leading-7 text-slate-600">{t(`landing.collections.${key}.text`)}</p>
+                {key === 'classic' ? <a href={href} className={`mt-2 inline-flex min-h-11 items-center gap-3 text-sm font-semibold text-[#9a3412] ${focusLink}`}>{t(`landing.collections.${key}.cta`)}<ArrowRight aria-hidden="true" className="h-4 w-4" /></a>
+                  : <Link to={href} className={`mt-2 inline-flex min-h-11 items-center gap-3 text-sm font-semibold text-[#9a3412] ${focusLink}`}>{t(`landing.collections.${key}.cta`)}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>}
+              </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:py-20 md:px-6 md:py-24">
-        <div className="relative overflow-hidden rounded-[26px] bg-[#0f172a] px-5 py-12 text-white sm:rounded-[34px] sm:px-8 sm:py-14 md:px-12 md:py-16">
-          <SmartImage src={maldivesImage} alt={t('home.contact.imageAlt')} className="absolute inset-0 h-full w-full object-cover opacity-20" />
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.92)_0%,rgba(15,23,42,0.84)_50%,rgba(15,23,42,0.72)_100%)]" />
-          <div className="relative">
-            <SectionTitle
-              eyebrow={t('home.contact.eyebrow')}
-              title={t('home.contact.title')}
-              text={t('home.contact.text')}
-              light
-            />
-            <div className="mt-8 grid gap-3 sm:flex sm:flex-wrap">
-              <Button
-                className="w-full rounded-full bg-[#d4af37] px-7 text-[#241f1b] hover:bg-[#e0bc4e] sm:w-auto"
-                onClick={() => openInquiry('classic')}
-              >
-                {t('home.contact.cta')}
-              </Button>
-              <a
-                href="mailto:contact@dpmundo.com"
-                className="inline-flex min-h-12 w-full items-center justify-center rounded-full border border-white/15 px-7 text-center text-white transition hover:bg-white/10 sm:w-auto"
-              >
-                contact@dpmundo.com
-              </a>
+      <section id="holiday-inspiration" aria-labelledby="services-title" className="mx-auto max-w-7xl scroll-mt-32 px-5 py-16 sm:px-8 sm:py-24">
+        <div className="mx-auto max-w-2xl text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9a3412]">{t('landing.escapeEyebrow')}</p>
+          <h2 id="services-title" className="mt-4 font-serif text-4xl font-normal tracking-tight sm:text-5xl">{t('landing.escapeTitle')}</h2>
+          <p className="mx-auto mt-5 max-w-lg leading-7 text-slate-600">{t('landing.escapeIntro')}</p>
+        </div>
+        <div className="mt-12 grid gap-8 md:grid-cols-[1.15fr_0.85fr_1fr] md:gap-6">
+          {escapes.map(({ key, image }, index) => (
+            <article key={key} className={index === 1 ? 'md:pt-14' : ''}>
+              <div className={`overflow-hidden bg-[#d4e3df] ${index === 0 ? 'aspect-[4/5]' : 'aspect-[4/5] md:aspect-[4/5.5]'}`}>
+                <SmartImage src={image} alt={t(`landing.escapes.${key}.alt`)} className="h-full w-full object-cover" />
+              </div>
+              <h3 className="mt-5 font-serif text-3xl">{t(`landing.escapes.${key}.title`)}</h3>
+              <p className="mt-3 text-sm leading-7 text-slate-600">{t(`landing.escapes.${key}.text`)}</p>
+              <button type="button" onClick={() => openInquiry('classic', t(`landing.escapes.${key}.interest`))} className={`mt-3 inline-flex min-h-11 items-center gap-3 text-sm font-medium text-[#9a3412] ${focusLink}`}>
+                {t('landing.makeItMine')}<ArrowRight aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="destinations" aria-labelledby="destinations-title" className="border-y border-[#e5e1d7] bg-white">
+        <div className="mx-auto max-w-7xl scroll-mt-36 px-5 py-16 sm:px-8 sm:py-24">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+            <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9a3412]">{t('landing.destinationsEyebrow')}</p>
+              <h2 id="destinations-title" className="mt-3 font-serif text-4xl font-normal tracking-tight sm:text-5xl">{t('landing.destinationsTitle')}</h2>
             </div>
+            <p className="max-w-sm text-sm leading-7 text-slate-600">{t('landing.destinationsIntro')}</p>
+          </div>
+          <div className="mt-9 grid gap-6 md:grid-cols-3">
+            {classicDestinations.slice(0, 3).map((item) => (
+              <article key={item.nameKey} className="group">
+                <div className="aspect-[4/3] overflow-hidden bg-slate-200">
+                  <SmartImage src={item.image} alt={t(item.nameKey)} className="h-full w-full object-cover transition duration-500 motion-safe:group-hover:scale-105" />
+                </div>
+                <h3 className="mt-5 font-serif text-3xl">{t(item.nameKey)}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{t(item.tagKey)}</p>
+                <button type="button" onClick={() => openInquiry('classic', t(item.nameKey))} className={`mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#9a3412] ${focusLink}`}>
+                  {t('landing.destinationCta', { destination: t(item.nameKey) })}<ArrowRight aria-hidden="true" className="h-4 w-4" />
+                </button>
+              </article>
+            ))}
           </div>
         </div>
       </section>
-    </div>
+
+      <section aria-labelledby="contact-title" className="border-t border-[#e7dfd1] bg-[#ffdfc8] text-[#163e52]">
+        <div className="mx-auto grid max-w-7xl gap-8 px-5 py-14 sm:px-8 sm:py-20 md:grid-cols-[1.3fr_1fr] md:items-center">
+          <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#a63c12]">{t('landing.contactEyebrow')}</p>
+            <h2 id="contact-title" className="mt-4 font-serif text-4xl font-normal tracking-tight sm:text-5xl">{t('landing.contactTitle')}</h2>
+            <p className="mt-4 max-w-xl leading-7 text-[#365766]">{t('landing.contactText')}</p>
+          </div>
+          <div className="flex flex-col items-start gap-5 md:items-end">
+            <Button size="lg" onClick={() => openInquiry('classic')} className="w-full gap-3 rounded-full bg-[#f47c48] px-7 font-semibold text-[#35180f] hover:bg-[#ff9765] sm:w-auto">{t('landing.plan')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Button>
+            <a href="mailto:contact@dpmundo.com" className={`text-sm text-[#365766] underline underline-offset-4 hover:text-[#9a3412] ${focusLink}`}>contact@dpmundo.com</a>
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }

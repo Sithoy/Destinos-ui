@@ -28,6 +28,7 @@ export default function DestinosPeloMundoUIConcept() {
   const [showPrestigeGate, setShowPrestigeGate] = useState(false);
   const [isGatewayNavigating, setIsGatewayNavigating] = useState(false);
   const [inquiryKind, setInquiryKind] = useState<InquiryKind | null>(null);
+  const [inquiryDestination, setInquiryDestination] = useState('');
   const [crmSession, setCrmSession] = useState(() => readCrmSession());
   const whatsappNumber = '+258 87 963 2250';
   const whatsappHref = `https://wa.me/258879632250`;
@@ -122,7 +123,8 @@ export default function DestinosPeloMundoUIConcept() {
     setShowPrestigeGate(true);
   };
 
-  const openInquiry = (kind: InquiryKind) => {
+  const openInquiry = (kind: InquiryKind, destination = '') => {
+    setInquiryDestination(destination);
     setInquiryKind(kind);
   };
 
@@ -147,16 +149,17 @@ export default function DestinosPeloMundoUIConcept() {
     ) : page === 'corporate' ? (
       <CorporatePage />
     ) : (
-      <ClassicHome openPrestige={openPrestige} openInquiry={openInquiry} />
+      <ClassicHome openInquiry={openInquiry} />
     );
 
   return (
-    <div className={`min-h-screen ${pageMeta[page].bg}`}>
+    <div className={`min-h-screen ${pageMeta[page].bg} ${page === 'home' ? 'classic-theme' : ''}`}>
       {page !== 'crm' && page !== 'corporatePortal' ? (
         <Nav
           page={page}
           goHome={goHome}
           openPrestige={openPrestige}
+          openInquiry={() => openInquiry('classic')}
           setPrestigePage={(nextPage) => {
             navigate(pageRoutes[nextPage]);
             setIsGatewayNavigating(false);
@@ -191,10 +194,10 @@ export default function DestinosPeloMundoUIConcept() {
         }}
       />
 
-      <InquiryModal kind={inquiryKind} onClose={() => setInquiryKind(null)} />
+      <InquiryModal kind={inquiryKind} initialDestination={inquiryDestination} onClose={() => setInquiryKind(null)} />
 
       {page !== 'crm' && page !== 'corporatePortal' ? (
-      <footer className={`border-t ${page === 'home' ? 'border-slate-200 bg-white text-slate-700' : 'border-white/10 bg-black/20 text-white/70'}`}>
+      <footer className={`border-t ${page === 'home' ? 'border-[#eadcc8] bg-[#fffaf2] text-slate-700' : 'border-white/10 bg-black/20 text-white/70'}`}>
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 md:grid-cols-3 md:px-6">
           <div>
             <div className="mb-4">
