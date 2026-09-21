@@ -299,7 +299,7 @@ export function InquiryModal({
                 >
                   {t('inquiry.cancel')}
                 </Button>
-                <Button type="submit" className={`w-full rounded-full px-7 sm:w-auto ${kind === 'classic' ? 'bg-[#f47c48] text-[#35180f] hover:bg-[#ff9765]' : 'bg-[#d4af37] text-[#241f1b] hover:bg-[#e0bc4e]'}`} disabled={isSending}>
+                <Button type="submit" className={`w-full rounded-full px-7 sm:w-auto ${kind === 'classic' ? 'bg-[#fe8500] text-[#35180f] hover:bg-[#ff9b2e]' : 'bg-[#d4af37] text-[#241f1b] hover:bg-[#e0bc4e]'}`} disabled={isSending}>
                   {isSending ? t('inquiry.submitSending') : t('inquiry.submit')}
                 </Button>
               </div>

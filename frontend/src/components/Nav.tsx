@@ -58,19 +58,19 @@ export function Nav({
             <BrandLockup theme="dark" src={pageMeta.home.logo} alt={t('brand.classicAlt')} compact gapClass="gap-3" logoSize="h-9 sm:h-10" logoArtScale="scale-[1.45]" taglineClassName="hidden" />
           </Link>
           <nav aria-label={t('landing.navLabel')} className="hidden items-center gap-7 text-sm text-[#365766] lg:flex">
-            <a href="#services" className="py-2 hover:text-[#c2410c]">{t('landing.leisure')}</a>
-            <Link to="/prestige/luxury" className="py-2 hover:text-[#c2410c]">{t('landing.luxury')}</Link>
-            <Link to="/prestige/corporate" className="py-2 hover:text-[#c2410c]">{t('landing.corporate')}</Link>
+            <a href="#services" className="py-2 hover:text-[#a65300]">{t('landing.leisure')}</a>
+            <Link to="/prestige/luxury" className="py-2 hover:text-[#a65300]">{t('landing.luxury')}</Link>
+            <Link to="/prestige/corporate" className="py-2 hover:text-[#a65300]">{t('landing.corporate')}</Link>
           </nav>
           <div className="flex shrink-0 items-center gap-4">
             <LanguageToggle compact light />
-            <button type="button" onClick={openInquiry} className="hidden min-h-11 rounded-full bg-[#f47c48] px-5 text-sm font-semibold text-[#35180f] hover:bg-[#ff9765] md:inline-flex md:items-center">{t('landing.plan')}</button>
+            <button type="button" onClick={openInquiry} className="hidden min-h-11 rounded-full bg-[#fe8500] px-5 text-sm font-semibold text-[#35180f] hover:bg-[#ff9b2e] md:inline-flex md:items-center">{t('landing.plan')}</button>
           </div>
         </div>
         <nav aria-label={t('landing.navLabel')} className="flex items-center justify-center gap-8 border-t border-[#eadcc8] px-4 text-sm text-[#365766] lg:hidden">
-          <a href="#services" className="py-3 hover:text-[#c2410c]">{t('landing.leisure')}</a>
-          <Link to="/prestige/luxury" className="py-3 hover:text-[#c2410c]">{t('landing.luxury')}</Link>
-          <Link to="/prestige/corporate" className="py-3 hover:text-[#c2410c]">{t('landing.corporate')}</Link>
+          <a href="#services" className="py-3 hover:text-[#a65300]">{t('landing.leisure')}</a>
+          <Link to="/prestige/luxury" className="py-3 hover:text-[#a65300]">{t('landing.luxury')}</Link>
+          <Link to="/prestige/corporate" className="py-3 hover:text-[#a65300]">{t('landing.corporate')}</Link>
         </nav>
       </header>
     );

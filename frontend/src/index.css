@@ -6,9 +6,9 @@
 }
 
 .classic-theme :where(a, button, input, select, textarea):focus-visible {
-  outline-color: #f97316;
+  outline-color: #a65300;
 }
 
 .classic-theme :where(input, select, textarea):focus {
-  border-color: #c2410c;
+  border-color: #a65300;
 }

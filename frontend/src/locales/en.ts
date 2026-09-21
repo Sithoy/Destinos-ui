@@ -26,8 +26,8 @@ export const en = {
     escapeIntro: 'A little inspiration for the moments you want more of. We’ll take care of the details.',
     makeItMine: 'Make it my holiday',
     escapes: {
-      island: { title: 'On island time', text: 'Warm water, unhurried days, and nowhere else you need to be.', alt: 'Overwater villas above a turquoise lagoon', interest: 'An island escape — destination to explore' },
-      romantic: { title: 'Just the two of you', text: 'A honeymoon, an anniversary, or simply a little time away together.', alt: 'Palm trees beside a pool at sunset', interest: 'A romantic getaway — destination to explore' },
+      island: { title: 'On island time', text: 'Warm water, unhurried days, and nowhere else you need to be.', alt: 'A traditional sailing dhow on turquoise water beside a palm-fringed beach', interest: 'An island escape — destination to explore' },
+      romantic: { title: 'Just the two of you', text: 'A honeymoon, an anniversary, or simply a little time away together.', alt: 'A candlelit table for two beside the sea, with a couple walking along the beach at sunset', interest: 'A romantic getaway — destination to explore' },
       family: { title: 'Memories to bring home', text: 'Barefoot adventures, sunset laughter, and little moments that stay with you.', alt: 'A family flying an orange kite on a tropical beach at sunset', interest: 'A family holiday — destination to explore' },
     },
     eyebrow: 'From Mozambique to the world',
