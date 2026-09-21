@@ -6,9 +6,9 @@ import type { InquiryKind } from '../types';
 import { Button, SmartImage } from '../components/ui';
 
 const escapes = [
-  { key: 'island', image: '/images/dpm-island-time.webp' },
-  { key: 'romantic', image: '/images/dpm-romantic-escape.webp' },
-  { key: 'family', image: '/images/dpm-family-memories.webp' },
+  { key: 'island', image: '/images/dpm-family-memories.webp' },
+  { key: 'romantic', image: '/images/dpm-city-romance.webp' },
+  { key: 'family', image: '/images/dpm-family-safari.webp' },
 ] as const;
 const focusLink = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a65300]';
 

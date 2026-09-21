@@ -26,9 +26,9 @@ export const pt = {
     escapeIntro: 'Um pouco de inspiração para os momentos que quer viver. Nós cuidamos dos detalhes.',
     makeItMine: 'Quero umas férias assim',
     escapes: {
-      island: { title: 'Ao ritmo da ilha', text: 'Águas quentes, dias sem pressa e nenhum outro lugar onde precise de estar.', alt: 'Um dhow à vela em águas azul-turquesa junto a uma praia com palmeiras', interest: 'Uma escapada numa ilha — destino por definir' },
-      romantic: { title: 'Só vocês os dois', text: 'Uma lua de mel, um aniversário ou simplesmente tempo para estarem juntos.', alt: 'Uma mesa para dois à luz das velas junto ao mar, com um casal a passear na praia ao pôr do sol', interest: 'Uma escapada romântica — destino por definir' },
-      family: { title: 'Memórias para levar consigo', text: 'Aventuras de pés descalços, sorrisos ao pôr do sol e pequenos momentos que ficam para sempre.', alt: 'Uma família a lançar um papagaio de papel laranja numa praia tropical ao pôr do sol', interest: 'Férias em família — destino por definir' },
+      island: { title: 'Ao ritmo da ilha', text: 'Águas quentes, dias sem pressa e nenhum outro lugar onde precise de estar.', alt: 'Uma família a lançar um papagaio de papel laranja numa praia tropical ao pôr do sol', interest: 'Uma escapada numa ilha — destino por definir' },
+      romantic: { title: 'Só vocês os dois', text: 'Uma lua de mel, um aniversário ou simplesmente tempo para estarem juntos.', alt: 'Um casal de mãos dadas numa rua histórica junto a um restaurante iluminado ao anoitecer', interest: 'Uma escapada romântica — destino por definir' },
+      family: { title: 'Memórias para levar consigo', text: 'Novas descobertas, aventuras partilhadas e pequenos momentos que ficam para sempre.', alt: 'Uma família a observar elefantes num veículo de safari à luz dourada da tarde', interest: 'Férias em família — destino por definir' },
     },
     eyebrow: 'De Moçambique para o mundo',
     imageAlt: 'Viajantes a caminhar em direcção a villas sobre um oceano azul-turquesa',
