@@ -49,6 +49,17 @@ export function Nav({
   const isPrestige = page === 'luxury' || page === 'corporate';
   const isCrm = page === 'crm';
 
+  if (isPrestige) {
+    return <header className="sticky top-0 z-50 border-b border-white/10 bg-[#07111d] text-white">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:bg-white focus:p-3 focus:text-slate-950">{t('landing.skip')}</a>
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-8">
+        <Link to="/" aria-label="Destinos pelo Mundo" className="min-w-0"><BrandLockup src={pageMeta[page].logo} alt={t(page === 'luxury' ? 'brand.luxuryAlt' : 'brand.corporateAlt')} compact gapClass="gap-3" logoSize="h-9 sm:h-10" logoArtScale="scale-[1.35]" taglineClassName="hidden" /></Link>
+        <div className="flex items-center gap-6"><nav aria-label={t('landing.navLabel')} className="hidden items-center gap-6 text-sm md:flex"><Link to="/">{t('nav.backHome')}</Link><Link to="/prestige/luxury" aria-current={page === 'luxury' ? 'page' : undefined} className={page === 'luxury' ? 'text-[#ecd792]' : ''}>Luxury</Link><Link to="/prestige/corporate" aria-current={page === 'corporate' ? 'page' : undefined} className={page === 'corporate' ? 'text-[#ecd792]' : ''}>Corporate</Link></nav><LanguageToggle compact /></div>
+      </div>
+      <nav aria-label={t('landing.navLabel')} className="flex justify-center gap-8 border-t border-white/10 px-4 text-sm md:hidden"><Link to="/" className="py-3">{t('nav.backHome')}</Link><Link to="/prestige/luxury" className="py-3" aria-current={page === 'luxury' ? 'page' : undefined}>Luxury</Link><Link to="/prestige/corporate" className="py-3" aria-current={page === 'corporate' ? 'page' : undefined}>Corporate</Link></nav>
+    </header>;
+  }
+
   if (page === 'home') {
     return (
       <header className="sticky top-0 z-50 border-b border-[#eadcc8] bg-[#fffaf2] text-[#163e52]">
