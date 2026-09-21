@@ -52,7 +52,7 @@ export type CorporateTravelerProfile = {
   passportNumber?: string;
   passportExpiry?: string | null;
   passportStatus: 'OK' | 'Missing' | 'Expired';
-  visaStatus: 'OK' | 'Required' | 'N/A' | 'Pending';
+  visaStatus: 'OK' | 'Required' | 'N/A' | 'Pending' | 'Unknown';
   notes?: string;
   isActive: boolean;
   tripCount: number;
@@ -71,7 +71,7 @@ export type CorporateTravelerProfileInput = {
   passportNumber?: string;
   passportExpiry?: string | null;
   passportStatus: 'OK' | 'Missing' | 'Expired';
-  visaStatus: 'OK' | 'Required' | 'N/A' | 'Pending';
+  visaStatus: 'OK' | 'Required' | 'N/A' | 'Pending' | 'Unknown';
   notes?: string;
   isActive: boolean;
 };
@@ -94,6 +94,7 @@ export type CorporateApprovalState = {
 export type CorporateApprovalStage = CorporateApprovalState['stage'];
 
 export type CorporateTimelineEvent = {
+  occurredAt?: string;
   id: string;
   title: string;
   meta: string;
@@ -315,10 +316,12 @@ export type CorporateTripCreateInput = {
   origin: string;
   destination: string;
   departureDate: string;
+  returnDate?: string | null;
   purpose: string;
   budgetBand: CorporateCostBand['key'];
   services: CorporateServiceType[];
   travelers: Array<{
+    profileId?: string;
     name: string;
     email: string;
     department: string;
@@ -468,6 +471,7 @@ export type CorporateTripMessageInput = {
 };
 
 export type CorporateBillingSummary = {
+  totalsByCurrency?: Array<{ currency: string; totalInvoiced: number; totalCollected: number; outstandingBalance: number }>;
   companyId: string;
   companyName: string;
   invoiceCount: number;

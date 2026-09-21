@@ -53,6 +53,7 @@ export function CorporateNewTripPage({
   const [origin, setOrigin] = useState('Maputo');
   const [destination, setDestination] = useState('');
   const [departureDate, setDepartureDate] = useState('');
+  const [returnDate, setReturnDate] = useState('');
   const [purpose, setPurpose] = useState('');
   const [budgetBand, setBudgetBand] = useState<'lt1k' | '1k_5k' | 'gt5k'>('1k_5k');
   const [services, setServices] = useState<CorporateTripCreateInput['services']>(['Flight', 'Hotel']);
@@ -78,6 +79,7 @@ export function CorporateNewTripPage({
     if (!destination.trim()) errors.destination = 'Destination is required.';
     if (!departureDate) errors.departureDate = 'Departure date is required.';
     if (departureDate && departureDate < minTravelDate) errors.departureDate = 'Departure date cannot be in the past.';
+    if (returnDate && returnDate < departureDate) errors.returnDate = 'Return date cannot precede departure.';
     if (!purpose.trim()) errors.purpose = 'Business purpose is required.';
     if (services.length === 0) errors.services = 'Select at least one service.';
     travelers.forEach((traveler, index) => {
@@ -88,7 +90,7 @@ export function CorporateNewTripPage({
       }
     });
     return errors;
-  }, [departureDate, destination, minTravelDate, origin, purpose, services.length, travelers]);
+  }, [departureDate, returnDate, destination, minTravelDate, origin, purpose, services.length, travelers]);
 
   const canSubmit = useMemo(() => Object.keys(fieldErrors).length === 0, [fieldErrors]);
   const markTouched = (field: string) => setTouched((current) => ({ ...current, [field]: true }));
@@ -125,10 +127,12 @@ export function CorporateNewTripPage({
         origin,
         destination,
         departureDate,
+        returnDate: returnDate || null,
         purpose,
         budgetBand,
         services,
         travelers: travelers.map((traveler) => ({
+          profileId: traveler.profileId ? String(traveler.profileId) : undefined,
           name: traveler.name.trim(),
           email: traveler.email.trim(),
           department: traveler.department,
@@ -146,7 +150,7 @@ export function CorporateNewTripPage({
 
   const addTravelerFromProfile = (profile: CorporateTravelerProfile) => {
     setTravelers((current) => [
-      ...current,
+      ...current.filter((traveler) => traveler.profileId || traveler.name.trim() || traveler.email.trim()),
       {
         profileId: profile.id,
         name: profile.name,
@@ -220,6 +224,11 @@ export function CorporateNewTripPage({
                   <input type="date" min={minTravelDate} value={departureDate} onBlur={() => markTouched('departureDate')} onChange={(event) => setDepartureDate(event.target.value)} className={`${fieldBase} ${errorClass('departureDate')} [color-scheme:dark]`} />
                 </label>
                 <FieldError message={visibleError('departureDate')} />
+                <label className="mt-4 block text-sm">
+                  <div className={`mb-1.5 ${styles.muted}`}>Return date (optional)</div>
+                  <input type="date" min={departureDate || minTravelDate} value={returnDate} onBlur={() => markTouched('returnDate')} onChange={(event) => setReturnDate(event.target.value)} className={`${fieldBase} ${errorClass('returnDate')}`} />
+                </label>
+                <FieldError message={visibleError('returnDate')} />
               </div>
               <div>
                 <div className={`mb-1.5 text-sm ${styles.muted}`}>Quick date</div>

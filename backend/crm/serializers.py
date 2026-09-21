@@ -181,6 +181,44 @@ class LeadSerializer(serializers.ModelSerializer):
     companyAccountName = serializers.CharField(source="company_account.name", read_only=True)
     clientId = serializers.PrimaryKeyRelatedField(source="client", queryset=Client.objects.all(), required=False, allow_null=True)
     clientName = serializers.CharField(source="client.name", read_only=True)
+    workflowSummary = serializers.SerializerMethodField()
+
+    def get_workflowSummary(self, obj):
+        from .workflow import workflow_for_lead
+        state = workflow_for_lead(obj)
+        return {key: state[key] for key in ["canAdvance", "nextStage", "blockers"]}
+
+    def validate(self, attrs):
+        from copy import copy
+        from .workflow import STATUS_BY_STAGE, _brief_checks, workflow_for_lead
+
+        if self.instance is None:
+            if attrs.get("status", Lead.Status.NEW) != Lead.Status.NEW or attrs.get("lifecycle_stage", Lead.LifecycleStage.NEW_REQUEST) != Lead.LifecycleStage.NEW_REQUEST:
+                raise serializers.ValidationError("New requests must start at the intake stage.")
+            return attrs
+        stage = attrs.get("lifecycle_stage", self.instance.lifecycle_stage)
+        new_status = attrs.get("status", self.instance.status)
+        if stage == self.instance.lifecycle_stage and new_status == self.instance.status:
+            return attrs
+        if stage == Lead.LifecycleStage.CLOSED and new_status == Lead.Status.LOST:
+            if not attrs.get("internal_notes", "").strip():
+                raise serializers.ValidationError({"internalNotes": "Record the reason for closing this request."})
+            return attrs
+        if new_status != STATUS_BY_STAGE.get(stage):
+            raise serializers.ValidationError({"status": "Status must match the workflow stage."})
+        candidate = copy(self.instance)
+        for key, value in attrs.items():
+            if key not in {"status", "lifecycle_stage"}:
+                setattr(candidate, key, value)
+        state = workflow_for_lead(candidate)
+        early_stages = {Lead.LifecycleStage.NEW_REQUEST, Lead.LifecycleStage.PENDING_INFORMATION}
+        if self.instance.lifecycle_stage in early_stages and stage == Lead.LifecycleStage.VALIDATED:
+            blockers = [item["detail"] for item in _brief_checks(candidate) if not item["ready"]]
+            if blockers:
+                raise serializers.ValidationError({"lifecycleStage": blockers})
+        elif stage != state["nextStage"] or not state["canAdvance"]:
+            raise serializers.ValidationError({"lifecycleStage": "Complete the current workflow requirements before advancing to the next stage."})
+        return attrs
 
     class Meta:
         model = Lead
@@ -214,13 +252,24 @@ class LeadSerializer(serializers.ModelSerializer):
             "companyAccountName",
             "clientId",
             "clientName",
+            "workflowSummary",
         ]
         read_only_fields = ["id", "createdAt", "updatedAt"]
 
 
 class PublicLeadSerializer(LeadSerializer):
+    submissionId = serializers.UUIDField(source="submission_id", required=False)
+
     class Meta(LeadSerializer.Meta):
-        read_only_fields = ["id", "createdAt", "updatedAt", "status", "lifecycleStage", "internalNotes", "ctmRequestId", "companyAccountId", "companyAccountName"]
+        fields = ["submissionId", "service", "serviceKey", "name", "contact", "email", "whatsapp",
+                  "preferredContact", "requestedServices", "tripType", "departureCity", "destination",
+                  "dates", "travelers", "budget", "urgency", "notes"]
+        read_only_fields = []
+
+    def validate(self, attrs):
+        if not (attrs.get("email") or attrs.get("whatsapp")):
+            raise serializers.ValidationError({"contact": "Provide an email or WhatsApp number."})
+        return attrs
 
 
 class WorkflowChecklistItemSerializer(serializers.Serializer):

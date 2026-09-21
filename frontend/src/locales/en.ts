@@ -32,6 +32,7 @@ export const en = {
     poweredBy: 'Powered by',
   },
   inquiry: {
+    privacyNotice: 'We use these details to respond to your inquiry and plan your trip. Only include information needed for your travel request.',
     labels: {
       classic: 'Classic Travel',
       luxury: 'Prestige Luxury',
@@ -363,10 +364,10 @@ export const en = {
     },
     profile: {
       eyebrow: 'Luxury profile',
-      title: 'Warm premium aesthetic',
+      title: 'Travel planned around you',
       items: {
-        hospitality: 'Boutique hospitality tone',
-        visuals: 'High-emotion destination visuals',
+        hospitality: 'Distinctive hotels and personal service',
+        visuals: 'Destinations matched to your interests',
         planning: 'Concierge-style planning',
         curated: 'Elegant and carefully curated experiences',
       },
@@ -458,11 +459,11 @@ export const en = {
     },
     profile: {
       eyebrow: 'Corporate profile',
-      title: 'Executive efficiency aesthetic',
+      title: 'Support for every business trip',
       items: {
-        communication: 'Precise value communication',
-        structure: 'Business-first structure',
-        restrained: 'Premium but restrained presentation',
+        communication: 'Clear quotes and cost visibility',
+        structure: 'Travel aligned with company requirements',
+        restrained: 'Coordinated flights, hotels and transfers',
         support: 'Reliable support for company travel needs',
       },
     },

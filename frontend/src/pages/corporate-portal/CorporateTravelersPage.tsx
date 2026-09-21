@@ -13,7 +13,7 @@ const emptyTraveler: CorporateTravelerProfileInput = {
   passportNumber: '',
   passportExpiry: '',
   passportStatus: 'Missing',
-  visaStatus: 'N/A',
+  visaStatus: 'Unknown',
   notes: '',
   isActive: true,
 };
@@ -113,7 +113,7 @@ export function CorporateTravelersPage({
 
   const stats = useMemo(() => {
     const passportAttention = travelers.filter((traveler) => traveler.passportStatus !== 'OK').length;
-    const visaAttention = travelers.filter((traveler) => traveler.visaStatus === 'Required' || traveler.visaStatus === 'Pending').length;
+    const visaAttention = travelers.filter((traveler) => traveler.visaStatus !== 'OK' && traveler.visaStatus !== 'N/A').length;
     const upcomingTrips = travelers.filter((traveler) => traveler.nextTripId).length;
     return { passportAttention, visaAttention, upcomingTrips };
   }, [travelers]);
@@ -227,7 +227,7 @@ export function CorporateTravelersPage({
               filteredTravelers.map((traveler) => {
                 const active = !isCreating && String(traveler.id) === String(selectedTraveler?.id);
                 const passportAlert = traveler.passportStatus !== 'OK';
-                const visaAlert = traveler.visaStatus === 'Required' || traveler.visaStatus === 'Pending';
+                const visaAlert = traveler.visaStatus !== 'OK' && traveler.visaStatus !== 'N/A';
                 return (
                   <button
                     key={traveler.id}
@@ -346,6 +346,7 @@ export function CorporateTravelersPage({
               <label className="text-sm">
                 <div className={`mb-2 ${styles.muted}`}>Visa readiness</div>
                 <select value={form.visaStatus} onChange={(event) => handleChange('visaStatus', event.target.value as CorporateTravelerProfileInput['visaStatus'])} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input}`}>
+                  <option value="Unknown" className="bg-[#07111f]">Not yet checked</option>
                   <option value="N/A" className="bg-[#07111f]">N/A</option>
                   <option value="OK" className="bg-[#07111f]">OK</option>
                   <option value="Required" className="bg-[#07111f]">Required</option>

@@ -1338,112 +1338,14 @@ function corporateDocumentCards(lead: CrmLead): InfoCard[] {
 }
 
 function mockWorkflowItems(lead: CrmLead, tab: DetailTab): MockWorkflowItem[] {
-  if (lead.serviceKey === 'corporate') {
-    if (tab === 'travelers') {
-      return [
-        { title: 'Traveler file owner', value: 'Company coordinator', meta: 'Keeps traveler names, changes, and department ownership aligned before booking.' },
-        { title: 'Upcoming traveler risk', value: lead.requestedServices.toLowerCase().includes('visa') ? 'Visa-sensitive traveler mix' : 'Traveler list still needs readiness check', meta: `${lead.travelers || 'Traveler list pending'} · route ${lead.departureCity || 'Origin pending'} -> ${lead.destination || 'Destination pending'}` },
-        { title: 'Reusable account pattern', value: 'Repeat corporate movement expected', meta: 'Use saved traveler records and account preferences to speed up the next request.' },
-      ];
-    }
-    if (tab === 'approvals') {
-      return [
-        { title: 'Internal approval owner', value: 'Coordinator / Manager', meta: 'Travel need should clear before quote lock and supplier commitment.' },
-        { title: 'Quote sign-off lane', value: lead.status === 'proposal' ? 'Client approval in progress' : lead.status === 'won' ? 'Approval secured' : 'Still preparing internal decision support', meta: 'Keep approval owner and DPM account owner aligned.' },
-        { title: 'Mock blocker', value: fallbackPriority(lead) === 'urgent' ? 'Traveler list changing under short lead time' : 'Commercial sign-off still pending', meta: 'This is the kind of friction the approvals tab should make obvious.' },
-      ];
-    }
-    if (tab === 'finance') {
-      return [
-        { title: 'Finance path', value: 'PO / invoice / account clearance', meta: 'Corporate movement should not release to booking without commercial clearance.' },
-        { title: 'Mock invoice note', value: 'Split billing by department', meta: 'Useful for accounts that need cost allocation or multiple approvers.' },
-        { title: 'Release condition', value: lead.status === 'won' || lead.status === 'execution' ? 'Ready for controlled fulfilment' : 'Booking should remain blocked', meta: 'Finance posture now reads differently from leisure payment collection.' },
-      ];
-    }
-    if (tab === 'documents') {
-      return [
-        { title: 'Passport control', value: 'Collect traveler document set before fulfilment', meta: 'Especially important when traveler count is changing.' },
-        { title: 'Visa control', value: lead.requestedServices.toLowerCase().includes('visa') ? 'Visa support in scope' : 'No dedicated visa scope yet', meta: 'Use this lane for real readiness tracking later.' },
-        { title: 'Mock document blocker', value: 'One traveler still missing complete profile', meta: 'This should be visible before quote turns into booking.' },
-      ];
-    }
-  } else {
-    if (tab === 'proposal') {
-      return [
-        { title: 'Option set', value: lead.serviceKey === 'luxury' ? 'Premium curation with elevated experiences' : 'Clear package options with practical inclusions', meta: 'Proposal tone should match the traveler profile and budget confidence.' },
-        { title: 'Supplier hold posture', value: lead.status === 'proposal' ? 'Best options should be protected now' : 'Shortlist still being shaped', meta: 'Especially visible for luxury inventory and seasonal hotel pressure.' },
-        { title: 'Mock next move', value: 'Follow up client decision within 24h', meta: 'This is the kind of sales pressure the leisure workflow should surface.' },
-      ];
-    }
-    if (tab === 'payments') {
-      return [
-        { title: 'Deposit expectation', value: lead.serviceKey === 'luxury' ? 'Deposit before premium confirmations' : 'Payment before package release', meta: 'Leisure should keep payment logic simple and client-facing.' },
-        { title: 'Mock payment checkpoint', value: lead.status === 'won' || lead.status === 'execution' ? 'Approved to collect and confirm' : 'Still pre-payment / pre-confirmation', meta: `Budget anchor: ${lead.budget || 'Budget pending'}` },
-        { title: 'Commercial sensitivity', value: 'Fare / hotel movement risk', meta: 'Use this to explain why payment timing matters to the traveler.' },
-      ];
-    }
-    if (tab === 'travelPack') {
-      return [
-        { title: 'Itinerary polish', value: lead.serviceKey === 'luxury' ? 'Concierge-ready handoff' : 'Simple trip pack handoff', meta: 'This is where final service confidence becomes client trust.' },
-        { title: 'Support posture', value: lead.serviceKey === 'luxury' ? 'High-touch support expectation' : 'Practical and responsive support', meta: 'Visible difference between classic and luxury but same leisure lane.' },
-        { title: 'Mock final check', value: 'All confirmations and notes ready to send', meta: 'This gives the leisure workflow a real delivery endpoint.' },
-      ];
-    }
-  }
-
+  void lead;
+  void tab;
   return [];
 }
 
 function mockBookingRecords(lead: CrmLead): MockBookingRecord[] {
-  if (lead.serviceKey === 'corporate') {
-    return [
-      {
-        service: 'Flight movement',
-        supplier: 'Corporate fare desk',
-        status: lead.status === 'execution' || lead.status === 'completed' ? 'Ticketed' : lead.status === 'won' ? 'Ready for release' : 'Pending clearance',
-        reference: `CORP-FLT-${lead.id.slice(-4).toUpperCase()}`,
-        note: 'Route and traveler list should remain aligned before final ticket issue.',
-      },
-      {
-        service: 'Hotel block',
-        supplier: 'Preferred corporate hotel partner',
-        status: lead.status === 'execution' || lead.status === 'completed' ? 'Confirmed' : 'Option held',
-        reference: `CORP-HTL-${lead.id.slice(-4).toUpperCase()}`,
-        note: 'Useful when departments share one movement but need rooming control.',
-      },
-      {
-        service: lead.requestedServices.toLowerCase().includes('visa') ? 'Visa support' : 'Ground support',
-        supplier: lead.requestedServices.toLowerCase().includes('visa') ? 'Immigration support partner' : 'Airport transfer partner',
-        status: lead.requestedServices.toLowerCase().includes('visa') ? 'Document check open' : 'Awaiting final travel release',
-        reference: `CORP-SVC-${lead.id.slice(-4).toUpperCase()}`,
-        note: 'Corporate fulfilment often depends on one non-flight blocker staying visible.',
-      },
-    ];
-  }
-
-  return [
-    {
-      service: 'Flight',
-      supplier: lead.serviceKey === 'luxury' ? 'Business class / premium fare hold' : 'Best-fit carrier option',
-      status: lead.status === 'execution' || lead.status === 'completed' ? 'Confirmed' : lead.status === 'won' ? 'Ready to issue' : 'Quoted / held',
-      reference: `LEI-FLT-${lead.id.slice(-4).toUpperCase()}`,
-      note: 'Use this to show the client what is already protected versus still being priced.',
-    },
-    {
-      service: 'Hotel',
-      supplier: lead.serviceKey === 'luxury' ? 'Preferred luxury property' : 'Selected package hotel',
-      status: lead.status === 'execution' || lead.status === 'completed' ? 'Confirmed' : 'Option shortlisted',
-      reference: `LEI-HTL-${lead.id.slice(-4).toUpperCase()}`,
-      note: lead.serviceKey === 'luxury' ? 'Suite / villa inventory may move quickly.' : 'Hotel choice should stay tied to budget and location fit.',
-    },
-    {
-      service: lead.requestedServices.toLowerCase().includes('transfer') ? 'Transfers' : 'Experience / support',
-      supplier: lead.requestedServices.toLowerCase().includes('transfer') ? 'Ground transport partner' : 'Destination services partner',
-      status: lead.status === 'execution' || lead.status === 'completed' ? 'Arranged' : 'Prepare after payment',
-      reference: `LEI-SVC-${lead.id.slice(-4).toUpperCase()}`,
-      note: 'This helps the travel-pack stage feel like real fulfillment rather than just notes.',
-    },
-  ];
+  void lead;
+  return [];
 }
 
 function leadPrimaryBlocker(lead: CrmLead) {
@@ -1879,38 +1781,10 @@ function crmOwnerFallback(lead: CrmLead) {
   return leadOwner(lead);
 }
 
-function leisureWorkbenchRows(lead: CrmLead): LeisureWorkbenchRow[] {
-  if (lead.serviceKey === 'luxury') {
-    return [
-      { service: 'Flights', supplier: 'Premium long-haul partners', status: lead.status === 'proposal' ? 'Held' : 'Researching', cost: 5400, sell: 6100 },
-      { service: 'Hotel', supplier: 'Preferred luxury property', status: lead.status === 'won' || lead.status === 'execution' ? 'Selected' : 'Shortlisted', cost: 11600, sell: 13850 },
-      { service: 'Transfers', supplier: 'Private ground desk', status: 'Draft', cost: 780, sell: 1200 },
-      { service: 'Experiences', supplier: 'Concierge partners', status: 'Curating', cost: 980, sell: 1680 },
-    ];
-  }
-
-  return [
-    { service: 'Flights', supplier: 'Regional fare partners', status: lead.status === 'proposal' ? 'Quoted' : 'Researching', cost: 1450, sell: 1760 },
-    { service: 'Hotel', supplier: 'Selected leisure hotel mix', status: lead.status === 'won' || lead.status === 'execution' ? 'Selected' : 'Shortlisted', cost: 2150, sell: 2670 },
-    { service: 'Transfers', supplier: 'Ground transport partner', status: 'Draft', cost: 240, sell: 420 },
-    { service: 'Activities', supplier: 'Destination operators', status: 'Curating', cost: 320, sell: 620 },
-  ];
-}
 
 function leisurePackageOptions(lead: CrmLead): LeisurePackageOption[] {
-  if (lead.serviceKey === 'luxury') {
-    return [
-      { name: 'Signature Escape', price: 19850, fit: 'High privacy + premium pacing', recommendation: 'Best fit for emotional impact and service level.' },
-      { name: 'Prestige Journey', price: 22800, fit: 'VIP handling + stronger experience layer', recommendation: 'Good when the client wants a more elevated service frame.' },
-      { name: 'Ultra Private', price: 26400, fit: 'Maximum exclusivity + concierge handling', recommendation: 'Use only if budget flexibility is confirmed.' },
-    ];
-  }
-
-  return [
-    { name: 'Comfort Explorer', price: 4380, fit: 'Balanced comfort and practical routing', recommendation: 'Good base option for value-sensitive travelers.' },
-    { name: 'Signature Balance', price: 5240, fit: 'Stronger hotel fit + smoother logistics', recommendation: 'Recommended package for best value and experience fit.' },
-    { name: 'Premium Leisure', price: 6180, fit: 'Elevated stay + extra experiences', recommendation: 'Offer as an upsell when the traveler is flexible.' },
-  ];
+  void lead;
+  return [];
 }
 
 function leadOwner(lead: CrmLead) {
@@ -1975,40 +1849,10 @@ function leadTasks(lead: CrmLead): ProcessTask[] {
 }
 
 function workflowHistory(lead: CrmLead): ProcessHistoryItem[] {
-  const currentStage = leadLifecycleStage(lead);
-  const activeIndex = lifecycleWorkflowSteps.findIndex(([stage]) => stage === currentStage);
-  const visibleSteps =
-    currentStage === 'closed'
-      ? lifecycleWorkflowSteps.slice(0, 3)
-      : lifecycleWorkflowSteps.slice(0, Math.max(1, activeIndex + 1));
-
-  const history: ProcessHistoryItem[] = [
-    {
-      label: 'Website request received',
-      meta: formatDate(lead.createdAt),
-      tone: 'done',
-    },
-    {
-      label: `Assigned to ${leadOwner(lead)}`,
-      meta: `${typeLabels[lead.serviceKey]} · ${leadFlowTitle(lead)}`,
-      tone: 'done',
-    },
-    ...visibleSteps.slice(1).map(([stage], index) => ({
-      label: lifecycleStageLabels[stage],
-      meta: currentStage !== 'closed' && index === visibleSteps.length - 2 ? 'Current value-chain stage' : 'Completed value-chain gate',
-      tone: currentStage !== 'closed' && index === visibleSteps.length - 2 ? ('current' as const) : ('done' as const),
-    })),
+  return [
+    { label: 'Request created', meta: formatDate(lead.createdAt), tone: 'done' },
+    { label: lifecycleStageLabels[leadLifecycleStage(lead)], meta: 'Current recorded stage', tone: 'current' },
   ];
-
-  if (currentStage === 'closed') {
-    history.push({
-      label: 'Request cancelled or closed',
-      meta: 'Record reason and nurture if relevant',
-      tone: 'closed',
-    });
-  }
-
-  return history;
 }
 
 function exportCsv(leads: CrmLead[]) {
@@ -2586,8 +2430,8 @@ export function CrmPage() {
       if (commandLens === 'corporate') return isCorporateLead(lead);
       if (commandLens === 'leisure') return isLeisureLead(lead);
       if (commandLens === 'attention') return fallbackPriority(lead) === 'high' || fallbackPriority(lead) === 'urgent';
-      if (commandLens === 'blocked') return lead.status === 'proposal' || lead.status === 'won';
-      if (commandLens === 'ready') return lead.status === 'execution';
+      if (commandLens === 'blocked') return Boolean(lead.workflowSummary?.nextStage && lead.workflowSummary.blockers.length);
+      if (commandLens === 'ready') return lead.workflowSummary?.canAdvance === true;
       return true;
     });
 
@@ -2697,7 +2541,13 @@ export function CrmPage() {
   );
   const selectedStayStopId = tripDesignDrafts.stay.stopId || selectedItinerary?.stops[0]?.id || '';
   const selectedStayStop = selectedItinerary?.stops.find((stop) => stop.id === selectedStayStopId) ?? null;
-  const selectedLeisureRows = selectedLead ? leisureWorkbenchRows(selectedLead) : [];
+  const selectedLeisureRows: LeisureWorkbenchRow[] = (selectedQuote?.lines ?? []).map((line) => ({
+    service: line.description || line.category,
+    supplier: line.supplier || 'Supplier not assigned',
+    status: line.status,
+    cost: Number(line.totalCost),
+    sell: Number(line.totalSell),
+  }));
   const selectedLeisurePackages = selectedLead ? leisurePackageOptions(selectedLead) : [];
   const managerMeta = selectedLead ? extractManagerBoardMeta(selectedLead.internalNotes) : null;
   const traditionalPageLeads = pageLeads.filter((lead) => !isCorporateLead(lead));
@@ -2842,14 +2692,14 @@ export function CrmPage() {
     },
     {
       label: 'Blocked',
-      value: leads.filter((lead) => lead.status === 'proposal' || lead.status === 'won').length,
+      value: leads.filter((lead) => lead.workflowSummary?.nextStage && lead.workflowSummary.blockers.length).length,
       meta: 'Waiting on decision, payment, or finance',
       Icon: Briefcase,
       filter: 'proposal',
     },
     {
       label: 'Ready to Advance',
-      value: leads.filter((lead) => lead.status === 'execution').length,
+      value: leads.filter((lead) => lead.workflowSummary?.canAdvance).length,
       meta: 'Operationally aligned to move',
       Icon: Bell,
       filter: 'confirmedGroup',
@@ -3320,9 +3170,7 @@ export function CrmPage() {
         : `${briefingReadiness(lead).readyCount}/${briefingReadiness(lead).total} brief fields ready`;
     const patch: Partial<Pick<CrmLead, 'status' | 'lifecycleStage' | 'priority' | 'internalNotes'>> =
       decision === 'approved'
-        ? lead.serviceKey === 'corporate'
-          ? { status: 'proposal', lifecycleStage: 'awaiting_approval' }
-          : { status: 'planning', lifecycleStage: 'validated' }
+        ? { status: 'contacted', lifecycleStage: 'validated' }
         : decision === 'moreInfo'
           ? { status: 'contacted', lifecycleStage: 'pending_information' }
           : { status: 'lost', lifecycleStage: 'closed' };
@@ -4521,12 +4369,12 @@ export function CrmPage() {
   return (
     <main className={`min-h-screen ${styles.shell}`}>
       <div className="grid min-h-screen xl:grid-cols-[244px_minmax(0,1fr)]">
-        <aside className={`hidden min-h-screen border-r px-4 py-5 xl:flex xl:flex-col ${styles.sidebar}`}>
-          <div className="mb-7">
+        <aside className={`flex min-w-0 flex-col border-b px-4 py-3 xl:min-h-screen xl:border-r xl:py-5 ${styles.sidebar}`}>
+          <div className="mb-3 xl:mb-7">
             <CrmBrandMark theme={theme} />
           </div>
 
-          <nav className="grid gap-2">
+          <nav aria-label="CRM navigation" className="flex gap-2 overflow-x-auto xl:grid">
             {navItems.map(({ id, label, Icon }) => {
               const active = activeNav === id;
               const count = navCounts[id];
@@ -4535,7 +4383,7 @@ export function CrmPage() {
                 key={label}
                 type="button"
                 onClick={() => activateNav(id)}
-                className={`flex h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
+                className={`flex h-12 shrink-0 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
                   active ? styles.buttonActive : styles.buttonGhost
                 }`}
               >
@@ -4555,7 +4403,7 @@ export function CrmPage() {
             href="https://etios.net"
             target="_blank"
             rel="noopener noreferrer"
-            className={`mt-auto flex items-center gap-3 rounded-xl p-3 ring-1 transition ${styles.etios}`}
+            className={`mt-auto hidden items-center gap-3 rounded-xl p-3 ring-1 xl:flex transition ${styles.etios}`}
             aria-label="Powered by ETIOS registered trademark"
           >
             <img src="/etios-icon.png" alt="" className="h-9 w-9 rounded-lg object-cover" loading="lazy" decoding="async" />
@@ -4577,7 +4425,7 @@ export function CrmPage() {
                 <h1 className="mt-1 text-2xl font-semibold tracking-tight">{navCopy[activeNav].title}</h1>
                 <p className={`mt-1 text-sm ${styles.muted}`}>{navCopy[activeNav].subtitle}</p>
               </div>
-              <div className="hidden min-w-[320px] flex-1 justify-center px-6 lg:flex">
+              <div className="hidden min-w-0 justify-center lg:flex lg:flex-1 lg:px-6">
                 <label className={`flex h-11 w-full max-w-2xl items-center gap-2 rounded-lg border px-3 ${styles.input}`}>
                   <Search className={`h-4 w-4 ${styles.muted}`} />
                   <input
@@ -4588,7 +4436,7 @@ export function CrmPage() {
                   />
                 </label>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              <div className="flex max-w-full flex-wrap items-center justify-start gap-2 lg:justify-end">
                 <button
                   type="button"
                   onClick={() =>
@@ -4623,7 +4471,7 @@ export function CrmPage() {
                     </span>
                   ) : null}
                 </button>
-                <button type="button" onClick={toggleTheme} className={`inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`}>
+                <button type="button" onClick={toggleTheme} aria-label="Toggle theme" className={`inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`}>
                   {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 </button>
                 {apiEnabled ? (
@@ -4647,13 +4495,13 @@ export function CrmPage() {
             </div>
           </header>
 
-          <div className={activeNav === 'corporateAccounts' || activeNav === 'corporateDesk' ? 'block' : activeNav === 'leisureStudio' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid xl:grid-cols-[minmax(720px,1fr)_430px]'}>
+          <div className={activeNav === 'corporateAccounts' || activeNav === 'corporateDesk' ? 'block' : activeNav === 'leisureStudio' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid 2xl:grid-cols-[minmax(0,1fr)_380px]'}>
             <div className={`min-w-0 ${activeNav === 'corporateDesk' && selectedLead ? 'hidden' : activeNav === 'corporateDesk' ? '' : `border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}`}>
           <div className="p-5">
             {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
             {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading CRM requests...</div> : null}
             {activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
-              <div className={`grid gap-4 ${activeNav === 'command' ? 'md:grid-cols-2 xl:grid-cols-5' : 'lg:grid-cols-4'}`}>
+              <div className={`grid gap-4 ${activeNav === 'command' ? 'md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6' : 'lg:grid-cols-4'}`}>
                 {(activeNav === 'settings' ? settingsMetricCards : activeNav === 'corporateAccounts' ? corporateAccountMetricCards : metricCards).map((card) => (
                   <button
                     key={card.label}
@@ -5529,7 +5377,7 @@ export function CrmPage() {
             </div>
 
         {activeNav !== 'corporateAccounts' && (activeNav !== 'corporateDesk' || selectedLead) ? (
-        <aside className={`${activeNav === 'corporateDesk' ? 'block px-5 pb-6' : `hidden min-h-full px-5 py-6 xl:block ${styles.rightPane}`}`}>
+        <aside className={`${activeNav === 'corporateDesk' ? 'block px-5 pb-6' : `min-h-full min-w-0 border-t px-5 py-6 ${styles.rightPane}`}`}>
           {activeNav === 'corporateDesk' && selectedLead ? (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <button

@@ -1,4 +1,9 @@
+import hashlib
+import json
+import uuid
+
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import filters, permissions, status, viewsets
@@ -6,6 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 
 from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceBlock, ItineraryStop, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, TransportSegment, TripItinerary, WorkflowReminder
 from .serializers import (
@@ -39,7 +45,9 @@ from .workflow_automation import generate_workflow_reminders
 
 class HasCrmAccess(permissions.BasePermission):
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and can_access_crm(request.user))
+        return bool(request.user and request.user.is_authenticated and request.user.is_active
+                    and can_access_crm(request.user)
+                    and (request.method in permissions.SAFE_METHODS or can_manage_clients(request.user)))
 
 
 class CanManageClients(permissions.BasePermission):
@@ -56,7 +64,7 @@ class CanManageUsers(permissions.BasePermission):
 
 
 class LeadViewSet(viewsets.ModelViewSet):
-    queryset = Lead.objects.all()
+    queryset = Lead.objects.select_related("client", "company_account").prefetch_related("quotes__lines", "quotes__approvals", "payment_records", "itineraries", "communications")
     serializer_class = LeadSerializer
     permission_classes = [HasCrmAccess]
     filter_backends = [filters.OrderingFilter]
@@ -509,17 +517,30 @@ class UserViewSet(viewsets.ModelViewSet):
 class PublicLeadCreateView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "public_inquiry"
 
     def post(self, request):
         serializer = PublicLeadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        lead = serializer.save()
-        return Response(LeadSerializer(lead).data, status=status.HTTP_201_CREATED)
+        values = dict(serializer.validated_data)
+        submission_id = values.pop("submission_id", None) or uuid.uuid4()
+        fingerprint = hashlib.sha256(json.dumps(values, sort_keys=True, default=str).encode()).hexdigest()
+        with transaction.atomic():
+            lead, created = Lead.objects.get_or_create(
+                submission_id=submission_id,
+                defaults={**values, "submission_fingerprint": fingerprint},
+            )
+            if lead.submission_fingerprint != fingerprint:
+                return Response({"detail": "Submission ID has already been used for another request."}, status=409)
+        return Response({"id": str(lead.id), "received": True}, status=201 if created else 200)
 
 
 class AuthLoginView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)

@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, timedelta
+from django.utils import timezone
 from io import StringIO
 
 from django.contrib.auth.models import User
@@ -265,7 +266,7 @@ class CtmOpsScopeTests(APITestCase):
             amount="2400.00",
             currency="USD",
             status=TripQuote.Status.SENT,
-            valid_until=date(2026, 9, 10),
+            valid_until=timezone.localdate() + timedelta(days=30),
         )
         self.client.credentials(HTTP_AUTHORIZATION=self.ops_auth)
 
@@ -311,7 +312,7 @@ class CtmOpsScopeTests(APITestCase):
             amount="2400.00",
             currency="USD",
             status=TripQuote.Status.SENT,
-            valid_until=date(2026, 9, 10),
+            valid_until=timezone.localdate() + timedelta(days=30),
         )
         self.authenticate_company_user(self.company_user_b)
 
@@ -338,7 +339,7 @@ class CtmOpsScopeTests(APITestCase):
                 "department": "Finance",
                 "origin": "Maputo",
                 "destination": "Lisbon",
-                "departureDate": "2026-09-12",
+                "departureDate": (timezone.localdate() + timedelta(days=30)).isoformat(),
                 "purpose": "Quarterly planning meetings",
                 "budgetBand": "1k_5k",
                 "services": ["Flight", "Hotel"],
@@ -575,7 +576,7 @@ class CtmOpsScopeTests(APITestCase):
         self.assertEqual(response.data["company"]["accountCode"], self.company_b.account_code)
         self.assertEqual(response.data["user"]["companyId"], str(self.company_b.id))
 
-    def test_company_admin_can_log_into_another_company_workspace(self):
+    def test_company_admin_cannot_log_into_another_company_workspace(self):
         admin_user = User.objects.create_user(username="global-admin", password="pass12345", email="global.admin@example.com")
         CompanyUser.objects.create(
             company=self.company_a,
@@ -592,13 +593,9 @@ class CtmOpsScopeTests(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["company"]["accountCode"], self.company_b.account_code)
-        self.assertEqual(response.data["user"]["companyId"], str(self.company_b.id))
-        self.assertTrue(CompanyUser.objects.filter(company=self.company_b, user=admin_user, role=CompanyUser.Role.COMPANY_ADMIN).exists())
-
-        self.client.credentials(HTTP_AUTHORIZATION=f"Token {response.data['token']}")
-        list_response = self.client.get(reverse("ctm-trip-request-list"), HTTP_X_CTM_COMPANY_CODE=self.company_b.account_code)
-
-        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
-        self.assertEqual([item["id"] for item in list_response.data], [self.trip_b.reference_code])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(CompanyUser.objects.filter(company=self.company_b, user=admin_user).exists())
+        self.client.force_authenticate(admin_user)
+        response = self.client.get(reverse("ctm-trip-request-list"), HTTP_X_CTM_COMPANY_CODE=self.company_b.account_code)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(CompanyUser.objects.filter(company=self.company_b, user=admin_user).exists())

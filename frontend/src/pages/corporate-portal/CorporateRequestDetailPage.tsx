@@ -395,8 +395,8 @@ export function CorporateRequestDetailPage({
   if (!trip) {
     return (
       <section className={`rounded-xl border p-6 text-center shadow-2xl ${styles.panel}`}>
-        <h2 className="text-xl font-semibold">No request selected</h2>
-        <p className={`mt-2 text-sm ${styles.muted}`}>Open a trip from the requests queue or create a new one to continue.</p>
+        <h2 className="text-xl font-semibold">Request not found</h2>
+        <p className={`mt-2 text-sm ${styles.muted}`}>This request is unavailable in your company workspace. Open an existing request from the Requests tab.</p>
       </section>
     );
   }

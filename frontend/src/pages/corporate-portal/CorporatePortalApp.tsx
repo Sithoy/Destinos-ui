@@ -7,9 +7,8 @@ import { CorporatePortalLayout } from './CorporatePortalLayout';
 import { CorporateReportsPage } from './CorporateReportsPage';
 import { CorporateRequestDetailPage } from './CorporateRequestDetailPage';
 import { CorporateRequestsPage } from './CorporateRequestsPage';
-import { CorporateSectionPlaceholderPage } from './CorporateSectionPlaceholderPage';
+import { CorporateItinerariesPage } from './CorporateItinerariesPage';
 import { CorporateTravelersPage } from './CorporateTravelersPage';
-import { getCorporateCurrentTripCost } from '../../data/corporatePortal';
 import { approveCtmTripRequest, clearCtmSession, createCtmTraveler, createCtmTripDocument, createCtmTripMessage, createCtmTripRequest, CTM_AUTH_EVENT, deactivateCtmTraveler, fetchCtmBillingInvoices, fetchCtmBillingPayments, fetchCtmBillingSummary, fetchCtmContext, fetchCtmCurrentSession, fetchCtmTravelers, fetchCtmTripRequests, hasCtmApi, loginCtm, logoutCtm, notifyCtmDataUpdated, readCtmSession, rejectCtmTripRequest, saveCtmSession, updateCtmTraveler } from '../../data/ctm';
 import { ctmLegacyRoute, ctmPrimaryRoute } from '../../data/travel';
 import type {
@@ -72,14 +71,12 @@ function buildCtmRoute(pathname = '/') {
 }
 
 function buildPortalStats(requests: CorporateTripRequest[], billingSummary?: CorporateBillingSummary | null): CorporatePortalStat[] {
-  const currency = billingSummary?.currency ?? 'USD';
-  const controlledSpend = billingSummary?.totalInvoiced ?? requests.reduce((sum, trip) => sum + getCorporateCurrentTripCost(trip), 0);
-  const spendHint = billingSummary
-    ? `${billingSummary.paidCount} paid · ${currency} ${billingSummary.outstandingBalance.toLocaleString('en-US')} outstanding`
-    : 'Budget range -> quote -> final cost';
+  const totals = billingSummary?.totalsByCurrency ?? (billingSummary ? [billingSummary] : []);
+  const controlledSpend = totals.length ? totals.map((item) => `${item.currency} ${item.totalInvoiced.toLocaleString('en-US')}`).join(' / ') : '—';
+  const spendHint = totals.length ? totals.map((item) => `${item.currency} ${item.outstandingBalance.toLocaleString('en-US')} outstanding`).join(' / ') : 'No billing totals available';
   return [
-    { id: 'spend', label: 'Controlled spend', value: `${currency} ${controlledSpend.toLocaleString('en-US')}`, hint: spendHint, tone: 'gold' },
-    { id: 'travelers', label: 'Travelers managed', value: String(requests.reduce((sum, trip) => sum + trip.travelers.length, 0)), hint: 'Across current group requests', tone: 'sky' },
+    { id: 'spend', label: 'Controlled spend', value: controlledSpend, hint: spendHint, tone: 'gold' },
+    { id: 'travelers', label: 'Travelers managed', value: String(new Set(requests.flatMap((trip) => trip.travelers.map((traveler) => traveler.id))).size), hint: 'Unique travelers across current requests', tone: 'sky' },
     { id: 'pendingApprovals', label: 'Pending approvals', value: String(requests.filter((trip) => trip.approvals.some((approval) => approval.status === 'Pending')).length), hint: 'Need and cost approvals', tone: 'emerald' },
     {
       id: 'documentAlerts',
@@ -94,7 +91,7 @@ function buildPortalStats(requests: CorporateTripRequest[], billingSummary?: Cor
 function buildActivityTimeline(requests: CorporateTripRequest[]): CorporateTimelineEvent[] {
   return requests.flatMap((trip) => trip.timeline.map((event) => ({ ...event, meta: event.meta || `${trip.id} activity` })))
     .slice()
-    .reverse()
+    .sort((a, b) => (Date.parse(b.occurredAt ?? '') || 0) - (Date.parse(a.occurredAt ?? '') || 0))
     .slice(0, 6);
 }
 
@@ -229,7 +226,7 @@ export function CorporatePortalApp() {
   }, [approvalFilter, searchedRequests]);
 
   const selectedRequestId = portalPathname.startsWith('/requests/') ? portalPathname.replace('/requests/', '') : null;
-  const selectedTrip = selectedRequestId ? requests.find((trip) => trip.id === selectedRequestId) ?? filteredRequests[0] ?? requests[0] ?? null : filteredRequests[0] ?? requests[0] ?? null;
+  const selectedTrip = selectedRequestId ? requests.find((trip) => trip.id === selectedRequestId) ?? null : filteredRequests[0] ?? requests[0] ?? null;
   const portalStats = useMemo(() => buildPortalStats(requests, billingSummary), [requests, billingSummary]);
   const portalTimeline = useMemo(() => buildActivityTimeline(requests), [requests]);
 
@@ -263,12 +260,11 @@ export function CorporatePortalApp() {
       return;
     }
     if (statId === 'travelers') {
-      setRequestFilter('active');
-      navigate(buildCtmRoute('/requests'));
+      navigate(buildCtmRoute('/travelers'));
       return;
     }
     setRequestFilter('all');
-    navigate(buildCtmRoute('/requests'));
+    navigate(buildCtmRoute('/reports'));
   };
   const toggleTheme = () => {
     setTheme((current) => {
@@ -482,7 +478,7 @@ export function CorporatePortalApp() {
       : portalPathname.startsWith('/approvals')
           ? <CorporateApprovalsPage requests={filteredApprovalRequests} allRequests={searchedRequests} onOpenRequest={openRequest} onApprove={(tripId, stage) => updateApprovalDecision(tripId, stage, 'Approved')} onReject={(tripId, stage) => updateApprovalDecision(tripId, stage, 'Rejected')} theme={theme} activeFilter={approvalFilter} onFilterChange={activateApprovalFilter} onOpenRequests={openRequests} />
         : portalPathname.startsWith('/itineraries')
-          ? <CorporateSectionPlaceholderPage title="Itineraries" description="Confirmed trips, service breakdowns, and downloadable travel packs will live in this view once the booking side of CTM is connected." bullets={['Upcoming trips with hotel, transfer, and flight breakdowns', 'Live trip status for active company travelers', 'Downloadable itinerary packs and support notes']} actionLabel="Review booked request" onAction={() => openRequest('DPM-2419')} theme={theme} />
+          ? <CorporateItinerariesPage requests={searchedRequests} theme={theme} onOpenRequest={openRequest} />
           : portalPathname.startsWith('/travelers')
             ? <CorporateTravelersPage travelers={travelers} search={search} theme={theme} onCreateTraveler={createTraveler} onUpdateTraveler={saveTraveler} onDeactivateTraveler={deactivateTraveler} onOpenRequest={openRequest} />
           : portalPathname.startsWith('/reports')

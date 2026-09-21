@@ -26,8 +26,8 @@ export function CorporateSidebar({
   const styles = corporatePortalThemeStyles[theme];
 
   return (
-    <aside className={`hidden min-h-screen border-r px-4 py-5 xl:flex xl:flex-col ${styles.sidebar}`}>
-      <div className="mb-7 max-w-[208px]">
+    <aside className={`flex min-w-0 flex-col border-b px-4 py-3 xl:min-h-screen xl:border-r xl:py-5 ${styles.sidebar}`}>
+      <div className="mb-3 max-w-[208px] xl:mb-7">
         <BrandLockup
           src={classicLogo}
           alt="Destinos pelo Mundo"
@@ -42,7 +42,7 @@ export function CorporateSidebar({
         />
       </div>
 
-      <nav className="grid gap-2">
+      <nav aria-label="CTM navigation" className="flex gap-2 overflow-x-auto xl:grid">
         {navItems.map(({ id, label, Icon, href }) => {
           const active = activeHref === href || (href !== ctmPrimaryRoute && activeHref.startsWith(href));
           return (
@@ -50,7 +50,7 @@ export function CorporateSidebar({
               key={id}
               type="button"
               onClick={() => onNavigate(href)}
-              className={`flex h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-medium transition ${
+              className={`flex h-12 shrink-0 items-center gap-3 rounded-lg px-3 text-left text-sm font-medium transition ${
                 active ? 'bg-[#12305a] text-white' : styles.buttonGhost
               }`}
             >
@@ -61,7 +61,7 @@ export function CorporateSidebar({
         })}
       </nav>
 
-      <div className={`mt-6 rounded-xl border p-3 ${styles.surface}`}>
+      <div className={`mt-6 hidden rounded-xl xl:block border p-3 ${styles.surface}`}>
         <div className={`mb-1 text-xs uppercase tracking-[0.22em] ${styles.muted}`}>Workflow focus</div>
         <div className="text-sm font-semibold">Need approval - quote - final approval - DPM booking</div>
       </div>
@@ -70,7 +70,7 @@ export function CorporateSidebar({
         href="https://etios.net"
         target="_blank"
         rel="noopener noreferrer"
-        className={`mt-auto flex items-center gap-3 rounded-xl p-3 ring-1 transition ${styles.etios}`}
+        className={`mt-auto hidden items-center xl:flex gap-3 rounded-xl p-3 ring-1 transition ${styles.etios}`}
         aria-label="Powered by ETIOS registered trademark"
       >
         <img src="/etios-icon.png" alt="" className="h-9 w-9 rounded-lg object-cover" loading="lazy" decoding="async" />

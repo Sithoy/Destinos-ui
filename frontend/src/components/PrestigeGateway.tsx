@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { conciergeImage, corporateGatewayImage, corporateLogo, luxuryGatewayImage, luxuryLogo } from '../data/travel';
 import type { PrestigePage } from '../types';
 import { BrandLockup, SmartImage } from './ui';
+import { useModalFocus } from './useModalFocus';
 export function PrestigeGateway({
   isOpen,
   onClose,
@@ -16,6 +17,7 @@ export function PrestigeGateway({
   isNavigating: boolean;
 }) {
   const { t } = useTranslation();
+  const dialogRef = useModalFocus(isOpen, onClose);
 
   return (
     <AnimatePresence>
@@ -26,6 +28,7 @@ export function PrestigeGateway({
           exit={{ opacity: 0 }}
           transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
           role="dialog"
+          ref={dialogRef}
           aria-modal="true"
           aria-labelledby="prestige-gateway-title"
           className={`fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-[#06101d] via-[#08111f] to-[#241f1b] px-3 py-4 backdrop-blur-md transition-colors duration-700 sm:px-4 sm:py-6 ${

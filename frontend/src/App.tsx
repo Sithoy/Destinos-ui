@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Mail } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -6,18 +6,22 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { InquiryModal } from './components/InquiryModal';
 import { Nav } from './components/Nav';
 import { PrestigeGateway } from './components/PrestigeGateway';
-import { BrandLockup, InstagramIcon, LinkedInIcon } from './components/ui';
+import { BrandLockup, InstagramIcon } from './components/ui';
 import { CRM_AUTH_EVENT, canAccessCrm, clearCrmSession, fetchCrmCurrentUser, hasCrmApi, readCrmSession, saveCrmSession } from './data/crm';
 import { ctmLegacyRoute, ctmPrimaryRoute, getPageFromPathname, pageMeta, pageRoutes } from './data/travel';
 import { ClassicHome } from './pages/ClassicHome';
 import { CorporatePage } from './pages/CorporatePage';
-import { CrmPage } from './pages/CrmPage';
+
 import { LuxuryPage } from './pages/LuxuryPage';
-import { CorporatePortalApp } from './pages/corporate-portal/CorporatePortalApp';
+
 import type { InquiryKind } from './types';
 
+const CrmPage = lazy(() => import('./pages/CrmPage').then((module) => ({ default: module.CrmPage })));
+
+const CorporatePortalApp = lazy(() => import('./pages/corporate-portal/CorporatePortalApp').then((module) => ({ default: module.CorporatePortalApp })));
+
 export default function DestinosPeloMundoUIConcept() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const page = getPageFromPathname(location.pathname);
@@ -39,19 +43,19 @@ export default function DestinosPeloMundoUIConcept() {
       Icon: InstagramIcon,
     },
     corporate: {
-      href: 'https://www.linkedin.com/company/etios-systems/',
-      label: 'ETIOS Systems on LinkedIn',
-      Icon: LinkedInIcon,
+      href: 'https://www.instagram.com/destinospelomundomoz',
+      label: '@destinospelomundomoz',
+      Icon: InstagramIcon,
     },
     crm: {
-      href: 'https://www.linkedin.com/company/etios-systems/',
-      label: 'ETIOS Systems on LinkedIn',
-      Icon: LinkedInIcon,
+      href: 'https://www.instagram.com/destinospelomundomoz',
+      label: '@destinospelomundomoz',
+      Icon: InstagramIcon,
     },
     corporatePortal: {
-      href: 'https://www.linkedin.com/company/etios-systems/',
-      label: 'ETIOS Systems on LinkedIn',
-      Icon: LinkedInIcon,
+      href: 'https://www.instagram.com/destinospelomundomoz',
+      label: '@destinospelomundomoz',
+      Icon: InstagramIcon,
     },
   } as const;
   const socialLink = socialByPage[page];
@@ -101,6 +105,18 @@ export default function DestinosPeloMundoUIConcept() {
     }
   }, [location.hash, location.pathname, location.search, navigate]);
 
+  useEffect(() => {
+    const portuguese = i18n.language.startsWith('pt');
+    const titles = { home: 'Destinos pelo Mundo', luxury: 'DPM Luxury Travel', corporate: 'DPM Corporate Travel', crm: 'DPM CRM', corporatePortal: 'DPM CTM' };
+    document.title = titles[page];
+    document.documentElement.lang = portuguese ? 'pt' : 'en';
+    const description = portuguese
+      ? 'Planeie viagens de lazer, luxo e negócios com a Destinos pelo Mundo em Moçambique. Peça um itinerário à sua medida.'
+      : 'Plan leisure, luxury and corporate travel with Destinos pelo Mundo in Mozambique. Request a tailored itinerary.';
+    document.querySelector('meta[name="description"]')?.setAttribute('content', description);
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', `https://www.dpmundo.com${pageRoutes[page]}`);
+  }, [page, i18n.language]);
+
   const openPrestige = () => {
     setIsGatewayNavigating(false);
     setShowPrestigeGate(true);
@@ -131,7 +147,7 @@ export default function DestinosPeloMundoUIConcept() {
     ) : page === 'corporate' ? (
       <CorporatePage />
     ) : (
-      <ClassicHome openPrestige={openPrestige} openInquiry={openInquiry} openCrm={() => navigate(pageRoutes.crm)} canOpenCrm={canEnterCrm} />
+      <ClassicHome openPrestige={openPrestige} openInquiry={openInquiry} />
     );
 
   return (
@@ -155,9 +171,9 @@ export default function DestinosPeloMundoUIConcept() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
         >
-          {screen}
+          <Suspense fallback={<div role="status" className="p-8 text-center">Loading workspace…</div>}>{screen}</Suspense>
         </motion.div>
       </AnimatePresence>
 
@@ -226,6 +242,9 @@ export default function DestinosPeloMundoUIConcept() {
               <div>{t('footer.classic')}</div>
               <div>{t('footer.luxury')}</div>
               <div>{t('footer.corporate')}</div>
+              <button type="button" onClick={() => navigate(pageRoutes.crm)} className="mt-4 text-xs underline">
+                {canEnterCrm ? t('home.hero.supportDesk.openWorkspace') : t('home.hero.supportDesk.teamAccess')}
+              </button>
             </div>
           </div>
         </div>

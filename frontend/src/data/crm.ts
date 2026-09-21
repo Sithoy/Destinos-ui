@@ -1222,6 +1222,16 @@ export async function updateCrmQuoteLineRecord(id: string, patch: CrmQuoteLineUp
   );
 }
 
+export async function submitPublicInquiry(input: Omit<CrmLeadCreateInput, 'priority'>, submissionId: string): Promise<{ id: string; received: boolean }> {
+  const base = crmApiBase();
+  if (!base) throw new Error('Online inquiries are unavailable. Please contact DPM directly.');
+  return parseApiResponse(await fetch(`${base}/api/public/leads/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, submissionId }),
+  }));
+}
+
 export async function createCrmLeadRecord(input: CrmLeadCreateInput, session?: CrmSession | null): Promise<CrmLead> {
   const base = crmApiBase();
   if (!base) return createCrmLead(input);

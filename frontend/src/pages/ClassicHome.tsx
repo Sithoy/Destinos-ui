@@ -1,4 +1,4 @@
-import { ArrowRight, Headphones, LogIn, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Headphones } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   champagneImage,
@@ -18,13 +18,9 @@ import { Button, Card, PrestigeIdentity, SectionTitle, SmartImage } from '../com
 export function ClassicHome({
   openPrestige,
   openInquiry,
-  openCrm,
-  canOpenCrm,
 }: {
   openPrestige: () => void;
   openInquiry: (kind: InquiryKind) => void;
-  openCrm: () => void;
-  canOpenCrm: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -32,6 +28,7 @@ export function ClassicHome({
     <div className="bg-white text-slate-900">
       <section className="relative min-h-[calc(100svh-84px)] overflow-hidden bg-[#06101d] md:min-h-[700px] xl:min-h-[720px]">
         <SmartImage
+          priority
           src={heroImage}
           alt={t('home.hero.imageAlt')}
           className="absolute inset-0 h-full w-full object-cover"
@@ -46,6 +43,7 @@ export function ClassicHome({
           <div className="min-w-0 max-w-4xl">
             <div className="mb-8 sm:mb-10">
               <PrestigeIdentity
+                compact
                 src={classicLogo}
                 alt={t('brand.classicAlt')}
                 descriptor={t('brand.turismo')}
@@ -62,7 +60,7 @@ export function ClassicHome({
             <div className="mt-8 grid max-w-[22rem] gap-3 sm:mt-9 sm:flex sm:max-w-none sm:flex-wrap">
               <Button
                 size="lg"
-                className="w-full rounded-full bg-[#f97316] px-7 text-white hover:bg-[#ea580c] sm:w-auto"
+                className="w-full rounded-full bg-[#c2410c] px-7 text-white hover:bg-[#9a3412] sm:w-auto"
                 onClick={() => openInquiry('classic')}
               >
                 {t('home.hero.primaryCta')}
@@ -99,13 +97,13 @@ export function ClassicHome({
                 </div>
                 <button
                   type="button"
-                  onClick={openCrm}
+                  onClick={() => openInquiry('classic')}
                   className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#07111d] shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition hover:bg-[#f8fafc] hover:shadow-[0_18px_42px_rgba(0,0,0,0.28)]"
                 >
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#d4af37] text-[#241f1b]">
-                    {canOpenCrm ? <ShieldCheck className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+                    <Headphones className="h-4 w-4" />
                   </span>
-                  <span>{canOpenCrm ? t('home.hero.supportDesk.openWorkspace') : t('home.hero.supportDesk.teamAccess')}</span>
+                  <span>{t('home.contact.cta')}</span>
                 </button>
               </div>
             </div>

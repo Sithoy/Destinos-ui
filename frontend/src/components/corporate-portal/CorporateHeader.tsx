@@ -1,4 +1,4 @@
-import { Bell, LogOut, Moon, Search, Sun } from 'lucide-react';
+import { LogOut, Moon, Search, Sun } from 'lucide-react';
 import type { CorporatePortalTheme } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from '../../pages/corporate-portal/portalTheme';
 
@@ -34,12 +34,13 @@ export function CorporateHeader({
           <p className={`mt-1 text-sm ${styles.muted}`}>{subtitle}</p>
         </div>
 
-        <div className="hidden min-w-[280px] flex-1 justify-center px-6 lg:flex">
+        <div className="flex min-w-0 basis-full justify-center lg:basis-auto lg:flex-1 lg:px-6">
           <label className={`flex w-full max-w-md items-center gap-2 rounded-lg border px-3 py-2 ${styles.input}`}>
             <Search className="h-4 w-4" />
             <input
               value={searchValue}
               onChange={(event) => onSearchChange(event.target.value)}
+              aria-label="Search requests and travelers"
               placeholder="Search request, traveler, route or service"
               className="w-full bg-transparent text-sm outline-none placeholder:inherit"
             />
@@ -48,9 +49,6 @@ export function CorporateHeader({
 
         <div className="flex items-center gap-2">
           {action}
-          <button type="button" className={`relative inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`} aria-label="Notifications">
-            <Bell className="h-4 w-4" />
-          </button>
           <button type="button" onClick={onToggleTheme} className={`inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`} aria-label="Toggle theme">
             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>

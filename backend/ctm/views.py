@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 
 from .serializers import (
     CorporateBillingSummarySerializer,
@@ -143,12 +144,18 @@ def get_active_company_membership(request) -> CompanyUser | None:
 
 class HasCtmAccess(permissions.BasePermission):
     def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated or not request.user.is_active:
+            return False
+        if get_request_company_code(request):
+            return get_ctm_membership_for_request(request) is not None
         return bool(request.user and request.user.is_authenticated and (can_access_ctm(request.user) or can_manage_trip_operations(request.user)))
 
 
 class CtmAuthLoginView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
     def post(self, request):
         serializer = CtmLoginSerializer(data=request.data)
@@ -255,11 +262,16 @@ class BillingSummaryReportView(BillingReportBaseView):
         invoices = list(self.get_invoice_queryset(request))
         payments = list(self.get_payment_queryset(request).filter(status__in=[TripPayment.Status.RECEIVED, TripPayment.Status.RECONCILED]))
 
-        total_invoiced = sum((invoice.amount for invoice in invoices), Decimal("0.00"))
-        total_collected = sum((payment.amount for payment in payments), Decimal("0.00"))
         currency = membership.company.default_currency if membership else "USD"
-        if invoices:
-            currency = invoices[0].currency or currency
+        issued_invoices = [invoice for invoice in invoices if invoice.status not in {TripInvoice.Status.DRAFT, TripInvoice.Status.VOID}]
+        issued_ids = {invoice.pk for invoice in issued_invoices}
+        payments = [payment for payment in payments if payment.invoice_id in issued_ids and payment.currency == payment.invoice.currency]
+        totals = []
+        for code in sorted({invoice.currency for invoice in issued_invoices} | {currency}):
+            invoiced = sum((invoice.amount for invoice in issued_invoices if invoice.currency == code), Decimal("0.00"))
+            collected = sum((payment.amount for payment in payments if payment.currency == code), Decimal("0.00"))
+            totals.append({"currency": code, "totalInvoiced": float(invoiced), "totalCollected": float(collected), "outstandingBalance": float(invoiced - collected)})
+        default_totals = next(item for item in totals if item["currency"] == currency)
 
         payload = {
             "companyId": membership.company.pk if membership else None,
@@ -269,9 +281,8 @@ class BillingSummaryReportView(BillingReportBaseView):
             "overdueCount": sum(1 for invoice in invoices if invoice.status == TripInvoice.Status.OVERDUE),
             "partiallyPaidCount": sum(1 for invoice in invoices if invoice.status == TripInvoice.Status.PARTIALLY_PAID),
             "paidCount": sum(1 for invoice in invoices if invoice.status == TripInvoice.Status.PAID),
-            "totalInvoiced": float(total_invoiced),
-            "totalCollected": float(total_collected),
-            "outstandingBalance": float(total_invoiced - total_collected),
+            **default_totals,
+            "totalsByCurrency": totals,
             "currency": currency,
         }
         return Response(CorporateBillingSummarySerializer(payload).data)
@@ -672,6 +683,7 @@ class TripMessageListView(CtmTripScopedView):
 
 
 class TripRequestViewSet(viewsets.ModelViewSet):
+    http_method_names = ["get", "post", "head", "options"]
     queryset = ctm_trip_queryset()
     serializer_class = CorporateTripRequestSerializer
     permission_classes = [HasCtmAccess]

@@ -7,6 +7,7 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 type SmartImageProps = {
+  priority?: boolean;
   src: string;
   alt: string;
   className?: string;
@@ -69,7 +70,7 @@ export function InstagramIcon({ className = 'h-4 w-4' }: { className?: string })
   );
 }
 
-export function SmartImage({ src, alt, className = '', fallbackClassName = '' }: SmartImageProps) {
+export function SmartImage({ src, alt, className = '', fallbackClassName = '', priority = false }: SmartImageProps) {
   const [failed, setFailed] = useState(false);
 
   if (failed) {
@@ -81,7 +82,7 @@ export function SmartImage({ src, alt, className = '', fallbackClassName = '' }:
     );
   }
 
-  return <img src={src} alt={alt} className={className} loading="lazy" decoding="async" onError={() => setFailed(true)} />;
+  return <img src={src} alt={alt} className={className} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" onError={() => setFailed(true)} />;
 }
 
 function LogoMark({

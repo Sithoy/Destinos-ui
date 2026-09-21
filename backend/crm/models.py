@@ -102,6 +102,8 @@ class Lead(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW)
     lifecycle_stage = models.CharField(max_length=40, choices=LifecycleStage.choices, default=LifecycleStage.NEW_REQUEST)
     email_status = models.CharField(max_length=20, choices=EmailStatus.choices, default=EmailStatus.PENDING)
+    submission_id = models.UUIDField(null=True, blank=True, unique=True, editable=False)
+    submission_fingerprint = models.CharField(max_length=64, blank=True, editable=False)
     internal_notes = models.TextField(blank=True)
     ctm_request_reference = models.CharField(max_length=24, blank=True, db_index=True)
     company_account = models.ForeignKey(

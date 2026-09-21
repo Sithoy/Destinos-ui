@@ -3,6 +3,7 @@ from django.utils import timezone
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.db.models import Q
 from rest_framework import serializers
 
@@ -98,9 +99,7 @@ def get_admin_source_membership(user: User) -> CompanyUser | None:
 
 
 def can_administer_any_company(user: User) -> bool:
-    if user.is_staff or user.is_superuser:
-        return True
-    return any(is_company_admin_membership(membership) for membership in CompanyUser.objects.filter(user=user, is_active=True, company__status=CompanyAccount.Status.ACTIVE))
+    return bool(user.is_active and (user.is_staff or user.is_superuser))
 
 
 def scoped_login_username_for_company(company: CompanyAccount, preferred_username: str) -> str:
@@ -357,7 +356,10 @@ def trip_has_document_blocker(trip: TripRequest) -> bool:
     travelers = [assignment.traveler for assignment in trip.trip_travelers.select_related("traveler").all()]
     traveler_blocked = any(
         traveler.passport_status != Traveler.PassportStatus.OK
-        or traveler.visa_status in {Traveler.VisaStatus.REQUIRED, Traveler.VisaStatus.PENDING}
+        or not traveler.passport_number
+        or not traveler.passport_expiry
+        or traveler.passport_expiry < (trip.return_date or trip.departure_date)
+        or traveler.visa_status not in {Traveler.VisaStatus.OK, Traveler.VisaStatus.NOT_APPLICABLE}
         for traveler in travelers
     )
     document_blocked = trip.documents.filter(status__in=[TripDocument.Status.MISSING, TripDocument.Status.REQUESTED]).exists()
@@ -686,6 +688,8 @@ class CorporateTravelerReadinessSerializer(serializers.Serializer):
     visa = serializers.SerializerMethodField()
 
     def get_passport(self, obj: Traveler) -> str:
+        if not obj.passport_number or not obj.passport_expiry or obj.passport_expiry < timezone.localdate():
+            return "Missing"
         return format_passport_status(obj.passport_status)
 
     def get_visa(self, obj: Traveler) -> str:
@@ -735,7 +739,7 @@ class CorporateTravelerDirectorySerializer(serializers.Serializer):
             return "Required"
         if obj.visa_status == Traveler.VisaStatus.PENDING:
             return "Pending"
-        return "N/A"
+        return "N/A" if obj.visa_status == Traveler.VisaStatus.NOT_APPLICABLE else "Unknown"
 
     def get_tripCount(self, obj: Traveler) -> int:
         return obj.trip_requests.count()
@@ -774,6 +778,15 @@ class CorporateTravelerWriteSerializer(serializers.Serializer):
     )
     notes = serializers.CharField(required=False, allow_blank=True)
     isActive = serializers.BooleanField(required=False)
+
+    def validate(self, attrs):
+        passport_status = attrs.get("passportStatus", getattr(self.instance, "passport_status", Traveler.PassportStatus.MISSING))
+        if passport_status == Traveler.PassportStatus.OK:
+            number = attrs.get("passportNumber", getattr(self.instance, "passport_number", ""))
+            expiry = attrs.get("passportExpiry", getattr(self.instance, "passport_expiry", None))
+            if not number or not expiry or expiry < timezone.localdate():
+                raise serializers.ValidationError({"passportStatus": "A passport number and unexpired expiry date are required to mark the passport OK."})
+        return attrs
 
     def _membership(self) -> CompanyUser:
         membership = get_ctm_membership_for_request(self.context["request"])
@@ -1006,6 +1019,7 @@ class CorporateApprovalSerializer(serializers.Serializer):
 
 
 class CorporateTimelineEventSerializer(serializers.Serializer):
+    occurredAt = serializers.DateTimeField(source="created_at")
     id = serializers.UUIDField(source="pk")
     title = serializers.CharField()
     meta = serializers.CharField(source="description")
@@ -1393,7 +1407,7 @@ class CorporateTripQuoteSerializer(serializers.Serializer):
 
 
 class CorporateTripQuoteWriteSerializer(serializers.Serializer):
-    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
     currency = serializers.CharField(max_length=12, required=False, allow_blank=False)
     validUntil = serializers.DateField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True)
@@ -1416,7 +1430,15 @@ class CorporateTripQuoteWriteSerializer(serializers.Serializer):
         sync_trip_from_quote(trip, quote)
         return quote
 
+    @transaction.atomic
     def update(self, instance: TripQuote, validated_data):
+        changed = any(key in validated_data and validated_data[key] != getattr(instance, field)
+                      for key, field in [("amount", "amount"), ("currency", "currency"), ("validUntil", "valid_until")])
+        if changed:
+            booking = getattr(instance.trip_request, "booking", None)
+            if booking and booking.status in {TripBooking.Status.CONFIRMED, TripBooking.Status.TICKETED, TripBooking.Status.COMPLETED}:
+                raise serializers.ValidationError("An approved quote cannot be repriced after booking confirmation.")
+            instance.trip_request.approvals.filter(approval_type=TripApproval.ApprovalType.FINAL_COST).update(status=TripApproval.Status.PENDING)
         if "amount" in validated_data:
             instance.amount = validated_data["amount"]
         if "currency" in validated_data:
@@ -1462,6 +1484,23 @@ class CorporateTripBookingWriteSerializer(serializers.Serializer):
     currency = serializers.CharField(max_length=12, required=False, allow_blank=False)
     status = serializers.ChoiceField(choices=[choice for choice, _ in TripBooking.Status.choices], required=False)
     bookedAt = serializers.DateTimeField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        trip = self.context["trip_request"]
+        booking_status = attrs.get("status", getattr(self.instance, "status", TripBooking.Status.PENDING))
+        if booking_status in {TripBooking.Status.CONFIRMED, TripBooking.Status.TICKETED, TripBooking.Status.COMPLETED}:
+            gate = final_cost_approval_gate(trip)
+            if not gate["ready"]:
+                raise serializers.ValidationError({"status": gate["detail"]})
+            if approval_status_for_trip(trip, TripApproval.ApprovalType.FINAL_COST) != TripApproval.Status.APPROVED:
+                raise serializers.ValidationError({"status": "Final cost approval is required before confirming a booking."})
+            amount = attrs.get("totalCost", getattr(self.instance, "total_cost", None))
+            currency = attrs.get("currency", getattr(self.instance, "currency", trip.currency))
+            if amount != trip.quote.amount or currency != trip.quote.currency:
+                raise serializers.ValidationError({"totalCost": "Booking amount and currency must match the approved quote."})
+            if not attrs.get("bookingReference", getattr(self.instance, "booking_reference", "")):
+                raise serializers.ValidationError({"bookingReference": "A supplier confirmation reference is required."})
+        return attrs
 
     def create(self, validated_data):
         trip = self.context["trip_request"]
@@ -1528,12 +1567,21 @@ class CorporateTripInvoiceSerializer(serializers.Serializer):
 
 
 class CorporateTripInvoiceWriteSerializer(serializers.Serializer):
-    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
     currency = serializers.CharField(max_length=12, required=False, allow_blank=False)
     status = serializers.ChoiceField(choices=[choice for choice, _ in TripInvoice.Status.choices], required=False)
     issuedAt = serializers.DateTimeField(required=False, allow_null=True)
     dueDate = serializers.DateField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if self.instance and self.instance.payments.exists():
+            if attrs.get("currency", self.instance.currency) != self.instance.currency:
+                raise serializers.ValidationError({"currency": "Invoice currency cannot change after payments have been recorded."})
+            paid = sum((payment.amount for payment in self.instance.payments.filter(currency=self.instance.currency, status__in=[TripPayment.Status.RECEIVED, TripPayment.Status.RECONCILED])), Decimal("0"))
+            if attrs.get("amount", self.instance.amount) < paid:
+                raise serializers.ValidationError({"amount": "Invoice amount cannot be lower than collected payments."})
+        return attrs
 
     def create(self, validated_data):
         trip = self.context["trip_request"]
@@ -1598,13 +1646,23 @@ class CorporateTripPaymentSerializer(serializers.Serializer):
 
 
 class CorporateTripPaymentWriteSerializer(serializers.Serializer):
-    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
     currency = serializers.CharField(max_length=12, required=False, allow_blank=False)
     paymentMethod = serializers.ChoiceField(choices=[choice for choice, _ in TripPayment.Method.choices], required=False)
     status = serializers.ChoiceField(choices=[choice for choice, _ in TripPayment.Status.choices], required=False)
     reference = serializers.CharField(max_length=80, required=False, allow_blank=True)
     receivedAt = serializers.DateTimeField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        invoice = self.context["invoice"]
+        if invoice.status in {TripInvoice.Status.DRAFT, TripInvoice.Status.VOID}:
+            raise serializers.ValidationError("Issue an active invoice before recording payments.")
+        currency = attrs.get("currency", getattr(self.instance, "currency", invoice.currency)).upper()
+        if currency != invoice.currency:
+            raise serializers.ValidationError({"currency": "Payment currency must match the invoice currency."})
+        attrs["currency"] = currency
+        return attrs
 
     def create(self, validated_data):
         invoice = self.context["invoice"]
@@ -1644,6 +1702,7 @@ class CorporateTripPaymentWriteSerializer(serializers.Serializer):
 
 
 class CorporateBillingSummarySerializer(serializers.Serializer):
+    totalsByCurrency = serializers.ListField(child=serializers.DictField())
     companyId = serializers.UUIDField()
     companyName = serializers.CharField()
     invoiceCount = serializers.IntegerField()
@@ -1691,7 +1750,9 @@ def sync_trip_from_invoice(trip: TripRequest, invoice: TripInvoice):
 
 
 def sync_invoice_from_payments(invoice: TripInvoice):
-    payments = list(invoice.payments.filter(status__in=[TripPayment.Status.RECEIVED, TripPayment.Status.RECONCILED]).order_by("-received_at", "-created_at"))
+    if invoice.status == TripInvoice.Status.VOID:
+        return
+    payments = list(invoice.payments.filter(currency=invoice.currency, status__in=[TripPayment.Status.RECEIVED, TripPayment.Status.RECONCILED]).order_by("-received_at", "-created_at"))
     total_paid = sum((payment.amount for payment in payments), Decimal("0.00"))
 
     update_fields = []
@@ -1725,6 +1786,7 @@ def sync_invoice_from_payments(invoice: TripInvoice):
 
 
 class CorporateTravelerCreateSerializer(serializers.Serializer):
+    profileId = serializers.UUIDField(required=False)
     name = serializers.CharField()
     email = serializers.EmailField()
     department = serializers.CharField()
@@ -1735,11 +1797,28 @@ class CorporateTripCreateSerializer(serializers.Serializer):
     origin = serializers.CharField()
     destination = serializers.CharField()
     departureDate = serializers.DateField()
+    returnDate = serializers.DateField(required=False, allow_null=True)
     purpose = serializers.CharField()
     budgetBand = serializers.ChoiceField(choices=["lt1k", "1k_5k", "gt5k"])
     services = serializers.ListField(child=serializers.ChoiceField(choices=[choice for choice, _ in TripService.ServiceType.choices]), allow_empty=False)
     travelers = CorporateTravelerCreateSerializer(many=True, allow_empty=False)
 
+    def validate(self, attrs):
+        if attrs["departureDate"] < timezone.localdate():
+            raise serializers.ValidationError({"departureDate": "Departure cannot be in the past."})
+        if attrs.get("returnDate") and attrs["returnDate"] < attrs["departureDate"]:
+            raise serializers.ValidationError({"returnDate": "Return cannot precede departure."})
+        membership = get_ctm_membership_for_request(self.context["request"])
+        if membership is None:
+            raise serializers.ValidationError("This account does not have CTM access.")
+        profile_ids = [item["profileId"] for item in attrs["travelers"] if item.get("profileId")]
+        if len(profile_ids) != len(set(profile_ids)):
+            raise serializers.ValidationError({"travelers": "A traveler cannot be selected twice."})
+        if Traveler.objects.filter(id__in=profile_ids, company=membership.company, is_active=True).count() != len(profile_ids):
+            raise serializers.ValidationError({"travelers": "Select active traveler profiles from your company."})
+        return attrs
+
+    @transaction.atomic
     def create(self, validated_data):
         request = self.context["request"]
         company_user = get_ctm_membership_for_request(request)
@@ -1756,29 +1835,39 @@ class CorporateTripCreateSerializer(serializers.Serializer):
             origin=validated_data["origin"],
             destination=destination,
             departure_date=departure_date,
+            return_date=validated_data.get("returnDate"),
             purpose=validated_data["purpose"],
             budget_band=budget_band,
             request_type=TripRequest.RequestType.GROUP if len(validated_data["travelers"]) > 1 else TripRequest.RequestType.INDIVIDUAL,
             status=TripRequest.Status.PENDING_APPROVAL,
             approval_stage=TripRequest.ApprovalStage.TRAVEL_NEED,
             estimated_cost=Decimal(parse_budget_estimate(budget_band)),
-            quoted_cost=Decimal(parse_budget_estimate(budget_band)) if budget_band == "lt1k" else None,
+            quoted_cost=None,
             internal_notes="New company request submitted to DPM. Waiting for the travel-need approval before quote validation moves forward.",
         )
 
         for traveler_payload in validated_data["travelers"]:
-            traveler = Traveler.objects.create(
-                company=company,
-                full_name=traveler_payload["name"],
-                email=traveler_payload["email"],
-                department=traveler_payload["department"],
-                passport_status=Traveler.PassportStatus.OK,
-                visa_status=Traveler.VisaStatus.REQUIRED if destination.lower() == "dubai" else Traveler.VisaStatus.NOT_APPLICABLE,
-            )
+            if traveler_payload.get("profileId"):
+                traveler = Traveler.objects.get(pk=traveler_payload["profileId"], company=company, is_active=True)
+            else:
+                traveler = Traveler.objects.create(
+                    company=company,
+                    full_name=traveler_payload["name"],
+                    email=traveler_payload["email"],
+                    department=traveler_payload["department"],
+                )
+            passport_ready = bool(traveler.passport_status == Traveler.PassportStatus.OK
+                                  and traveler.passport_number and traveler.passport_expiry
+                                  and traveler.passport_expiry >= (trip.return_date or departure_date))
+            document_status = TripTraveler.DocumentStatus.MISSING_PASSPORT
+            if passport_ready:
+                document_status = (TripTraveler.DocumentStatus.READY
+                                   if traveler.visa_status in {Traveler.VisaStatus.OK, Traveler.VisaStatus.NOT_APPLICABLE}
+                                   else TripTraveler.DocumentStatus.PENDING_DOCS)
             TripTraveler.objects.create(
                 trip_request=trip,
                 traveler=traveler,
-                document_status=TripTraveler.DocumentStatus.VISA_REQUIRED if traveler.visa_status == Traveler.VisaStatus.REQUIRED else TripTraveler.DocumentStatus.READY,
+                document_status=document_status,
             )
 
         for service in validated_data["services"]:
@@ -1795,7 +1884,7 @@ class CorporateTripCreateSerializer(serializers.Serializer):
         TripApproval.objects.create(
             trip_request=trip,
             approval_type=TripApproval.ApprovalType.FINAL_COST,
-            status=TripApproval.Status.APPROVED if budget_band == "lt1k" else TripApproval.Status.PENDING,
+            status=TripApproval.Status.PENDING,
             decision_notes=f"Approval owner: {final_cost_approver}",
         )
         TripTimelineEvent.objects.create(
@@ -1811,7 +1900,7 @@ class CorporateTripCreateSerializer(serializers.Serializer):
             actor_type=TripTimelineEvent.ActorType.SYSTEM,
             event_type=TripTimelineEvent.EventType.UPDATED,
             title="Approval path opened",
-            description=f"{travel_need_approver} notified",
+            description=f"Awaiting review by {travel_need_approver}",
         )
         sync_crm_lead_from_ctm_trip(trip)
         return trip
@@ -1843,27 +1932,16 @@ class CtmLoginSerializer(serializers.Serializer):
             except CompanyAccount.DoesNotExist:
                 raise serializers.ValidationError("Invalid company ID, username/email, or password.")
 
-            membership = (
+            candidates = (
                 CompanyUser.objects.select_related("company", "user")
                 .filter(company=company, is_active=True)
                 .filter(Q(login_username__iexact=username) | Q(user__email__iexact=username))
-                .first()
             )
-            if membership is not None:
-                user = authenticate(username=membership.user.username, password=password)
-
-            if user is None:
-                admin_candidates = CompanyUser.objects.select_related("company", "user").filter(is_active=True, company__status=CompanyAccount.Status.ACTIVE).filter(
-                    Q(login_username__iexact=username) | Q(user__email__iexact=username)
-                )
-                for candidate in admin_candidates:
-                    if not is_company_admin_membership(candidate):
-                        continue
-                    authenticated_user = authenticate(username=candidate.user.username, password=password)
-                    if authenticated_user is not None:
-                        user = authenticated_user
-                        membership = get_ctm_membership(user, company_code)
-                        break
+            for candidate in candidates:
+                user = authenticate(username=candidate.user.username, password=password)
+                if user is not None:
+                    membership = candidate
+                    break
 
             if user is None:
                 staff_candidates = User.objects.filter(Q(username__iexact=username) | Q(email__iexact=username), is_active=True)

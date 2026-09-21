@@ -103,7 +103,7 @@ function normalizeReadiness(passportStatus: unknown, visaStatus: unknown): Corpo
   const passportText = String(passportStatus ?? '').toLowerCase();
   const visaText = String(visaStatus ?? '').toLowerCase();
   const passport = passportText === 'ok' ? 'OK' : 'Missing';
-  const visa = visaText === 'required' || visaText === 'pending' ? 'Required' : visaText === 'ok' ? 'OK' : 'N/A';
+  const visa = visaText === 'ok' ? 'OK' : ['n/a', 'n_a'].includes(visaText) ? 'N/A' : 'Required';
   return { passport, visa };
 }
 
@@ -119,7 +119,8 @@ function normalizeVisaStatus(value: unknown): CorporateTravelerProfile['visaStat
   if (text === 'ok') return 'OK';
   if (text === 'required') return 'Required';
   if (text === 'pending') return 'Pending';
-  return 'N/A';
+  if (text === 'n/a' || text === 'n_a') return 'N/A';
+  return 'Unknown';
 }
 
 function toApiPassportStatus(value: CorporateTravelerProfileInput['passportStatus']) {
@@ -132,13 +133,13 @@ function toApiVisaStatus(value: CorporateTravelerProfileInput['visaStatus']) {
   if (value === 'OK') return 'ok';
   if (value === 'Required') return 'required';
   if (value === 'Pending') return 'pending';
-  return 'n_a';
+  return value === 'N/A' ? 'n_a' : 'unknown';
 }
 
 function normalizeTravelerProfile(raw: unknown): CorporateTravelerProfile {
   const record = (raw ?? {}) as Record<string, unknown>;
   const passportStatus = readValue<string>(record, 'passportStatus', 'passport_status') ?? 'Missing';
-  const visaStatus = readValue<string>(record, 'visaStatus', 'visa_status') ?? 'N/A';
+  const visaStatus = readValue<string>(record, 'visaStatus', 'visa_status') ?? 'Unknown';
   const nextTrip = readValue<Record<string, unknown>>(record, 'nextTrip', 'next_trip') ?? {};
 
   return {

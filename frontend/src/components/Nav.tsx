@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { Crown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { pageMeta } from '../data/travel';
@@ -98,6 +99,11 @@ export function Nav({
           )}
         </div>
       </div>
+      <nav aria-label="Travel services" className="mx-auto flex max-w-7xl flex-wrap gap-x-6 gap-y-2 px-4 pb-3 text-sm text-white/85 md:px-6">
+        <Link to="/">{t('nav.backHome')}</Link>
+        <Link to="/prestige/luxury">{t('nav.luxury')}</Link>
+        <Link to="/prestige/corporate">{t('nav.corporate')}</Link>
+      </nav>
     </div>
   );
 }

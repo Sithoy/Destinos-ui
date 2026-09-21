@@ -2,10 +2,11 @@ import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { createCrmLeadRecord, updateCrmLeadRecord } from '../data/crm';
+import { submitPublicInquiry } from '../data/crm';
 import { inquiryLabelKeys } from '../data/travel';
 import type { InquiryKind } from '../types';
 import { Badge, Button } from './ui';
+import { useModalFocus } from './useModalFocus';
 
 type TripTypeOption = 'leisure' | 'luxury' | 'honeymoon' | 'family' | 'corporate' | 'group' | 'other';
 type BudgetOption = 'notSure' | 'under1500' | '1500to3000' | '3000to6000' | '6000plus' | 'corporate';
@@ -79,7 +80,9 @@ export function InquiryModal({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const dialogRef = useModalFocus(Boolean(kind), onClose);
   const [submitState, setSubmitState] = React.useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const submission = React.useRef<{ payload: string; id: string } | null>(null);
   const [formError, setFormError] = React.useState('');
   const label = kind ? t(inquiryLabelKeys[kind]) : '';
   const formProfile = kind ? formProfiles[kind] : formProfiles.classic;
@@ -140,52 +143,10 @@ export function InquiryModal({
     const travelers = fieldValue('travelers');
     const notes = fieldValue('notes');
 
-    const details = [
-      `${t('inquiry.emailBody.service')}: ${label}`,
-      `${t('inquiry.emailBody.name')}: ${name}`,
-      `${t('inquiry.emailBody.email')}: ${email}`,
-      `${t('inquiry.emailBody.whatsapp')}: ${whatsapp}`,
-      `${t('inquiry.emailBody.preferredContact')}: ${preferredContact}`,
-      `${t('inquiry.emailBody.requestedServices')}: ${requestedServicesText}`,
-      `${t('inquiry.emailBody.tripType')}: ${tripType}`,
-      `${t('inquiry.emailBody.destination')}: ${destination}`,
-      `${t('inquiry.emailBody.dates')}: ${travelWindow}`,
-      `${t('inquiry.emailBody.travelers')}: ${travelers}`,
-      `${t('inquiry.emailBody.budget')}: ${budget}`,
-      '',
-      `${t('inquiry.emailBody.notes')}:`,
-      notes,
-    ].filter(Boolean);
-    const subject = t('inquiry.emailSubject', { service: label, name });
-    const payload: Record<string, string> = {
-      _subject: subject,
-      _template: 'table',
-      _captcha: 'false',
-      service: label,
-      name,
-      email,
-      whatsapp,
-      contact,
-      preferredContact,
-      requestedServices: requestedServicesText,
-      tripType,
-      destination,
-      dates: travelWindow,
-      travelers,
-      budget,
-      priority: 'normal',
-      notes,
-      message: details.join('\n'),
-    };
-    if (email) {
-      payload._replyto = email;
-    }
-
     setSubmitState('sending');
-    let leadId = '';
 
     try {
-      const lead = await createCrmLeadRecord({
+      const input = {
         service: label,
         serviceKey: kind,
         name,
@@ -201,28 +162,17 @@ export function InquiryModal({
         travelers,
         budget,
         urgency: travelWindow || 'Flexible timing',
-        priority: 'normal',
         notes,
-      });
-      leadId = lead.id;
-      const response = await fetch('https://formsubmit.co/ajax/contact@dpmundo.com', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error('Form submission failed');
+      };
+      const payload = JSON.stringify(input);
+      if (submission.current?.payload !== payload) {
+        submission.current = { payload, id: crypto.randomUUID() };
       }
-
+      await submitPublicInquiry(input, submission.current.id);
       setSubmitState('sent');
-      void updateCrmLeadRecord(leadId, { emailStatus: 'sent' });
+      submission.current = null;
       form.reset();
     } catch {
-      if (leadId) void updateCrmLeadRecord(leadId, { emailStatus: 'failed' });
       setSubmitState('error');
     }
   }
@@ -237,6 +187,7 @@ export function InquiryModal({
           transition={{ duration: 0.2 }}
           className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-950/72 px-3 pb-6 pt-4 backdrop-blur-sm sm:px-4 sm:pb-10 sm:pt-8"
           role="dialog"
+          ref={dialogRef}
           aria-modal="true"
           aria-labelledby="inquiry-title"
         >
@@ -325,6 +276,7 @@ export function InquiryModal({
                   placeholder={t('inquiry.placeholders.notes')}
                 />
               </label>
+              <p className="text-xs leading-5 text-slate-500">{t('inquiry.privacyNotice')}</p>
               {submitState === 'sent' ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status">
                   {t('inquiry.submitSuccess')}

@@ -32,6 +32,7 @@ export const pt = {
     poweredBy: 'Desenvolvido por',
   },
   inquiry: {
+    privacyNotice: 'Usamos estes dados para responder ao seu pedido e planear a sua viagem. Inclua apenas a informação necessária para o pedido.',
     labels: {
       classic: 'Viagem Clássica',
       luxury: 'Prestige Luxury',
@@ -363,10 +364,10 @@ export const pt = {
     },
     profile: {
       eyebrow: 'Perfil Luxury',
-      title: 'Estética premium e acolhedora',
+      title: 'Viagens planeadas à sua medida',
       items: {
-        hospitality: 'Tom de hospitalidade boutique',
-        visuals: 'Visuais de destino com forte emoção',
+        hospitality: 'Hotéis distintos e serviço personalizado',
+        visuals: 'Destinos alinhados com os seus interesses',
         planning: 'Planeamento estilo concierge',
         curated: 'Experiências elegantes e cuidadosamente selecionadas',
       },
@@ -458,11 +459,11 @@ export const pt = {
     },
     profile: {
       eyebrow: 'Perfil Corporate',
-      title: 'Estética executiva e eficiente',
+      title: 'Apoio em cada viagem de negócios',
       items: {
-        communication: 'Comunicação de valor precisa',
-        structure: 'Estrutura orientada para negócios',
-        restrained: 'Apresentação premium mas contida',
+        communication: 'Orçamentos claros e visibilidade dos custos',
+        structure: 'Viagens alinhadas com as necessidades da empresa',
+        restrained: 'Coordenação de voos, hotéis e transfers',
         support: 'Apoio fiável para necessidades de viagem corporativa',
       },
     },

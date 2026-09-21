@@ -34,7 +34,8 @@ export function CorporateReportsPage({
   onOpenRequest: (tripId: string) => void;
 }) {
   const styles = corporatePortalThemeStyles[theme];
-  const currency = summary?.currency ?? invoices[0]?.currency ?? 'USD';
+  const totals = summary?.totalsByCurrency ?? (summary ? [summary] : []);
+  const amounts = (key: 'totalInvoiced' | 'totalCollected' | 'outstandingBalance') => totals.length ? totals.map((item) => formatMoney(item[key], item.currency)).join(' / ') : '—';
   const recentInvoices = invoices.slice(0, 6);
   const recentPayments = payments.slice(0, 6);
 
@@ -44,20 +45,20 @@ export function CorporateReportsPage({
         <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
           <div className="mb-3">
             <h2 className="text-xl font-semibold">Billing summary</h2>
-            <p className={`mt-1 text-sm ${styles.soft}`}>Live invoice and payment visibility from the CTM billing endpoints.</p>
+            <p className={`mt-1 text-sm ${styles.soft}`}>Issued invoices and collected payments, shown separately in each currency. Draft and void invoices are excluded.</p>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className={`rounded-xl border p-4 ${styles.surface}`}>
               <div className={`text-xs ${styles.muted}`}>Total invoiced</div>
-              <div className="mt-1 text-lg font-semibold">{formatMoney(summary?.totalInvoiced ?? 0, currency)}</div>
+              <div className="mt-1 text-lg font-semibold">{amounts('totalInvoiced')}</div>
             </div>
             <div className={`rounded-xl border p-4 ${styles.surface}`}>
               <div className={`text-xs ${styles.muted}`}>Collected</div>
-              <div className="mt-1 text-lg font-semibold text-emerald-300">{formatMoney(summary?.totalCollected ?? 0, currency)}</div>
+              <div className="mt-1 text-lg font-semibold text-emerald-300">{amounts('totalCollected')}</div>
             </div>
             <div className={`rounded-xl border p-4 ${styles.surface}`}>
               <div className={`text-xs ${styles.muted}`}>Outstanding</div>
-              <div className="mt-1 text-lg font-semibold text-amber-300">{formatMoney(summary?.outstandingBalance ?? 0, currency)}</div>
+              <div className="mt-1 text-lg font-semibold text-amber-300">{amounts('outstandingBalance')}</div>
             </div>
             <div className={`rounded-xl border p-4 ${styles.surface}`}>
               <div className={`text-xs ${styles.muted}`}>Invoice count</div>
@@ -87,7 +88,7 @@ export function CorporateReportsPage({
         <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
           <div className="mb-3">
             <h3 className="text-base font-semibold">Recent invoices</h3>
-            <p className={`mt-1 text-xs ${styles.muted}`}>Trip-linked invoice records now coming from the Django backend.</p>
+            <p className={`mt-1 text-xs ${styles.muted}`}>Select an invoice to view its travel request.</p>
           </div>
           <div className="space-y-3">
             {recentInvoices.length === 0 ? (

@@ -74,6 +74,7 @@ export type CrmClient = {
 };
 
 export type CrmLead = {
+  workflowSummary?: Pick<CrmWorkflowState, 'canAdvance' | 'nextStage' | 'blockers'>;
   id: string;
   createdAt: string;
   updatedAt: string;

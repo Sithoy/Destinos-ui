@@ -90,6 +90,8 @@ OWNER_BY_SERVICE = {
 def workflow_for_lead(lead: Lead) -> dict:
     stages = _stage_sequence(lead)
     current_stage = _normalized_stage(lead, stages)
+    if current_stage == Lead.LifecycleStage.CLOSED:
+        stages = [Lead.LifecycleStage.CLOSED]
     current_index = stages.index(current_stage)
     next_stage = stages[current_index + 1] if current_index + 1 < len(stages) else None
     checklist = _checklist_for_stage(lead, current_stage)
@@ -140,7 +142,7 @@ def _stage_sequence(lead: Lead) -> list[str]:
 
 
 def _normalized_stage(lead: Lead, stages: list[str]) -> str:
-    if lead.status == Lead.Status.LOST:
+    if lead.status == Lead.Status.LOST or lead.lifecycle_stage == Lead.LifecycleStage.CLOSED:
         return Lead.LifecycleStage.CLOSED
     if lead.lifecycle_stage in stages:
         return lead.lifecycle_stage
@@ -231,7 +233,7 @@ def _brief_checks(lead: Lead) -> list[dict]:
 
 
 def _design_input_checks(lead: Lead) -> list[dict]:
-    itinerary = lead.itineraries.order_by("-updated_at").first()
+    itinerary = max(lead.itineraries.all(), key=lambda item: item.updated_at, default=None)
     return [
         _check("brief", "Qualified brief", bool(lead.destination and lead.dates), "Destination and dates must be stable."),
         _check("itinerary", "Trip design record", bool(itinerary), "Create an itinerary record before pricing."),
@@ -316,7 +318,7 @@ def _closed_checks(lead: Lead) -> list[dict]:
 
 
 def _latest_quote(lead: Lead) -> Quote | None:
-    return lead.quotes.prefetch_related("lines", "approvals").order_by("-version", "-created_at").first()
+    return max(lead.quotes.all(), key=lambda item: (item.version, item.created_at), default=None)
 
 
 def _payment_is_cleared(lead: Lead) -> bool:

@@ -57,7 +57,7 @@ export function CorporatePortalLayout({
               </button>
             }
           />
-          <div className="p-5">{children}</div>
+          <main className="p-3 sm:p-5">{children}</main>
         </section>
       </div>
     </div>
