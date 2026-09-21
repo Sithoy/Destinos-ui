@@ -5,6 +5,7 @@ import sys
 import dj_database_url
 from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -15,6 +16,8 @@ def env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-change-me")
+if os.getenv("VERCEL") and (SECRET_KEY == "dev-only-change-me" or not os.getenv("DATABASE_URL")):
+    raise ImproperlyConfigured("Vercel requires DJANGO_SECRET_KEY and DATABASE_URL.")
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 IS_TESTING = "test" in sys.argv
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
@@ -73,10 +76,11 @@ if DATABASE_URL:
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,
-            conn_max_age=600,
+            conn_max_age=0 if os.getenv("VERCEL") else 600,
             ssl_require=os.getenv("DATABASE_SSL_REQUIRE", "True").lower() == "true",
         )
     }
+    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 else:
     DATABASES = {
         "default": {
