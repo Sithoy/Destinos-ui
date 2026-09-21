@@ -1,8 +1,28 @@
-# Deployment Readiness
+# Deployment
+
+## Current production architecture (September 2026)
+
+- Website: Vercel project `destinos-ui`, repository root, https://www.dpmundo.com.
+- API: Vercel project `dpm-backend`, root directory `backend`, Django framework, https://dpm-backend.vercel.app.
+- Database: Vercel-managed Neon resource `dpm-production-db`, Washington DC (`iad1`), Free plan. Production started with a fresh schema; old Render data has not been imported.
+- The backend and database are in the same region. The Neon integration supplies sensitive database environment variables and creates separate branches for previews.
+- Frontend `VITE_CRM_API_URL` is `https://dpm-backend.vercel.app`.
+
+The backend uses `backend/vercel.json`. Its build runs `vercel_build.py` to apply migrations; Vercel collects static files automatically. Configure `DJANGO_SECRET_KEY`, `DATABASE_URL`, `DJANGO_ALLOWED_HOSTS`, and `DJANGO_DEBUG=False` in the backend project. Missing production secrets fail deployment instead of falling back to SQLite. Keep database credentials out of frontend variables.
+
+For an entirely fresh database only, `DPM_BOOTSTRAP_ADMIN_PASSWORD_HASH` can supply a Django password hash at the first production build, with optional `DPM_BOOTSTRAP_ADMIN_USERNAME`. It creates an administrator only if the user table is empty and never resets existing accounts. Remove the bootstrap variable afterward. Never run development seed commands in production.
+
+Deploy schema-compatible backend changes before frontend changes that require them. Check CRM/CTM authentication, company isolation, API CORS, and inquiry validation after rollout. Record migrations and backup requirements before any destructive schema change.
+
+Inquiry receipts are saved in CRM. Email notifications additionally require SMTP configuration and a scheduled invocation of `send_inquiry_notifications`; these are not automatically provisioned by Vercel. Until configured, staff must review inquiries in CRM.
+
+The previous Render service/database are retained for possible recovery; this deployment does not delete them. Recover Render access separately to export historical data and review any remaining billing or automatic deployments.
+
+## Previous Render deployment reference
 
 This guide documents the deployment setup after the repo split into `frontend/` and `backend/`.
 
-## Deployment Split
+### Previous deployment split
 
 - **Frontend**: Vercel
 - **Backend**: Render web service
