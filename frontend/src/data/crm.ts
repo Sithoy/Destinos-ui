@@ -1227,6 +1227,7 @@ export async function submitPublicInquiry(input: Omit<CrmLeadCreateInput, 'prior
   if (!base) throw new Error('Online inquiries are unavailable. Please contact DPM directly.');
   return parseApiResponse(await fetch(`${base}/api/public/leads/`, {
     method: 'POST',
+    signal: AbortSignal.timeout(20000),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...input, submissionId }),
   }));

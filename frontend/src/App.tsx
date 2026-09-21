@@ -147,7 +147,7 @@ export default function DestinosPeloMundoUIConcept() {
     ) : page === 'luxury' ? (
       <LuxuryPage openInquiry={openInquiry} />
     ) : page === 'corporate' ? (
-      <CorporatePage />
+      <CorporatePage openInquiry={openInquiry} />
     ) : (
       <ClassicHome openInquiry={openInquiry} />
     );

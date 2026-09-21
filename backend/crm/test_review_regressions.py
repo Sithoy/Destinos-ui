@@ -13,6 +13,18 @@ from .models import Lead
 
 
 class ReviewRegressionTests(APITestCase):
+    def test_tailored_intake_accepts_undecided_plans_and_each_contact_channel(self):
+        for kind, method, contact in [("classic", "WhatsApp", {"whatsapp": "+258840000000"}), ("luxury", "Email", {"email": "guest@example.com"}), ("corporate", "Phone", {"whatsapp": "+258840000001"})]:
+            with self.subTest(kind=kind):
+                payload = {"service": kind, "serviceKey": kind, "name": "Example contact", "preferredContact": method, "submissionId": str(uuid.uuid4()), "destination": "", "dates": "", "budget": "", "notes": "Company: Example\nRequest: management" if kind == "corporate" else "Dates: to be decided", **contact}
+                response = self.client.post(reverse("public-leads"), payload, format="json")
+                self.assertEqual(response.status_code, 201, response.data)
+                self.assertTrue(response.data["received"])
+                lead = Lead.objects.get(pk=response.data["id"])
+                self.assertEqual(lead.preferred_contact, method)
+                self.assertEqual(lead.email_status, "pending")
+                self.assertEqual(lead.lifecycle_stage, "new_request")
+
     def test_public_submission_ignores_internal_fields_and_returns_only_receipt(self):
         response = self.client.post(reverse("public-leads"), {
             "service": "Leisure", "serviceKey": "classic", "name": "Traveler",

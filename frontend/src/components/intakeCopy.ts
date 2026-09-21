@@ -1,0 +1,26 @@
+export const intakeCopy = {
+  pt: {
+    titles: { classic: 'Que viagem tem em mente?', luxury: 'O que tornaria esta viagem especial?', corporate: 'Como podemos ajudar a sua empresa?' },
+    intro: 'Partilhe o que já sabe. Podemos definir os restantes detalhes numa conversa.', more: 'Mais detalhes, se já souber',
+    trip: 'A sua viagem', companyStep: 'A sua empresa', contactStep: 'Como podemos contactar', next: 'Continuar', back: 'Voltar', send: 'Enviar pedido', sending: 'A enviar…', close: 'Fechar',
+    destination: 'Destino ou ideia de viagem', inspire: 'Ainda não sei — inspirem-me', dates: 'Quando gostaria de viajar?', dateHint: 'Ex.: Outubro, uma semana, datas flexíveis', flexible: 'Datas por definir', adults: 'Adultos', children: 'Crianças', party: 'Viajantes', departure: 'Cidade de partida',
+    occasion: 'Ocasião ou interesses', occasionHint: 'Uma celebração, gastronomia, natureza, uma estadia especial…', preferences: 'Preferências e pequenos detalhes', notes: 'O que gostaria que soubéssemos?', budget: 'Orçamento total da viagem', budgetUnknown: 'Prefiro conversar sobre isso',
+    company: 'Nome da empresa', branch: 'O que precisa de organizar?', branches: { trip: 'Uma viagem de negócios', management: 'Gestão regular de viagens', support: 'Sou cliente e preciso de apoio' }, frequency: 'Com que frequência viaja a equipa?', frequencies: ['Por definir', 'Ocasionalmente', 'Todos os meses', 'Todas as semanas'], challenges: 'O que precisa de melhorar ou coordenar?',
+    support: 'Entre no CTM para consultar pedidos e itinerários. Se precisar de ajuda com o acesso, pode pedir contacto aqui.', portal: 'Entrar no CTM',
+    name: 'O seu nome', method: 'Como prefere ser contactado?', email: 'Email', phone: 'Telefone', whatsapp: 'WhatsApp', contactHint: 'Só precisamos do contacto que escolher.',
+    summary: 'Resumo do seu pedido', optional: 'Por definir', optionalLabel: '(opcional)', privacy: 'Usamos estes dados para responder ao seu pedido. Não inclua documentos, dados de pagamento ou informação sensível.',
+    success: 'Recebemos o seu pedido.', nextSteps: 'A equipa DPM irá analisar os detalhes e contactá-lo pelo meio escolhido para combinar os próximos passos. Este pedido não confirma uma reserva.', reference: 'Referência', error: 'Não foi possível confirmar a recepção. Os seus dados continuam aqui; pode tentar novamente ou contactar-nos.', contactError: 'Indique um contacto válido para o meio escolhido.', required: 'Preencha o nome e os campos obrigatórios.',
+  },
+  en: {
+    titles: { classic: 'What journey do you have in mind?', luxury: 'What would make this journey special?', corporate: 'How can we help your company?' },
+    intro: 'Share what you already know. We can work out the remaining details together.', more: 'More details, if you know them',
+    trip: 'Your journey', companyStep: 'Your company', contactStep: 'How can we reach you?', next: 'Continue', back: 'Back', send: 'Send request', sending: 'Sending…', close: 'Close',
+    destination: 'Destination or travel idea', inspire: 'Not sure yet — inspire me', dates: 'When would you like to travel?', dateHint: 'E.g. October, one week, flexible dates', flexible: 'Dates to be decided', adults: 'Adults', children: 'Children', party: 'Travellers', departure: 'Departure city',
+    occasion: 'Occasion or interests', occasionHint: 'A celebration, food, nature, a special place to stay…', preferences: 'Preferences and personal touches', notes: 'Anything you would like us to know?', budget: 'Total trip budget', budgetUnknown: 'I would prefer to discuss this',
+    company: 'Company name', branch: 'What would you like to arrange?', branches: { trip: 'A business trip', management: 'Ongoing travel management', support: 'I am a client and need support' }, frequency: 'How often does your team travel?', frequencies: ['To be decided', 'Occasionally', 'Every month', 'Every week'], challenges: 'What needs improving or coordinating?',
+    support: 'Sign in to CTM for existing requests and itineraries. If you need help with access, you can request contact here.', portal: 'Sign in to CTM',
+    name: 'Your name', method: 'How would you like us to contact you?', email: 'Email', phone: 'Phone', whatsapp: 'WhatsApp', contactHint: 'We only need the contact method you choose.',
+    summary: 'Your request summary', optional: 'To be decided', optionalLabel: '(optional)', privacy: 'We use these details to respond to your request. Please do not include documents, payment details, or sensitive information.',
+    success: 'We have received your request.', nextSteps: 'The DPM team will review the details and contact you through your chosen channel to agree on next steps. This request does not confirm a booking.', reference: 'Reference', error: 'We could not confirm receipt. Your answers are still here; please retry or contact us.', contactError: 'Please provide valid details for your chosen contact method.', required: 'Please enter your name and complete the required fields.',
+  },
+};

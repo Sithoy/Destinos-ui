@@ -1,312 +1,102 @@
-import React from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
+import { X, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { submitPublicInquiry } from '../data/crm';
-import { inquiryLabelKeys } from '../data/travel';
+import { intakePayload, newIntakeDraft } from '../data/intake';
+import type { IntakeDraft } from '../data/intake';
 import type { InquiryKind } from '../types';
-import { Badge, Button } from './ui';
+import { ctmPrimaryRoute } from '../data/travel';
 import { useModalFocus } from './useModalFocus';
+import { intakeCopy } from './intakeCopy';
 
-type TripTypeOption = 'leisure' | 'luxury' | 'honeymoon' | 'family' | 'corporate' | 'group' | 'other';
-type BudgetOption = 'notSure' | 'under1500' | '1500to3000' | '3000to6000' | '6000plus' | 'corporate';
+export function InquiryModal({ kind, initialDestination = '', onClose }: { kind: InquiryKind | null; initialDestination?: string; onClose: () => void }) {
+  return kind ? <IntakeForm key={`${kind}:${initialDestination}`} kind={kind} initialDestination={initialDestination} onClose={onClose} /> : null;
+}
 
-const tripTypeOptionsByKind: Record<InquiryKind, TripTypeOption[]> = {
-  classic: ['leisure', 'family', 'group', 'other'],
-  luxury: ['luxury', 'honeymoon', 'family', 'other'],
-  corporate: ['corporate', 'group', 'other'],
-};
-
-const budgetOptionsByKind: Record<InquiryKind, BudgetOption[]> = {
-  classic: ['notSure', 'under1500', '1500to3000', '3000to6000'],
-  luxury: ['notSure', '3000to6000', '6000plus'],
-  corporate: ['corporate', 'notSure', '3000to6000', '6000plus'],
-};
-
-const formProfiles: Record<
-  InquiryKind,
-  {
-    titleKey: string;
-    introKey: string;
-    nameLabelKey: string;
-    destinationLabelKey: string;
-    travelWindowLabelKey: string;
-    travelersLabelKey: string;
-    notesLabelKey: string;
-    defaultTripType: TripTypeOption;
-    defaultBudget: BudgetOption;
-  }
-> = {
-  classic: {
-    titleKey: 'inquiry.profiles.classic.title',
-    introKey: 'inquiry.profiles.classic.intro',
-    nameLabelKey: 'inquiry.fields.name',
-    destinationLabelKey: 'inquiry.fields.destination',
-    travelWindowLabelKey: 'inquiry.fields.travelWindow',
-    travelersLabelKey: 'inquiry.fields.travelers',
-    notesLabelKey: 'inquiry.fields.notes',
-    defaultTripType: 'leisure',
-    defaultBudget: 'notSure',
-  },
-  luxury: {
-    titleKey: 'inquiry.profiles.luxury.title',
-    introKey: 'inquiry.profiles.luxury.intro',
-    nameLabelKey: 'inquiry.fields.name',
-    destinationLabelKey: 'inquiry.fields.luxuryDestination',
-    travelWindowLabelKey: 'inquiry.fields.travelWindow',
-    travelersLabelKey: 'inquiry.fields.guests',
-    notesLabelKey: 'inquiry.fields.luxuryNotes',
-    defaultTripType: 'luxury',
-    defaultBudget: '6000plus',
-  },
-  corporate: {
-    titleKey: 'inquiry.profiles.corporate.title',
-    introKey: 'inquiry.profiles.corporate.intro',
-    nameLabelKey: 'inquiry.fields.corporateName',
-    destinationLabelKey: 'inquiry.fields.businessDestination',
-    travelWindowLabelKey: 'inquiry.fields.travelWindow',
-    travelersLabelKey: 'inquiry.fields.teamSize',
-    notesLabelKey: 'inquiry.fields.corporateNotes',
-    defaultTripType: 'corporate',
-    defaultBudget: 'corporate',
-  },
-};
-
-export function InquiryModal({
-  kind,
-  initialDestination = '',
-  onClose,
-}: {
-  kind: InquiryKind | null;
-  initialDestination?: string;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  const dialogRef = useModalFocus(Boolean(kind), onClose);
-  const [submitState, setSubmitState] = React.useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
-  const submission = React.useRef<{ payload: string; id: string } | null>(null);
-  const [formError, setFormError] = React.useState('');
-  const label = kind ? t(inquiryLabelKeys[kind]) : '';
-  const formProfile = kind ? formProfiles[kind] : formProfiles.classic;
-  const activeTripTypeOptions = kind ? tripTypeOptionsByKind[kind] : tripTypeOptionsByKind.classic;
-  const activeBudgetOptions = kind ? budgetOptionsByKind[kind] : budgetOptionsByKind.classic;
-  const isSending = submitState === 'sending';
-  const inputClass =
-    'mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#d4af37]';
-  const selectClass =
-    'mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#d4af37]';
-  const textAreaClass =
-    'mt-2 min-h-28 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#d4af37]';
-
-  React.useEffect(() => {
-    if (kind) {
-      setSubmitState('idle');
-      setFormError('');
-    }
-  }, [kind]);
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+function IntakeForm({ kind, initialDestination, onClose }: { kind: InquiryKind; initialDestination: string; onClose: () => void }) {
+  const { i18n } = useTranslation();
+  const c = intakeCopy[i18n.resolvedLanguage?.startsWith('pt') ? 'pt' : 'en'];
+  const [draft, setDraft] = useState(() => newIntakeDraft(initialDestination));
+  const [step, setStep] = useState(1);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<'network' | 'contact' | 'required' | ''>('');
+  const [receipt, setReceipt] = useState('');
+  const inFlight = useRef(false);
+  const submission = useRef<{ payload: string; id: string } | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const dialog = useModalFocus(true, () => { if (!inFlight.current) onClose(); });
+  const corporate = kind === 'corporate';
+  const trip = !corporate || draft.branch === 'trip';
+  const set = <K extends keyof IntakeDraft>(key: K, value: IntakeDraft[K]) => setDraft(prev => ({ ...prev, [key]: value }));
+  useEffect(() => { heading.current?.focus(); }, [step, receipt]);
+  const input = 'mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 disabled:bg-slate-100 disabled:text-slate-500';
+  const button = `inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold disabled:opacity-60 ${kind === 'classic' ? 'bg-[#fe8500] text-[#35180f]' : 'bg-[#d4af37] text-[#241f1b]'}`;
+  const summary = trip ? [
+    `${c.destination}: ${draft.inspire ? c.inspire : draft.destination || c.optional}`,
+    `${c.dates}: ${draft.flexible ? c.flexible : draft.dates || c.optional}`,
+    `${corporate ? c.party : c.adults}: ${draft.adults || c.optional}${!corporate ? ` · ${c.children}: ${draft.children || c.optional}` : ''}`,
+    corporate && `${c.company}: ${draft.company}`,
+    draft.departure && `${c.departure}: ${draft.departure}`,
+    draft.budget && `${c.budget}: ${draft.budget}`,
+    kind === 'luxury' && draft.occasion && `${c.occasion}: ${draft.occasion}`,
+  ].filter(Boolean) : [c.branches[draft.branch], draft.company, draft.branch === 'management' ? c.frequencies[['', 'Occasionally', 'Monthly', 'Weekly'].indexOf(draft.frequency)] : ''].filter(Boolean);
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!kind) return;
-
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const fieldValue = (field: string) => data.get(field)?.toString().trim() || '';
-    const optionLabel = (group: string, value: string) => t(`inquiry.options.${group}.${value}`);
-    const honey = fieldValue('_honey');
-
-    if (honey) {
-      setSubmitState('sent');
-      form.reset();
-      return;
+    if (step === 1) {
+      if (corporate && !draft.company.trim()) { setError('required'); return; }
+      setError(''); setStep(2); return;
     }
-
-    const name = fieldValue('name') || t('inquiry.emailFallbackName');
-    const email = fieldValue('email');
-    const whatsapp = fieldValue('whatsapp');
-    const tripTypeValue = fieldValue('tripType') || formProfile.defaultTripType;
-    const budgetValue = fieldValue('budget') || formProfile.defaultBudget;
-    const preferredContact = whatsapp ? optionLabel('preferredContact', 'whatsapp') : email ? optionLabel('preferredContact', 'email') : optionLabel('preferredContact', 'either');
-    const tripType = optionLabel('tripType', tripTypeValue);
-    const budget = optionLabel('budget', budgetValue);
-    const requestedServicesText = kind === 'luxury' ? 'Luxury trip planning' : kind === 'corporate' ? 'Corporate travel coordination' : 'Trip planning';
-    const contact = [email, whatsapp].filter(Boolean).join(' / ');
-
-    setFormError('');
-    setSubmitState('idle');
-
-    if (!email && !whatsapp) {
-      setFormError(t('inquiry.validation.contactRequired'));
-      return;
-    }
-
-    const destination = fieldValue('destination');
-    const travelWindow = fieldValue('travelWindow');
-    const travelers = fieldValue('travelers');
-    const notes = fieldValue('notes');
-
-    setSubmitState('sending');
-
+    if (inFlight.current || receipt) return;
+    if (!draft.name.trim()) { setError('required'); return; }
+    const contact = draft.method === 'email' ? draft.email.trim() : draft.phone.trim();
+    if (!contact || (draft.method !== 'email' && contact.replace(/\D/g, '').length < 6)) { setError('contact'); return; }
+    inFlight.current = true; setSending(true); setError('');
+    const payload = intakePayload(kind, draft);
+    const serialized = JSON.stringify(payload);
+    if (submission.current?.payload !== serialized) submission.current = { payload: serialized, id: crypto.randomUUID() };
     try {
-      const input = {
-        service: label,
-        serviceKey: kind,
-        name,
-        contact,
-        email,
-        whatsapp,
-        preferredContact,
-        requestedServices: requestedServicesText,
-        tripType,
-        departureCity: '',
-        destination,
-        dates: travelWindow,
-        travelers,
-        budget,
-        urgency: travelWindow || 'Flexible timing',
-        notes,
-      };
-      const payload = JSON.stringify(input);
-      if (submission.current?.payload !== payload) {
-        submission.current = { payload, id: crypto.randomUUID() };
-      }
-      await submitPublicInquiry(input, submission.current.id);
-      setSubmitState('sent');
-      submission.current = null;
-      form.reset();
-    } catch {
-      setSubmitState('error');
-    }
+      const result = await submitPublicInquiry(payload, submission.current.id);
+      if (!result.received || !result.id) throw new Error('Receipt missing');
+      setReceipt(result.id);
+    } catch { setError('network'); }
+    finally { inFlight.current = false; setSending(false); }
   }
-
-  return (
-    <AnimatePresence>
-      {kind ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-950/72 px-3 pb-6 pt-4 backdrop-blur-sm sm:px-4 sm:pb-10 sm:pt-8"
-          role="dialog"
-          ref={dialogRef}
-          aria-modal="true"
-          aria-labelledby="inquiry-title"
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.98 }}
-            transition={{ duration: 0.25 }}
-            className="relative my-0 w-full max-w-2xl rounded-[24px] bg-white p-5 text-slate-900 shadow-2xl sm:rounded-[28px] sm:p-6 md:p-8"
-          >
-            <div className="flex items-start justify-between gap-6">
-              <div>
-                <Badge className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] ${kind === 'classic' ? 'bg-orange-100 text-orange-800' : 'bg-[#d4af37]/15 text-[#7a5a08]'}`}>
-                  {label}
-                </Badge>
-                <h2 id="inquiry-title" className="mt-4 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl md:text-4xl">
-                  {t(formProfile.titleKey)}
-                </h2>
-                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 md:text-base">
-                  {t(formProfile.introKey)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-50 sm:h-11 sm:w-11"
-                aria-label={t('inquiry.close')}
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form className="mt-8 grid gap-5" onSubmit={handleSubmit}>
-              <input type="text" name="_honey" className="hidden" tabIndex={-1} autoComplete="off" aria-hidden="true" />
-              <div className="grid gap-5 md:grid-cols-2">
-                <label className="text-sm font-medium text-slate-700">
-                  {t(formProfile.nameLabelKey)}
-                  <input name="name" className={inputClass} placeholder={t('inquiry.placeholders.name')} required />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t('inquiry.fields.whatsapp')}
-                  <input name="whatsapp" type="tel" className={inputClass} placeholder={t('inquiry.placeholders.whatsapp')} />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t('inquiry.fields.emailOptional')}
-                  <input name="email" type="email" className={inputClass} placeholder={t('inquiry.placeholders.email')} />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t('inquiry.fields.tripType')}
-                  <select name="tripType" className={selectClass} defaultValue={formProfile.defaultTripType}>
-                    {activeTripTypeOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {t(`inquiry.options.tripType.${option}`)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t(formProfile.destinationLabelKey)}
-                  <input name="destination" defaultValue={initialDestination} className={inputClass} placeholder={t('inquiry.placeholders.destination')} required />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t(formProfile.travelWindowLabelKey)}
-                  <input name="travelWindow" className={inputClass} placeholder={t('inquiry.placeholders.travelWindow')} required />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t(formProfile.travelersLabelKey)}
-                  <input name="travelers" className={inputClass} placeholder={t('inquiry.placeholders.travelers')} required />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  {t('inquiry.fields.budget')}
-                  <select name="budget" className={selectClass} defaultValue={formProfile.defaultBudget}>
-                    {activeBudgetOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {t(`inquiry.options.budget.${option}`)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <label className="text-sm font-medium text-slate-700">
-                {t(formProfile.notesLabelKey)}
-                <textarea
-                  name="notes"
-                  className={textAreaClass}
-                  placeholder={t('inquiry.placeholders.notes')}
-                />
-              </label>
-              <p className="text-xs leading-5 text-slate-500">{t('inquiry.privacyNotice')}</p>
-              {submitState === 'sent' ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status">
-                  {t('inquiry.submitSuccess')}
-                </div>
-              ) : null}
-              {formError || submitState === 'error' ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-                  {formError || t('inquiry.submitError')}
-                </div>
-              ) : null}
-              <div className="grid gap-3 sm:flex sm:flex-wrap sm:justify-end">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full rounded-full border border-slate-200 px-6 text-slate-700 hover:bg-slate-50 sm:w-auto"
-                  onClick={onClose}
-                  disabled={isSending}
-                >
-                  {t('inquiry.cancel')}
-                </Button>
-                <Button type="submit" className={`w-full rounded-full px-7 sm:w-auto ${kind === 'classic' ? 'bg-[#fe8500] text-[#35180f] hover:bg-[#ff9b2e]' : 'bg-[#d4af37] text-[#241f1b] hover:bg-[#e0bc4e]'}`} disabled={isSending}>
-                  {isSending ? t('inquiry.submitSending') : t('inquiry.submit')}
-                </Button>
-              </div>
-            </form>
-          </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
-  );
+  return <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="intake-title" className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950/75 px-3 py-5 backdrop-blur-sm sm:py-8">
+    <div className="mx-auto w-full max-w-2xl rounded-3xl bg-[#fffdf9] p-5 text-slate-900 shadow-2xl sm:p-8">
+      <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#796022]">{kind === 'classic' ? 'DPM Classic' : `Prestige ${corporate ? 'Corporate' : 'Luxury'}`}</p><h2 ref={heading} tabIndex={-1} id="intake-title" className="mt-3 font-serif text-3xl leading-tight focus:outline-none">{receipt ? c.success : step === 1 ? c.titles[kind] : c.contactStep}</h2></div><button type="button" onClick={onClose} disabled={sending} aria-label={c.close} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 disabled:opacity-50"><X aria-hidden="true" className="h-5 w-5" /></button></div>
+      {receipt ? <div className="mt-6" role="status"><CheckCircle2 aria-hidden="true" className="h-9 w-9 text-emerald-700" /><p className="mt-4 leading-7 text-slate-600">{c.nextSteps}</p><p className="mt-5 text-sm">{c.reference}: <span className="break-all font-mono">{receipt}</span></p><div className="mt-5 rounded-xl bg-stone-100 p-4 text-sm leading-7"><strong>{c.summary}</strong>{summary.map((line, index) => <p key={index} className="break-words">{line}</p>)}<p className="break-words">{draft.name} · {draft.method === 'email' ? draft.email : draft.phone} ({c[draft.method]})</p></div><button onClick={onClose} className={`${button} mt-6`}>{c.close}</button></div> : <>
+        <ol aria-label={c.summary} className="my-6 flex gap-4 border-b border-stone-200 pb-4 text-sm"><li aria-current={step === 1 ? 'step' : undefined} className={step === 1 ? 'font-semibold' : 'text-slate-500'}>1 · {corporate ? c.companyStep : c.trip}</li><li aria-current={step === 2 ? 'step' : undefined} className={step === 2 ? 'font-semibold' : 'text-slate-500'}>2 · {c.contactStep}</li></ol>
+        <form onSubmit={submit}>
+          <fieldset disabled={sending} className="grid gap-5">
+            {step === 1 ? <>
+              <p className="text-sm leading-6 text-slate-600">{c.intro}</p>
+              {corporate && <><label>{c.branch}<select className={input} value={draft.branch} onChange={e => set('branch', e.target.value as IntakeDraft['branch'])}>{(['trip', 'management', 'support'] as const).map(value => <option key={value} value={value}>{c.branches[value]}</option>)}</select></label><label>{c.company}<input className={input} autoComplete="organization" maxLength={180} required value={draft.company} onChange={e => set('company', e.target.value)} /></label></>}
+              {kind === 'luxury' && <label>{c.occasion} {c.optionalLabel}<textarea className={`${input} min-h-24`} maxLength={1500} placeholder={c.occasionHint} value={draft.occasion} onChange={e => set('occasion', e.target.value)} /></label>}
+              {corporate && draft.branch === 'support' && <div className="rounded-xl bg-slate-100 p-4 text-sm leading-7"><p>{c.support}</p><Link to={ctmPrimaryRoute} onClick={onClose} className="mt-2 inline-flex min-h-11 items-center font-semibold underline">{c.portal}<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></div>}
+              {corporate && draft.branch === 'management' && <label>{c.frequency}<select className={input} value={draft.frequency} onChange={e => set('frequency', e.target.value)}>{c.frequencies.map((text, index) => <option key={index} value={['', 'Occasionally', 'Monthly', 'Weekly'][index]}>{text}</option>)}</select></label>}
+              {trip && <>
+                <div><label>{c.destination}<input className={input} maxLength={180} disabled={draft.inspire} value={draft.destination} onChange={e => set('destination', e.target.value)} /></label><label className="mt-2 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={draft.inspire} onChange={e => set('inspire', e.target.checked)} />{c.inspire}</label></div>
+                <div><label>{c.dates}<input className={input} maxLength={140} placeholder={c.dateHint} disabled={draft.flexible} value={draft.dates} onChange={e => set('dates', e.target.value)} /></label><label className="mt-2 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={draft.flexible} onChange={e => set('flexible', e.target.checked)} />{c.flexible}</label></div>
+                <div className="grid gap-4 sm:grid-cols-2"><label>{corporate ? c.party : c.adults} {c.optionalLabel}<input className={input} type="number" min="1" max="999" step="1" value={draft.adults} onChange={e => set('adults', e.target.value)} /></label>{!corporate && <label>{c.children} {c.optionalLabel}<input className={input} type="number" min="0" max="999" step="1" value={draft.children} onChange={e => set('children', e.target.value)} /></label>}</div>
+                <details className="rounded-xl border border-stone-200 p-4"><summary className="cursor-pointer py-2 text-sm font-medium">{c.more}</summary><div className="mt-3 grid gap-4"><label>{c.departure} {c.optionalLabel}<input className={input} maxLength={120} value={draft.departure} onChange={e => set('departure', e.target.value)} /></label>
+                {!corporate && <label>{c.budget} {c.optionalLabel}<select className={input} value={draft.budget} onChange={e => set('budget', e.target.value)}><option value="">{c.budgetUnknown}</option>{(kind === 'luxury' ? ['USD 3,000–6,000', 'USD 6,000–10,000', 'USD 10,000+'] : ['< USD 1,500', 'USD 1,500–3,000', 'USD 3,000–6,000', 'USD 6,000+']).map(value => <option key={value}>{value}</option>)}</select></label>}</div></details>
+              </>}
+              <label>{corporate && draft.branch === 'management' ? c.challenges : kind === 'luxury' ? c.preferences : c.notes} {c.optionalLabel}<textarea className={`${input} min-h-24`} maxLength={3000} value={draft.notes} onChange={e => set('notes', e.target.value)} /></label>
+            </> : <>
+              <div className="rounded-xl bg-stone-100 p-4 text-sm leading-7"><strong>{c.summary}</strong>{summary.map((line, index) => <p key={index} className="break-words">{line}</p>)}</div>
+              <label>{c.name}<input className={input} required autoComplete="name" maxLength={180} value={draft.name} onChange={e => set('name', e.target.value)} /></label>
+              <label>{c.method}<select className={input} value={draft.method} onChange={e => set('method', e.target.value as IntakeDraft['method'])}>{(['whatsapp', 'email', 'phone'] as const).map(value => <option key={value} value={value}>{c[value]}</option>)}</select></label>
+              <p className="text-sm text-slate-600">{c.contactHint}</p>
+              {draft.method === 'email' ? <label>{c.email}<input className={input} type="email" required autoComplete="email" maxLength={254} value={draft.email} onChange={e => set('email', e.target.value)} /></label> : <label>{c[draft.method]}<input className={input} type="tel" required autoComplete="tel" maxLength={80} placeholder="+258 …" value={draft.phone} onChange={e => set('phone', e.target.value)} /></label>}
+              <p className="text-xs leading-6 text-slate-500">{c.privacy}</p>
+            </>}
+          </fieldset>
+          {error && <div role="alert" className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-800">{error === 'network' ? c.error : error === 'contact' ? c.contactError : c.required}{error === 'network' && <a href="mailto:contact@dpmundo.com" className="mt-2 block underline">contact@dpmundo.com</a>}</div>}
+          <div className="mt-7 flex flex-wrap justify-between gap-3">{step === 2 && <button type="button" disabled={sending} onClick={() => { setStep(1); setError(''); }} className="min-h-12 rounded-full border border-slate-300 px-6">{c.back}</button>}<button type="submit" disabled={sending} className={`${button} ml-auto`}>{sending ? c.sending : step === 1 ? c.next : c.send}<ArrowRight aria-hidden="true" className="h-4 w-4" /></button></div>
+        </form>
+      </>}
+    </div>
+  </div>;
 }

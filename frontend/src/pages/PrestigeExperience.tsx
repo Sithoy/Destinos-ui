@@ -61,7 +61,7 @@ const copy = {
 const images = ['/images/dpm-luxury-terrace.webp', '/images/dpm-city-romance.webp', '/images/dpm-family-safari.webp'];
 const goldButton = 'inline-flex min-h-12 items-center justify-center gap-3 rounded-full bg-[#d4af37] px-7 py-3 text-sm font-semibold text-[#241f1b] transition hover:bg-[#e0bc4e]';
 
-export function PrestigeExperience({ kind, onEnquire }: { kind: 'luxury' | 'corporate'; onEnquire: () => void }) {
+export function PrestigeExperience({ kind, onEnquire }: { kind: 'luxury' | 'corporate'; onEnquire: (interest?: string) => void }) {
   const { i18n } = useTranslation();
   const lang = i18n.resolvedLanguage?.startsWith('pt') ? 'pt' : 'en';
   const c = copy[lang][kind];
@@ -74,7 +74,7 @@ export function PrestigeExperience({ kind, onEnquire }: { kind: 'luxury' | 'corp
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#ecd792]">Prestige {business ? 'Corporate' : 'Luxury'}</p>
           <h1 className={`mt-6 leading-[1.08] tracking-tight ${business ? 'text-[clamp(2.2rem,3.5vw,3.5rem)] font-medium' : 'text-[clamp(2.4rem,4.6vw,4.5rem)] font-serif'}`}>{c.title}<span className={`mt-3 block ${business ? 'text-[#e6d296]' : 'italic text-[#ecd792]'}`}>{c.accent}</span></h1>
           <p className="mt-7 max-w-lg text-base leading-8 text-white/80">{c.intro}</p>
-          <div className="mt-8 flex flex-wrap items-center gap-5"><button onClick={onEnquire} className={goldButton}>{c.cta}<ArrowRight aria-hidden="true" className="h-4 w-4" /></button><a href="#prestige-experiences" className="py-3 text-sm underline underline-offset-8">{c.explore}</a></div>
+          <div className="mt-8 flex flex-wrap items-center gap-5"><button onClick={() => onEnquire()} className={goldButton}>{c.cta}<ArrowRight aria-hidden="true" className="h-4 w-4" /></button><a href="#prestige-experiences" className="py-3 text-sm underline underline-offset-8">{c.explore}</a></div>
           {business && <Link to={ctmPrimaryRoute} className="mt-6 w-fit py-2 text-sm text-white/75 underline underline-offset-4">{corp.portal}</Link>}
         </div>
         <div className="relative min-h-[380px] sm:min-h-[480px] lg:min-h-full"><SmartImage priority src={business ? '/images/dpm-corporate-lounge.webp' : images[0]} alt={business ? (lang === 'pt' ? 'Lounge executivo de aeroporto à luz do amanhecer' : 'Executive airport lounge at sunrise') : copy[lang].luxury.cards[0][2]} className="absolute inset-0 h-full w-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/15 to-transparent" /></div>
@@ -87,12 +87,12 @@ export function PrestigeExperience({ kind, onEnquire }: { kind: 'luxury' | 'corp
           {!business && <div className="aspect-[4/5] overflow-hidden"><SmartImage src={images[index]} alt={alt || title} className="h-full w-full object-cover" /></div>}
           {business && <span className="text-sm font-semibold text-[#796022]">0{index + 1}</span>}
           <h3 className={`mt-5 text-2xl ${business ? 'font-medium' : 'font-serif'}`}>{title}</h3><p className="mt-3 max-w-lg text-sm leading-7 text-slate-600">{text}</p>
-          {!business && <button onClick={onEnquire} aria-label={`${c.cta}: ${title}`} className="mt-4 inline-flex min-h-11 items-center gap-3 text-sm font-semibold text-[#796022]">{c.cta}<ArrowRight aria-hidden="true" className="h-4 w-4" /></button>}
+          {!business && <button onClick={() => onEnquire(title)} aria-label={`${c.cta}: ${title}`} className="mt-4 inline-flex min-h-11 items-center gap-3 text-sm font-semibold text-[#796022]">{c.cta}<ArrowRight aria-hidden="true" className="h-4 w-4" /></button>}
         </article>)}
       </div>
     </section>
     <section className={business ? 'bg-[#e7edf0]' : 'bg-[#eee6d8]'}><div className="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 sm:py-20 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#796022]">{c.detailLabel}</p><h2 className={`mt-4 text-4xl leading-tight ${business ? '' : 'font-serif'}`}>{c.detailTitle}</h2><p className="mt-5 max-w-lg leading-8 text-slate-600">{c.detailText}</p></div><ul className="flex flex-col justify-center divide-y divide-[#b8ad98]/40">{c.details.map(item => <li key={item} className="flex items-start gap-4 py-5"><Check aria-hidden="true" className="mt-1 h-5 w-5 shrink-0 text-[#796022]" /><span>{item}</span></li>)}</ul></div></section>
     {business && <section className="mx-auto grid max-w-7xl gap-6 px-5 py-16 sm:px-8 md:grid-cols-2"><h2 className="text-3xl leading-tight">{corp.portalTitle}</h2><div><p className="leading-8 text-slate-600">{corp.portalText}</p><Link to={ctmPrimaryRoute} className="mt-5 inline-flex min-h-11 items-center gap-3 font-semibold text-[#665019]">{corp.portal}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div></section>}
-    <section className={`px-5 py-16 text-center text-white sm:px-8 sm:py-20 ${business ? 'bg-[#071b30]' : 'bg-[#302a22]'}`}><h2 className={`mx-auto max-w-2xl text-4xl leading-tight ${business ? '' : 'font-serif'}`}>{c.end}</h2><p className="mx-auto mt-5 max-w-xl leading-8 text-white/75">{c.endText}</p><button onClick={onEnquire} className={`${goldButton} mt-8`}>{c.cta}<ArrowRight aria-hidden="true" className="h-4 w-4" /></button></section>
+    <section className={`px-5 py-16 text-center text-white sm:px-8 sm:py-20 ${business ? 'bg-[#071b30]' : 'bg-[#302a22]'}`}><h2 className={`mx-auto max-w-2xl text-4xl leading-tight ${business ? '' : 'font-serif'}`}>{c.end}</h2><p className="mx-auto mt-5 max-w-xl leading-8 text-white/75">{c.endText}</p><button onClick={() => onEnquire()} className={`${goldButton} mt-8`}>{c.cta}<ArrowRight aria-hidden="true" className="h-4 w-4" /></button></section>
   </main>;
 }
