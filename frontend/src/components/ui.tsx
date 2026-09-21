@@ -158,7 +158,7 @@ export function BrandLockup({
     <div className={`flex ${resolvedGap} ${alignClass}`}>
       <LogoMark src={src} alt={alt} size={resolvedLogoSize} className="shrink-0" artScale={resolvedLogoScale} artOffset={resolvedLogoOffset} />
       <div className={`min-w-0 ${wordmarkWidth}`}>
-        <div className={`whitespace-nowrap font-serif font-semibold uppercase leading-none tracking-[0.2em] sm:tracking-[0.24em] md:tracking-[0.28em] ${compact ? 'text-[10px] sm:text-xs md:text-sm' : 'text-xs sm:text-sm md:text-lg'} ${wordColor}`}>
+        <div className={`text-center whitespace-nowrap font-serif font-semibold uppercase leading-none tracking-[0.2em] sm:tracking-[0.24em] md:tracking-[0.28em] ${compact ? 'text-[10px] sm:text-xs md:text-sm' : 'text-xs sm:text-sm md:text-lg'} ${wordColor}`}>
           DESTINOS
         </div>
         <div className={`mt-0.5 flex w-full items-center gap-1.5 ${compact ? 'text-base sm:text-xl md:text-2xl' : 'text-xl sm:text-2xl md:text-4xl'} ${scriptColor}`}>
