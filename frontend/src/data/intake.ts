@@ -22,6 +22,6 @@ export function intakePayload(kind: InquiryKind, d: IntakeDraft) {
     departureCity: isTrip ? d.departure.trim() : '',
     travelers: isTrip ? [d.adults && `${d.adults} ${kind === 'corporate' ? 'travellers' : 'adults'}`, kind !== 'corporate' && d.children && `${d.children} children`].filter(Boolean).join(', ') : '',
     budget: isTrip ? d.budget : '', urgency: 'Flexible timing',
-    notes: [kind === 'corporate' && `Company: ${d.company.trim()}`, kind === 'corporate' && `Request: ${d.branch}`, kind === 'corporate' && d.branch === 'management' && `Travel frequency: ${d.frequency || 'To be decided'}`, kind === 'luxury' && d.occasion.trim() && `Occasion / interests: ${d.occasion.trim()}`, isTrip && d.inspire && 'Destination: inspiration requested', isTrip && d.flexible && 'Dates: to be decided', d.notes.trim()].filter(Boolean).join('\n'),
+    notes: [kind === 'corporate' && `Company: ${d.company.trim()}`, kind === 'corporate' && `Request: ${d.branch}`, kind === 'corporate' && d.branch === 'management' && `Travel frequency: ${d.frequency || 'To be decided'}`, kind === 'luxury' && d.occasion.trim() && `Occasion / interests: ${d.occasion.trim()}`, isTrip && d.inspire && (kind === 'corporate' ? 'Destination: to be decided' : 'Destination: inspiration requested'), isTrip && d.flexible && 'Dates: to be decided', d.notes.trim()].filter(Boolean).join('\n'),
   };
 }
