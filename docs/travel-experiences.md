@@ -4,6 +4,8 @@ Public routes: `/inspiracao` and `/inspiracao/<slug>`.
 
 Manage content in Django admin → CRM → Travel experiences. Portuguese and English copy use ordinary text fields; enter itinerary days, inclusions, exclusions, highlights and optional experiences one per line. Use HTTPS photograph URLs. Gallery is a JSON list of URLs; styles is a JSON list using the displayed filter names.
 
+The optional **Detail hero** field controls the wide experience-page image independently of the discovery-card **Hero** photograph. Leave it empty to use the card image. Use a wide composition with a mobile-safe central subject. Mobile discovery uses native region/style dropdowns; desktop retains the chips, with shared filter state.
+
 - Save with **Published** unchecked to prepare a draft.
 - **Published** makes the experience discoverable; **Featured** makes it eligible for the homepage.
 - Keep published slugs stable because visitors may save their links.

@@ -4,7 +4,7 @@ export type ExperienceCopy = {
 };
 export type TravelExperience = {
   slug: string; revision: string; featured: boolean; region: string; styles: string[];
-  hero: string; gallery: string[]; nights: number; departure: string;
+  hero: string; detail_hero?: string; gallery: string[]; nights: number; departure: string;
   pt: ExperienceCopy; en: ExperienceCopy;
 };
 export async function fetchExperiences(signal?: AbortSignal): Promise<TravelExperience[]> {

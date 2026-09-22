@@ -9,6 +9,7 @@ class TravelExperience(models.Model):
     region = models.CharField(max_length=30, choices=[(v, v) for v in ['Europa', 'África', 'Ásia', 'Médio Oriente', 'Américas']])
     styles = models.JSONField(default=list, help_text='List of tags: Romance, Família, Cultura, Praia, Aventura, Compras, Iconic Trips')
     hero = models.URLField(help_text='HTTPS photograph URL')
+    detail_hero = models.URLField(blank=True, help_text='Optional wide hero for the experience page. The discovery card keeps its own photograph.')
     gallery = models.JSONField(default=list, blank=True, help_text='List of HTTPS photograph URLs')
     nights = models.PositiveSmallIntegerField(default=5)
     departure = models.CharField(max_length=120, blank=True)
@@ -21,7 +22,7 @@ class TravelExperience(models.Model):
         return self.pt.get('title', self.slug)
 
     def content(self):
-        return {key: getattr(self, key) for key in ('slug', 'featured', 'region', 'styles', 'hero', 'gallery', 'nights', 'departure', 'pt', 'en')} | {'revision': str(self.revision)}
+        return {key: getattr(self, key) for key in ('slug', 'featured', 'region', 'styles', 'hero', 'detail_hero', 'gallery', 'nights', 'departure', 'pt', 'en')} | {'revision': str(self.revision)}
 
     def save(self, *args, **kwargs):
         self.revision = uuid.uuid4()

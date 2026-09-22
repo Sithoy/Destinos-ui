@@ -39,6 +39,8 @@ class ExperienceForm(ModelForm):
                 self.add_error(field, 'Enter a list of text values.')
         if not str(data.get('hero', '')).startswith('https://'):
             self.add_error('hero', 'Use an HTTPS image URL.')
+        if data.get('detail_hero') and not data['detail_hero'].startswith('https://'):
+            self.add_error('detail_hero', 'Use an HTTPS image URL.')
         if isinstance(data.get('gallery'), list) and any(not isinstance(v, str) or not v.startswith('https://') for v in data['gallery']):
             self.add_error('gallery', 'Use HTTPS image URLs.')
         if not data.get('nights'):
@@ -64,7 +66,7 @@ class TravelExperienceAdmin(admin.ModelAdmin):
     readonly_fields = ('revision', 'updated_at')
     fieldsets = (
         ('Publication', {'fields': ('slug', 'published', 'featured', 'region', 'styles', 'nights', 'departure')}),
-        ('Photography', {'fields': ('hero', 'gallery')}),
+        ('Photography', {'fields': ('hero', 'detail_hero', 'gallery')}),
         ('Português', {'fields': tuple(f'pt_{key}' for key in TEXT_KEYS + LIST_KEYS)}),
         ('English', {'fields': tuple(f'en_{key}' for key in TEXT_KEYS + LIST_KEYS)}),
         ('Version', {'fields': ('revision', 'updated_at')}),

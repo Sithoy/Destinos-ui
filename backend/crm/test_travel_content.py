@@ -18,6 +18,7 @@ class TravelContentTests(APITestCase):
     def test_original_version_survives_edit_and_retry(self):
         item = TravelExperience.objects.get(slug='paris-essencial')
         original = copy.deepcopy(item.content())
+        original_revision_count = TravelExperienceRevision.objects.filter(experience=item).count()
         payload = {'service': 'Classic travel', 'serviceKey': 'classic', 'name': 'Example', 'email': 'test@example.com', 'experienceRevision': str(item.revision), 'submissionId': str(uuid.uuid4()), 'notes': 'Requested nights: 7\nHotel category: 4 stars\nOptional experiences: Disneyland'}
         item.nights = 9
         item.pt['title'] = 'Changed title'
@@ -32,7 +33,7 @@ class TravelContentTests(APITestCase):
         retry = self.client.post('/api/public/leads/', payload, format='json')
         self.assertEqual(retry.status_code, 200)
         self.assertEqual(Lead.objects.count(), 1)
-        self.assertEqual(TravelExperienceRevision.objects.filter(experience=item).count(), 2)
+        self.assertEqual(TravelExperienceRevision.objects.filter(experience=item).count(), original_revision_count + 1)
         payload['notes'] = 'Different request'
         self.assertEqual(self.client.post('/api/public/leads/', payload, format='json').status_code, 409)
 
@@ -44,14 +45,18 @@ class TravelContentTests(APITestCase):
     def test_editor_saves_plain_text_fields_and_new_revision(self):
         item = TravelExperience.objects.get(slug='paris-essencial')
         original_revision = item.revision
-        data = {key: getattr(item, key) for key in ('slug', 'published', 'featured', 'region', 'styles', 'hero', 'gallery', 'nights', 'departure')}
+        original_card_image = item.hero
+        data = {key: getattr(item, key) for key in ('slug', 'published', 'featured', 'region', 'styles', 'hero', 'detail_hero', 'gallery', 'nights', 'departure')}
         for language in ('pt', 'en'):
             for key in TEXT_KEYS + LIST_KEYS:
                 value = getattr(item, language)[key]
                 data[f'{language}_{key}'] = '\n'.join(value) if key in LIST_KEYS else value
         data['pt_title'] = 'Paris ao seu ritmo'
+        data['detail_hero'] = 'https://example.com/new-wide-hero.jpg'
         form = ExperienceForm(data, instance=item)
         self.assertTrue(form.is_valid(), form.errors)
         saved = form.save()
         self.assertEqual(saved.pt['title'], 'Paris ao seu ritmo')
         self.assertNotEqual(saved.revision, original_revision)
+        self.assertEqual(saved.hero, original_card_image)
+        self.assertEqual(saved.content()['detail_hero'], data['detail_hero'])
