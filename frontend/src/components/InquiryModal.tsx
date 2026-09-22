@@ -5,20 +5,26 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { submitPublicInquiry } from '../data/crm';
 import { intakePayload, newIntakeDraft } from '../data/intake';
+import type { TravelExperience } from '../data/experiences';
 import type { IntakeDraft } from '../data/intake';
 import type { InquiryKind } from '../types';
 import { ctmPrimaryRoute } from '../data/travel';
 import { useModalFocus } from './useModalFocus';
 import { intakeCopy } from './intakeCopy';
 
-export function InquiryModal({ kind, initialDestination = '', onClose }: { kind: InquiryKind | null; initialDestination?: string; onClose: () => void }) {
-  return kind ? <IntakeForm key={`${kind}:${initialDestination}`} kind={kind} initialDestination={initialDestination} onClose={onClose} /> : null;
+export function InquiryModal({ kind, experience, initialDestination = '', onClose }: { experience?: TravelExperience; kind: InquiryKind | null; initialDestination?: string; onClose: () => void }) {
+  return kind ? <IntakeForm key={`${kind}:${initialDestination}`} kind={kind} experience={experience} initialDestination={initialDestination} onClose={onClose} /> : null;
 }
 
-function IntakeForm({ kind, initialDestination, onClose }: { kind: InquiryKind; initialDestination: string; onClose: () => void }) {
+function IntakeForm({ kind, experience, initialDestination, onClose }: { experience?: TravelExperience; kind: InquiryKind; initialDestination: string; onClose: () => void }) {
   const { i18n } = useTranslation();
   const c = intakeCopy[i18n.resolvedLanguage?.startsWith('pt') ? 'pt' : 'en'];
-  const [draft, setDraft] = useState(() => newIntakeDraft(initialDestination));
+  const [draft, setDraft] = useState(() => ({ ...newIntakeDraft(initialDestination), departure: experience?.departure || '' }));
+  const pt = i18n.language.startsWith('pt');
+  const experienceCopy = experience && (pt ? experience.pt : experience.en);
+  const [nights, setNights] = useState(String(experience?.nights || ''));
+  const [hotel, setHotel] = useState('');
+  const [options, setOptions] = useState<string[]>([]);
   const [step, setStep] = useState(1);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<'network' | 'contact' | 'required' | ''>('');
@@ -34,6 +40,9 @@ function IntakeForm({ kind, initialDestination, onClose }: { kind: InquiryKind; 
   const input = 'mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 disabled:bg-slate-100 disabled:text-slate-500';
   const button = `inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold disabled:opacity-60 ${kind === 'classic' ? 'bg-[#fe8500] text-[#35180f]' : 'bg-[#d4af37] text-[#241f1b]'}`;
   const summary = trip ? [
+    experienceCopy && `${experienceCopy.title} / ${pt ? 'Noites' : 'Nights'}: ${nights || c.optional}`,
+    experience && hotel && `Hotel: ${pt ? hotel.replace('stars', 'estrelas') : hotel}`,
+    experience && options.length > 0 && options.join(' / '),
     `${c.destination}: ${draft.inspire ? (corporate ? c.optional : c.inspire) : draft.destination || c.optional}`,
     `${c.dates}: ${draft.flexible ? c.flexible : draft.dates || c.optional}`,
     `${corporate ? c.party : c.adults}: ${draft.adults || c.optional}${!corporate ? ` · ${c.children}: ${draft.children || c.optional}` : ''}`,
@@ -53,7 +62,8 @@ function IntakeForm({ kind, initialDestination, onClose }: { kind: InquiryKind; 
     const contact = draft.method === 'email' ? draft.email.trim() : draft.phone.trim();
     if (!contact || (draft.method !== 'email' && contact.replace(/\D/g, '').length < 6)) { setError('contact'); return; }
     inFlight.current = true; setSending(true); setError('');
-    const payload = intakePayload(kind, draft);
+    const base = intakePayload(kind, draft);
+    const payload = experience ? { ...base, experienceRevision: experience.revision, notes: [base.notes, `Requested nights: ${nights || 'Undecided'}`, `Hotel category: ${hotel || 'Undecided'}`, `Optional experiences: ${options.join(' / ') || 'None selected'}`].filter(Boolean).join('\n') } : base;
     const serialized = JSON.stringify(payload);
     if (submission.current?.payload !== serialized) submission.current = { payload: serialized, id: crypto.randomUUID() };
     try {
@@ -72,6 +82,11 @@ function IntakeForm({ kind, initialDestination, onClose }: { kind: InquiryKind; 
           <fieldset disabled={sending} className="grid gap-5">
             {step === 1 ? <>
               <p className="text-sm leading-6 text-slate-600">{c.intro}</p>
+              {experience && experienceCopy && <div className="rounded-2xl border border-[#efdccc] bg-[#fff3e7] p-5">
+                <p className="text-xs uppercase tracking-widest text-[#984b00]">{pt ? 'A sua inspiração' : 'Your inspiration'}</p><h3 className="mt-2 font-serif text-2xl">{experienceCopy.title}</h3><p className="mt-2 text-sm">{experience.nights} {pt ? 'noites sugeridas — ajuste ao seu ritmo.' : 'suggested nights — adapt them to your pace.'}</p>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2"><label>{pt ? 'Quantas noites?' : 'How many nights?'}<input className={input} type="number" min="1" max="365" value={nights} onChange={e => setNights(e.target.value)} /></label><label>{pt ? 'Categoria de hotel' : 'Hotel category'}<select className={input} value={hotel} onChange={e => setHotel(e.target.value)}><option value="">{c.optional}</option>{['3', '4', '5'].map(value => <option key={value} value={`${value} stars`}>{value} {pt ? 'estrelas' : 'stars'}</option>)}<option value="Boutique">Boutique</option></select></label></div>
+                <fieldset className="mt-5"><legend className="text-sm font-semibold">{pt ? 'Gostaria de acrescentar?' : 'Would you like to add?'}</legend>{experienceCopy.options.map(option => <label key={option} className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={options.includes(option)} onChange={e => setOptions(previous => e.target.checked ? [...previous, option] : previous.filter(value => value !== option))} />{option}</label>)}</fieldset>
+              </div>}
               {corporate && <><label>{c.branch}<select className={input} value={draft.branch} onChange={e => set('branch', e.target.value as IntakeDraft['branch'])}>{(['trip', 'management', 'support'] as const).map(value => <option key={value} value={value}>{c.branches[value]}</option>)}</select></label><label>{c.company}<input className={input} autoComplete="organization" maxLength={180} required value={draft.company} onChange={e => set('company', e.target.value)} /></label></>}
               {kind === 'luxury' && <label>{c.occasion} {c.optionalLabel}<textarea className={`${input} min-h-24`} maxLength={1500} placeholder={c.occasionHint} value={draft.occasion} onChange={e => set('occasion', e.target.value)} /></label>}
               {corporate && draft.branch === 'support' && <div className="rounded-xl bg-slate-100 p-4 text-sm leading-7"><p>{c.support}</p><Link to={ctmPrimaryRoute} onClick={onClose} className="mt-2 inline-flex min-h-11 items-center font-semibold underline">{c.portal}<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link></div>}

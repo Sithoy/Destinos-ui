@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+from crm.travel_content import PublicExperiencesView
 
 from ctm.views import BillingInvoiceReportView, BillingPaymentReportView, BillingSummaryReportView, CompanyAccountViewSet, CompanyUserViewSet, CorporatePortalContextView, CtmAuthLoginView, CtmAuthLogoutView, CtmAuthMeView, ItineraryViewSet, TravelerViewSet, TripBookingView, TripDocumentDetailView, TripDocumentListView, TripInvoiceView, TripMessageListView, TripPaymentDetailView, TripPaymentListView, TripQuoteView, TripRequestViewSet, TripTaskDetailView, TripTaskListView
 from crm.views import AccommodationBlockViewSet, AuthLoginView, AuthLogoutView, AuthMeView, ClientViewSet, CommunicationRecordViewSet, ExperienceBlockViewSet, ItineraryStopViewSet, LeadViewSet, PaymentRecordViewSet, PublicLeadCreateView, QuoteApprovalViewSet, QuoteLineViewSet, QuoteViewSet, TransportSegmentViewSet, TripItineraryViewSet, UserViewSet, WorkflowReminderViewSet
@@ -27,6 +28,8 @@ router.register("ctm/company-accounts", CompanyAccountViewSet, basename="ctm-com
 router.register("ctm/company-users", CompanyUserViewSet, basename="ctm-company-user")
 
 urlpatterns = [
+    path('api/public/experiences/', PublicExperiencesView.as_view()),
+    path('api/public/experiences/<slug:slug>/', PublicExperiencesView.as_view()),
     path("admin/", admin.site.urls),
     path("api/auth/login/", AuthLoginView.as_view(), name="auth-login"),
     path("api/auth/logout/", AuthLogoutView.as_view(), name="auth-logout"),

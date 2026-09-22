@@ -12,6 +12,8 @@ import { ctmLegacyRoute, ctmPrimaryRoute, getPageFromPathname, pageMeta, pageRou
 import { ClassicHome } from './pages/ClassicHome';
 import { CorporatePage } from './pages/CorporatePage';
 
+import { InspirationPage } from './pages/InspirationPage';
+import type { TravelExperience } from './data/experiences';
 import { LuxuryPage } from './pages/LuxuryPage';
 
 import type { InquiryKind } from './types';
@@ -25,6 +27,9 @@ export default function DestinosPeloMundoUIConcept() {
   const location = useLocation();
   const navigate = useNavigate();
   const page = getPageFromPathname(location.pathname);
+  const inspiration = location.pathname === '/inspiracao' || location.pathname.startsWith('/inspiracao/');
+  const experienceSlug = location.pathname.split('/')[2] || '';
+  const [inquiryExperience, setInquiryExperience] = useState<TravelExperience | undefined>();
   const [showPrestigeGate, setShowPrestigeGate] = useState(false);
   const [isGatewayNavigating, setIsGatewayNavigating] = useState(false);
   const [inquiryKind, setInquiryKind] = useState<InquiryKind | null>(null);
@@ -109,14 +114,15 @@ export default function DestinosPeloMundoUIConcept() {
   useEffect(() => {
     const portuguese = i18n.language.startsWith('pt');
     const titles = { home: 'Destinos pelo Mundo', luxury: 'DPM Luxury Travel', corporate: 'DPM Corporate Travel', crm: 'DPM CRM', corporatePortal: 'DPM CTM' };
-    document.title = titles[page];
+    if (!inspiration) document.title = titles[page];
     document.documentElement.lang = portuguese ? 'pt' : 'en';
+    if (inspiration) return;
     const description = portuguese
       ? 'Planeie viagens de lazer, luxo e negócios com a Destinos pelo Mundo em Moçambique. Peça um itinerário à sua medida.'
       : 'Plan leisure, luxury and corporate travel with Destinos pelo Mundo in Mozambique. Request a tailored itinerary.';
     document.querySelector('meta[name="description"]')?.setAttribute('content', description);
-    document.querySelector('link[rel="canonical"]')?.setAttribute('href', `https://www.dpmundo.com${pageRoutes[page]}`);
-  }, [page, i18n.language]);
+    if (!inspiration) document.querySelector('link[rel="canonical"]')?.setAttribute('href', `https://www.dpmundo.com${pageRoutes[page]}`);
+  }, [page, i18n.language, inspiration]);
 
   const openPrestige = () => {
     setIsGatewayNavigating(false);
@@ -124,6 +130,7 @@ export default function DestinosPeloMundoUIConcept() {
   };
 
   const openInquiry = (kind: InquiryKind, destination = '') => {
+    setInquiryExperience(undefined);
     setInquiryDestination(destination);
     setInquiryKind(kind);
   };
@@ -140,7 +147,9 @@ export default function DestinosPeloMundoUIConcept() {
   };
 
   const screen =
-    page === 'crm' ? (
+    inspiration ? (
+      <InspirationPage key={experienceSlug} slug={experienceSlug} onCustomise={(item) => { setInquiryExperience(item); setInquiryDestination(i18n.language.startsWith('pt') ? item.pt.destination : item.en.destination); setInquiryKind('classic'); }} />
+    ) : page === 'crm' ? (
       <CrmPage />
     ) : page === 'corporatePortal' ? (
       <CorporatePortalApp />
@@ -170,7 +179,7 @@ export default function DestinosPeloMundoUIConcept() {
 
       <AnimatePresence mode="wait">
         <motion.div
-          key={page}
+          key={inspiration ? location.pathname : page}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -194,7 +203,7 @@ export default function DestinosPeloMundoUIConcept() {
         }}
       />
 
-      <InquiryModal kind={inquiryKind} initialDestination={inquiryDestination} onClose={() => setInquiryKind(null)} />
+      <InquiryModal experience={inquiryExperience} kind={inquiryKind} initialDestination={inquiryDestination} onClose={() => setInquiryKind(null)} />
 
       {page !== 'crm' && page !== 'corporatePortal' ? (
       <footer className={`border-t ${page === 'home' ? 'border-[#eadcc8] bg-[#fffaf2] text-slate-700' : 'border-white/10 bg-black/20 text-white/70'}`}>

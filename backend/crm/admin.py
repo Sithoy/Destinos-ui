@@ -22,10 +22,10 @@ class LeadAdmin(admin.ModelAdmin):
     list_display = ("name", "client", "service_key", "destination", "status", "lifecycle_stage", "priority", "created_at")
     list_filter = ("service_key", "status", "lifecycle_stage", "priority", "email_status")
     search_fields = ("name", "email", "whatsapp", "destination", "notes", "internal_notes", "client__name", "client__company_name")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "experience_snapshot")
     fieldsets = (
         ("Client", {"fields": ("id", "name", "contact", "email", "whatsapp", "preferred_contact")}),
-        ("Request", {"fields": ("client", "service", "service_key", "requested_services", "trip_type", "departure_city", "destination", "dates", "travelers", "budget", "urgency")}),
+        ("Request", {"fields": ("client", "service", "service_key", "requested_services", "trip_type", "departure_city", "destination", "dates", "travelers", "budget", "urgency", "experience_snapshot")}),
         ("Workflow", {"fields": ("status", "lifecycle_stage", "priority", "email_status", "notes", "internal_notes")}),
         ("System", {"fields": ("created_at", "updated_at")}),
     )

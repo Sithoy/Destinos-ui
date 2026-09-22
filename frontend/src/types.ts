@@ -74,6 +74,7 @@ export type CrmClient = {
 };
 
 export type CrmLead = {
+  experienceSnapshot?: import('./data/experiences').TravelExperience | Record<string, never>;
   workflowSummary?: Pick<CrmWorkflowState, 'canAdvance' | 'nextStage' | 'blockers'>;
   id: string;
   createdAt: string;

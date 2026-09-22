@@ -526,6 +526,21 @@ class PublicLeadCreateView(APIView):
         values = dict(serializer.validated_data)
         submission_id = values.pop("submission_id", None) or uuid.uuid4()
         fingerprint = hashlib.sha256(json.dumps(values, sort_keys=True, default=str).encode()).hexdigest()
+        revision_id = values.pop('experienceRevision', None)
+        if revision_id:
+            from .travel_models import TravelExperienceRevision
+            revision = TravelExperienceRevision.objects.filter(pk=revision_id).first()
+            if revision is None:
+                return Response({'detail': 'Experience version not found.'}, status=400)
+            values['experience_snapshot'] = revision.content
+            content = revision.content
+            values['notes'] = '\n'.join([
+                f"Experience: {content['pt']['title']} / {content['en']['title']}",
+                f"Suggested nights: {content['nights']} | Revision: {revision_id}",
+                'Original itinerary: ' + ' / '.join(content['pt']['itinerary']),
+                'Suggested inclusions: ' + ' / '.join(content['pt']['included']),
+                'Client preferences:', values.get('notes', ''),
+            ])
         with transaction.atomic():
             lead, created = Lead.objects.get_or_create(
                 submission_id=submission_id,

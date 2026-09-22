@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { classicDestinations } from '../data/travel';
+import { ExperienceDiscovery } from '../components/ExperienceDiscovery';
 import type { InquiryKind } from '../types';
 import { Button, SmartImage } from '../components/ui';
 
@@ -92,30 +92,7 @@ export function ClassicHome({ openInquiry }: { openInquiry: (kind: InquiryKind, 
         </div>
       </section>
 
-      <section id="destinations" aria-labelledby="destinations-title" className="border-y border-[#e5e1d7] bg-white">
-        <div className="mx-auto max-w-7xl scroll-mt-36 px-5 py-16 sm:px-8 sm:py-24">
-          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-            <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#984b00]">{t('landing.destinationsEyebrow')}</p>
-              <h2 id="destinations-title" className="mt-3 font-serif text-4xl font-normal tracking-tight sm:text-5xl">{t('landing.destinationsTitle')}</h2>
-            </div>
-            <p className="max-w-sm text-sm leading-7 text-slate-600">{t('landing.destinationsIntro')}</p>
-          </div>
-          <div className="mt-9 grid gap-6 md:grid-cols-3">
-            {classicDestinations.slice(0, 3).map((item) => (
-              <article key={item.nameKey} className="group">
-                <div className="aspect-[4/3] overflow-hidden bg-slate-200">
-                  <SmartImage src={item.image} alt={t(item.nameKey)} className="h-full w-full object-cover transition duration-500 motion-safe:group-hover:scale-105" />
-                </div>
-                <h3 className="mt-5 font-serif text-3xl">{t(item.nameKey)}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{t(item.tagKey)}</p>
-                <button type="button" onClick={() => openInquiry('classic', t(item.nameKey))} className={`mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#984b00] ${focusLink}`}>
-                  {t('landing.destinationCta', { destination: t(item.nameKey) })}<ArrowRight aria-hidden="true" className="h-4 w-4" />
-                </button>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
+      <ExperienceDiscovery />
 
       <section aria-labelledby="contact-title" className="border-t border-[#e7dfd1] bg-[#ffe3bf] text-[#163e52]">
         <div className="mx-auto grid max-w-7xl gap-8 px-5 py-14 sm:px-8 sm:py-20 md:grid-cols-[1.3fr_1fr] md:items-center">

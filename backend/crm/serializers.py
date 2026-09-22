@@ -166,6 +166,7 @@ class ClientSerializer(serializers.ModelSerializer):
 
 
 class LeadSerializer(serializers.ModelSerializer):
+    experienceSnapshot = serializers.JSONField(source='experience_snapshot', read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     serviceKey = serializers.ChoiceField(source="service_key", choices=Lead.ServiceKey.choices)
@@ -253,15 +254,17 @@ class LeadSerializer(serializers.ModelSerializer):
             "clientId",
             "clientName",
             "workflowSummary",
+            "experienceSnapshot",
         ]
         read_only_fields = ["id", "createdAt", "updatedAt"]
 
 
 class PublicLeadSerializer(LeadSerializer):
     submissionId = serializers.UUIDField(source="submission_id", required=False)
+    experienceRevision = serializers.UUIDField(required=False, write_only=True)
 
     class Meta(LeadSerializer.Meta):
-        fields = ["submissionId", "service", "serviceKey", "name", "contact", "email", "whatsapp",
+        fields = ["experienceRevision", "submissionId", "service", "serviceKey", "name", "contact", "email", "whatsapp",
                   "preferredContact", "requestedServices", "tripType", "departureCity", "destination",
                   "dates", "travelers", "budget", "urgency", "notes"]
         read_only_fields = []

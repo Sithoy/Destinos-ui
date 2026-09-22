@@ -1,3 +1,4 @@
+import { ExperienceSnapshot } from '../components/ExperienceSnapshot';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bell,
@@ -7575,7 +7576,8 @@ export function CrmPage() {
 
                     <div className="mt-5">
                       <div className="font-semibold">Request Summary</div>
-                      <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{selectedLead.notes || 'No extra client notes yet.'}</p>
+                      <p className={`mt-3 whitespace-pre-line text-sm leading-6 ${styles.soft}`}>{selectedLead.notes || 'No extra client notes yet.'}</p>
+                      <ExperienceSnapshot lead={selectedLead} />
                     </div>
 
                     <div className="mt-5">
