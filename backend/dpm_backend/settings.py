@@ -123,7 +123,7 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "contact@dpmundo.com")
 DPM_INQUIRY_NOTIFICATION_EMAIL = os.getenv("DPM_INQUIRY_NOTIFICATION_EMAIL", "")
 
 REST_FRAMEWORK = {
-    "DEFAULT_THROTTLE_RATES": {"public_inquiry": "120/hour", "login": "30/minute"},
+    "DEFAULT_THROTTLE_RATES": {"public_inquiry": "120/hour", "public_experiences": "240/hour", "login": "30/minute"},
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",

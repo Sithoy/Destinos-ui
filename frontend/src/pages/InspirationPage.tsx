@@ -8,7 +8,7 @@ import type { TravelExperience } from '../data/experiences';
 
 const regions = ['Europa', 'África', 'Ásia', 'Médio Oriente', 'Américas'];
 const styles = ['Romance', 'Família', 'Cultura', 'Praia', 'Aventura', 'Compras', 'Iconic Trips'];
-const english: Record<string, string> = { Europa: 'Europe', África: 'Africa', Ásia: 'Asia', 'Médio Oriente': 'Middle East', Américas: 'Americas', Família: 'Family', Cultura: 'Culture', Praia: 'Beach', Aventura: 'Adventure', Compras: 'Shopping' };
+const english: Record<string, string> = { Europa: 'Europe', África: 'Africa', Ásia: 'Asia', 'Médio Oriente': 'Middle East', Américas: 'Americas', Romance: 'Romance', Família: 'Family', Cultura: 'Culture', Praia: 'Beach', Aventura: 'Adventure', Compras: 'Shopping' };
 const cta = 'inline-flex min-h-12 items-center justify-center rounded-full bg-[#fe8500] px-7 py-3 font-semibold text-[#35180f] hover:bg-[#ff9b2e]';
 
 export function InspirationPage({ slug, onCustomise }: { slug: string; onCustomise: (item: TravelExperience) => void }) {
@@ -20,9 +20,20 @@ export function InspirationPage({ slug, onCustomise }: { slug: string; onCustomi
   const item = items.find(value => value.slug === slug);
   const copy = item && (pt ? item.pt : item.en);
   useEffect(() => {
-    document.title = `${copy?.title || (pt ? 'Inspiração' : 'Inspiration')} | Destinos pelo Mundo`;
-    document.querySelector('link[rel="canonical"]')?.setAttribute('href', `https://www.dpmundo.com/inspiracao${slug ? `/${encodeURIComponent(slug)}` : ''}`);
-    if (copy) document.querySelector('meta[name="description"]')?.setAttribute('content', copy.intro);
+    const title = `${copy?.title || (pt ? 'Inspiração' : 'Inspiration')} | Destinos pelo Mundo`;
+    const description = copy ? copy.intro : pt
+      ? 'Viagens de inspiração da Destinos pelo Mundo: itinerários sugeridos, desenhados à sua medida.'
+      : 'Travel inspiration from Destinos pelo Mundo: suggested itineraries, tailored to you.';
+    const url = `https://www.dpmundo.com/inspiracao${slug ? `/${encodeURIComponent(slug)}` : ''}`;
+    const setMetaContent = (selector: string, content: string) => {
+      document.querySelector(selector)?.setAttribute('content', content);
+    };
+    document.title = title;
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', url);
+    setMetaContent('meta[name="description"]', description);
+    setMetaContent('meta[property="og:title"]', title);
+    setMetaContent('meta[property="og:description"]', description);
+    setMetaContent('meta[property="og:url"]', url);
     window.scrollTo(0, 0);
   }, [copy, slug, pt]);
   if (status !== 'ready') return <main id="main-content" className="mx-auto min-h-[60vh] max-w-7xl p-8"><ContentStatus status={status} retry={retry} pt={pt} /></main>;

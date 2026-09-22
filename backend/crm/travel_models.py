@@ -2,6 +2,9 @@ import uuid
 from django.db import models, transaction
 
 
+REVISION_RETENTION_LIMIT = 20
+
+
 class TravelExperience(models.Model):
     slug = models.SlugField(unique=True)
     published = models.BooleanField(default=False)
@@ -25,11 +28,35 @@ class TravelExperience(models.Model):
         return {key: getattr(self, key) for key in ('slug', 'featured', 'region', 'styles', 'hero', 'detail_hero', 'gallery', 'nights', 'departure', 'pt', 'en')} | {'revision': str(self.revision)}
 
     def save(self, *args, **kwargs):
-        self.revision = uuid.uuid4()
+        changed = True
+        if self.pk:
+            previous = TravelExperience.objects.filter(pk=self.pk).first()
+            changed = previous is None or previous._snapshot() != self._snapshot()
+        if changed:
+            self.revision = uuid.uuid4()
         with transaction.atomic():
             super().save(*args, **kwargs)
-            if self.published:
+            if self.published and (changed or not TravelExperienceRevision.objects.filter(id=self.revision).exists()):
                 TravelExperienceRevision.objects.create(id=self.revision, experience=self, content=self.content())
+                self._prune_revisions()
+
+    def _snapshot(self):
+        return {key: value for key, value in self.content().items() if key != 'revision'}
+
+    def _prune_revisions(self):
+        from .models import Lead
+        keep = set(
+            TravelExperienceRevision.objects.filter(experience=self)
+            .order_by('-created_at')
+            .values_list('id', flat=True)[:REVISION_RETENTION_LIMIT]
+        )
+        referenced = set()
+        for value in Lead.objects.values_list('experience_snapshot__revision', flat=True):
+            try:
+                referenced.add(uuid.UUID(str(value)))
+            except (ValueError, AttributeError, TypeError):
+                continue
+        TravelExperienceRevision.objects.filter(experience=self).exclude(id__in=keep | referenced).delete()
 
 
 class TravelExperienceRevision(models.Model):

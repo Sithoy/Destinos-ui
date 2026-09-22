@@ -43,6 +43,7 @@ export const en = {
     tailored: 'Travel planned around you',
     navLabel: 'Travel services',
     skip: 'Skip to main content',
+    loading: 'Loading workspace…',
     leisure: 'Leisure',
     luxury: 'Luxury',
     corporate: 'Corporate',
@@ -90,7 +91,6 @@ export const en = {
     luxury: 'Luxury',
     corporate: 'Corporate',
     backHome: 'Back Home',
-    enterPrestige: 'Enter Prestige',
   },
   footer: {
     description: 'Travel planning for leisure, luxury, and corporate journeys from Mozambique to the world.',
@@ -100,6 +100,12 @@ export const en = {
     luxury: 'Prestige Luxury Travel',
     corporate: 'Prestige Corporate Travel',
     poweredBy: 'Powered by',
+    privacy: 'We use the details you share with us only to respond to your travel requests. Please do not send documents, payment details, or sensitive information.',
+  },
+  notFound: {
+    title: 'Page not found',
+    text: 'The page you are looking for does not exist or may have moved.',
+    home: 'Back to home',
   },
   inquiry: {
     privacyNotice: 'We use these details to respond to your inquiry and plan your trip. Only include information needed for your travel request.',
@@ -320,10 +326,6 @@ export const en = {
         name: 'Monaco',
         tag: 'Prestige, glamour, and refined escapes',
       },
-      parisExperiences: {
-        name: 'Paris Experiences',
-        tag: 'Romantic city moments and curated discovery',
-      },
     },
     offer: {
       eyebrow: 'What we offer',
@@ -379,46 +381,6 @@ export const en = {
       title: 'Start planning your next journey today.',
       text: 'Tell us where you want to go, and we will help shape the right travel experience for you.',
       cta: 'Request a Travel Plan',
-    },
-  },
-  gateway: {
-    backgroundAlt: 'Prestige gateway background',
-    visualAlt: 'Prestige gateway visual',
-    brandAlt: 'Prestige gateway brand',
-    watermarkAlt: 'Prestige watermark',
-    close: 'Close prestige selector',
-    badge: 'Prestige gateway',
-    title: 'Enter a more elevated travel experience.',
-    text:
-      'Choose the path that matches your expectations. Luxury is designed for private escapes and refined experiences. Corporate is built for executive travel, coordination, and premium business support.',
-    positioning: 'Signature positioning',
-    positioningTitle: 'From iconic cities to quiet private retreats, Prestige moves beyond standard travel planning.',
-    positioningText:
-      'A higher-touch service layer for travelers and organizations seeking curated destinations, elevated hospitality, and more attentive support.',
-    features: {
-      destinations: 'Curated destinations',
-      hospitality: 'Premium hospitality',
-      support: 'High-touch support',
-    },
-    luxury: {
-      backgroundAlt: 'Prestige Luxury background',
-      title: 'Prestige Luxury',
-      text: 'For private escapes, exceptional stays, romantic travel, wellness retreats, and destination-led luxury moments.',
-      items: {
-        villas: 'Villas, resorts, and premium suites',
-        occasions: 'Honeymoons and special occasions',
-        curated: 'Fine dining, shopping, and curated experiences',
-      },
-    },
-    corporate: {
-      backgroundAlt: 'Prestige Corporate background',
-      title: 'Prestige Corporate',
-      text: 'For executive travel, team coordination, premium accommodation, event movement, and efficient business-facing support.',
-      items: {
-        planning: 'Executive and company travel planning',
-        logistics: 'Reliable coordination and logistics',
-        clarity: 'Premium service with operational clarity',
-      },
     },
   },
   luxury: {

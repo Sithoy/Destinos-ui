@@ -73,8 +73,25 @@ export type CrmClient = {
   activeRequestCount: number;
 };
 
+export type CrmExperienceSnapshotCopy = {
+  title?: string;
+  intro?: string;
+  price?: string;
+  itinerary?: unknown;
+  included?: unknown;
+  excluded?: unknown;
+  options?: unknown;
+};
+
+export type CrmExperienceSnapshot = {
+  slug?: string;
+  revision?: string;
+  nights?: unknown;
+  en?: CrmExperienceSnapshotCopy | null;
+};
+
 export type CrmLead = {
-  experienceSnapshot?: import('./data/experiences').TravelExperience | Record<string, never>;
+  experienceSnapshot?: CrmExperienceSnapshot;
   workflowSummary?: Pick<CrmWorkflowState, 'canAdvance' | 'nextStage' | 'blockers'>;
   id: string;
   createdAt: string;

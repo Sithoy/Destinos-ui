@@ -1,5 +1,7 @@
+import '../styles/crm.css';
+import { CrmLoginLayout } from '../components/CrmLoginLayout';
 import { ExperienceSnapshot } from '../components/ExperienceSnapshot';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   Briefcase,
@@ -262,19 +264,7 @@ type InfoCard = {
   meta?: string;
 };
 
-type MockWorkflowItem = {
-  title: string;
-  value: string;
-  meta: string;
-};
-
-type MockBookingRecord = {
-  service: string;
-  supplier: string;
-  status: string;
-  reference: string;
-  note: string;
-};
+type QuoteLinePatch = Partial<Pick<CrmQuoteLine, 'category' | 'supplier' | 'description' | 'quantity' | 'unitCost' | 'unitSell' | 'status' | 'confirmationReference' | 'supplierDeadline' | 'bookingOwner' | 'bookingNotes' | 'confirmedAt' | 'notes'>>;
 
 type ItineraryStop = {
   city: string;
@@ -320,6 +310,7 @@ type MetricCard = {
 
 const PAGE_SIZE = 10;
 const CRM_THEME_STORAGE_KEY = 'dpm.crm.theme';
+const QUOTE_LINE_SAVE_DELAY_MS = 650;
 
 const statusLabels: Record<LeadStatus, string> = {
   new: 'New',
@@ -746,22 +737,22 @@ const crmRoleDescriptions: Record<Extract<CrmRole, 'admin' | 'manager' | 'agent'
 
 const themeStyles = {
   dark: {
-    shell: 'bg-[#07111d] text-white',
-    sidebar: 'border-white/10 bg-[#07111d]',
-    header: 'border-white/10 bg-[#081321]',
-    panel: 'border-white/10 bg-[#0d1828]',
-    panelSoft: 'border-white/10 bg-[#111c2c]',
-    row: 'border-white/10 bg-[#0b1624] hover:bg-[#101d30]',
-    rowActive: 'border-white/10 bg-[#182331]',
-    input: 'border-white/10 bg-white/8 text-white placeholder:text-white/35 focus:border-[#d4af37]/70',
-    select: 'border-[#d4af37]/45 bg-white text-slate-950 shadow-sm focus:border-[#d4af37]',
-    muted: 'text-white/58',
-    soft: 'text-white/76',
-    tableHead: 'border-white/10 text-white/42',
-    buttonGhost: 'bg-white/8 text-white/75 hover:bg-white/12 hover:text-white',
-    buttonActive: 'bg-[#12305a] text-white',
-    brandText: 'text-white',
-    rightPane: 'border-white/10 bg-[#0b1624]',
+    shell: '',
+    sidebar: 'crm-sidebar',
+    header: 'crm-header',
+    panel: 'crm-panel',
+    panelSoft: 'crm-panel-soft',
+    row: 'crm-row',
+    rowActive: 'crm-row-active',
+    input: 'crm-input',
+    select: 'crm-select',
+    muted: 'crm-muted',
+    soft: 'crm-soft-text',
+    tableHead: 'crm-table-head',
+    buttonGhost: 'crm-button-ghost',
+    buttonActive: 'crm-button-active',
+    brandText: 'crm-soft-text',
+    rightPane: 'crm-detail-pane',
     etios: 'bg-[#2b323a] text-white ring-white/10 hover:bg-[#252c33]',
     type: {
       classic: 'bg-emerald-400/12 text-emerald-200 ring-emerald-300/20',
@@ -783,22 +774,22 @@ const themeStyles = {
     },
   },
   light: {
-    shell: 'bg-[#f4f6f8] text-slate-950',
-    sidebar: 'border-slate-200 bg-white',
-    header: 'border-slate-200 bg-white',
-    panel: 'border-slate-200 bg-white',
-    panelSoft: 'border-slate-200 bg-slate-50',
-    row: 'border-slate-200 bg-white hover:bg-slate-50',
-    rowActive: 'border-slate-300 bg-[#fff9e9]',
-    input: 'border-slate-300 bg-white text-slate-950 placeholder:text-slate-500 focus:border-[#9b6f05]',
-    select: 'border-slate-700 bg-slate-950 text-white shadow-sm focus:border-[#9b6f05]',
-    muted: 'text-slate-600',
-    soft: 'text-slate-800',
-    tableHead: 'border-slate-200 text-slate-600',
-    buttonGhost: 'bg-slate-100 text-slate-800 hover:bg-slate-200 hover:text-slate-950',
-    buttonActive: 'bg-slate-950 text-white',
-    brandText: 'text-slate-950',
-    rightPane: 'border-slate-200 bg-white',
+    shell: '',
+    sidebar: 'crm-sidebar',
+    header: 'crm-header',
+    panel: 'crm-panel',
+    panelSoft: 'crm-panel-soft',
+    row: 'crm-row',
+    rowActive: 'crm-row-active',
+    input: 'crm-input',
+    select: 'crm-select',
+    muted: 'crm-muted',
+    soft: 'crm-soft-text',
+    tableHead: 'crm-table-head',
+    buttonGhost: 'crm-button-ghost',
+    buttonActive: 'crm-button-active',
+    brandText: 'crm-soft-text',
+    rightPane: 'crm-detail-pane',
     etios: 'bg-[#2b323a] text-white ring-slate-950/10 hover:bg-[#252c33]',
     type: {
       classic: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
@@ -1112,8 +1103,8 @@ function initials(name: string) {
 }
 
 function readCrmTheme(): CrmTheme {
-  if (typeof window === 'undefined') return 'dark';
-  return window.localStorage.getItem(CRM_THEME_STORAGE_KEY) === 'light' ? 'light' : 'dark';
+  if (typeof window === 'undefined') return 'light';
+  return window.localStorage.getItem(CRM_THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
 }
 
 function leadSegment(lead: CrmLead) {
@@ -1336,17 +1327,6 @@ function corporateDocumentCards(lead: CrmLead): InfoCard[] {
       meta: `Stage: ${leadLifecycleLabel(lead)}`,
     },
   ];
-}
-
-function mockWorkflowItems(lead: CrmLead, tab: DetailTab): MockWorkflowItem[] {
-  void lead;
-  void tab;
-  return [];
-}
-
-function mockBookingRecords(lead: CrmLead): MockBookingRecord[] {
-  void lead;
-  return [];
 }
 
 function leadPrimaryBlocker(lead: CrmLead) {
@@ -1949,7 +1929,7 @@ function CrmBrandMark({ theme }: { theme: CrmTheme }) {
         logoSize="h-10"
         logoArtScale="scale-[1.06]"
         logoArtOffset="translate-x-0"
-        wordmarkWidthClass="w-[10.75rem] max-w-[calc(100vw-9rem)]"
+        wordmarkWidthClass="w-[9.5rem] max-w-[calc(100vw-9rem)]"
       />
     </div>
   );
@@ -2207,6 +2187,8 @@ export function CrmPage() {
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [userForm, setUserForm] = useState<UserFormState>(() => emptyUserForm());
   const [quoteLineDraft, setQuoteLineDraft] = useState<QuoteLineDraft>(() => emptyQuoteLineDraft());
+  const [quoteLineEdits, setQuoteLineEdits] = useState<Record<string, QuoteLinePatch>>({});
+  const [quoteLineSaveState, setQuoteLineSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [selectedCtmReferencesByLead, setSelectedCtmReferencesByLead] = useState<Record<string, string>>({});
   const [corporateOutputDraft, setCorporateOutputDraft] = useState<CorporateOutputDraft>(() => emptyCorporateOutputDraft());
   const [corporateCompanyForm, setCorporateCompanyForm] = useState<CorporateCompanyFormState>(() => emptyCorporateCompanyForm());
@@ -2220,6 +2202,15 @@ export function CrmPage() {
   const [activeTripDesignEditor, setActiveTripDesignEditor] = useState<TripDesignEditor>('stop');
   const [communicationDraft, setCommunicationDraft] = useState<CommunicationDraft>(() => emptyCommunicationDraft());
   const styles = themeStyles[theme];
+  const quoteLineEditsRef = useRef<Record<string, QuoteLinePatch>>({});
+  const quoteLineSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    const timers = quoteLineSaveTimersRef.current;
+    return () => {
+      Object.values(timers).forEach((timer) => clearTimeout(timer));
+    };
+  }, []);
 
   useEffect(() => {
     const session = readCrmSession();
@@ -2241,9 +2232,9 @@ export function CrmPage() {
   }, [apiEnabled, crmSession?.token]);
 
   useEffect(() => {
-    const refresh = () => {
+    const refresh = async () => {
       setIsLoadingLeads(true);
-      Promise.all([
+      const [leadsResult, clientsResult, quotesResult, paymentRecordsResult, communicationRecordsResult, workflowRemindersResult, itinerariesResult, ctmTripRequestsResult, corporateCompaniesResult, corporateCompanyUsersResult, usersResult] = await Promise.allSettled([
         fetchCrmLeads(crmSession),
         fetchCrmClients(crmSession),
         fetchCrmQuotes(crmSession),
@@ -2255,39 +2246,39 @@ export function CrmPage() {
         canManageUsers(crmSession?.user) ? fetchCtmCompanyAccounts(crmSession) : Promise.resolve([]),
         canManageUsers(crmSession?.user) ? fetchCtmCompanyUsers(crmSession) : Promise.resolve([]),
         canManageUsers(crmSession?.user) ? fetchCrmUsers(crmSession) : Promise.resolve([]),
-      ])
-        .then(([nextLeads, nextClients, nextQuotes, nextPaymentRecords, nextCommunicationRecords, nextWorkflowReminders, nextItineraries, nextCtmTripRequests, nextCorporateCompanies, nextCorporateCompanyUsers, nextUsers]) => {
-          setLeads(nextLeads);
-          setClients(nextClients);
-          setQuotes(nextQuotes);
-          setPaymentRecords(nextPaymentRecords);
-          setCommunicationRecords(nextCommunicationRecords);
-          setWorkflowReminders(nextWorkflowReminders);
-          setTripItineraries(nextItineraries);
-          setCtmTripRequests(nextCtmTripRequests);
-          setCorporateCompanies(nextCorporateCompanies);
-          setCorporateCompanyUsers(nextCorporateCompanyUsers);
-          setCrmUsers(nextUsers);
-          setCrmError('');
-        })
-        .catch((error: Error) => {
-          setCrmError(error.message);
-        })
-        .finally(() => setIsLoadingLeads(false));
+      ]);
+      if (leadsResult.status === 'fulfilled') setLeads(leadsResult.value);
+      if (clientsResult.status === 'fulfilled') setClients(clientsResult.value);
+      if (quotesResult.status === 'fulfilled') setQuotes(quotesResult.value);
+      if (paymentRecordsResult.status === 'fulfilled') setPaymentRecords(paymentRecordsResult.value);
+      if (communicationRecordsResult.status === 'fulfilled') setCommunicationRecords(communicationRecordsResult.value);
+      if (workflowRemindersResult.status === 'fulfilled') setWorkflowReminders(workflowRemindersResult.value);
+      if (itinerariesResult.status === 'fulfilled') setTripItineraries(itinerariesResult.value);
+      if (ctmTripRequestsResult.status === 'fulfilled') setCtmTripRequests(ctmTripRequestsResult.value);
+      if (corporateCompaniesResult.status === 'fulfilled') setCorporateCompanies(corporateCompaniesResult.value);
+      if (corporateCompanyUsersResult.status === 'fulfilled') setCorporateCompanyUsers(corporateCompanyUsersResult.value);
+      if (usersResult.status === 'fulfilled') setCrmUsers(usersResult.value);
+      const firstFailure = [leadsResult, clientsResult, quotesResult, paymentRecordsResult, communicationRecordsResult, workflowRemindersResult, itinerariesResult, ctmTripRequestsResult, corporateCompaniesResult, corporateCompanyUsersResult, usersResult]
+        .find((result) => result.status === 'rejected');
+      setCrmError(firstFailure && firstFailure.status === 'rejected'
+        ? (firstFailure.reason instanceof Error ? firstFailure.reason.message : 'Could not load CRM data.')
+        : '');
+      setIsLoadingLeads(false);
     };
 
-    refresh();
-    window.addEventListener(CRM_EVENT, refresh);
-    window.addEventListener(CRM_AUTH_EVENT, refresh);
-    window.addEventListener(CRM_CLIENT_EVENT, refresh);
-    window.addEventListener(CTM_DATA_EVENT, refresh);
-    window.addEventListener('storage', refresh);
+    void refresh();
+    const onRefresh = () => void refresh();
+    window.addEventListener(CRM_EVENT, onRefresh);
+    window.addEventListener(CRM_AUTH_EVENT, onRefresh);
+    window.addEventListener(CRM_CLIENT_EVENT, onRefresh);
+    window.addEventListener(CTM_DATA_EVENT, onRefresh);
+    window.addEventListener('storage', onRefresh);
     return () => {
-      window.removeEventListener(CRM_EVENT, refresh);
-      window.removeEventListener(CRM_AUTH_EVENT, refresh);
-      window.removeEventListener(CRM_CLIENT_EVENT, refresh);
-      window.removeEventListener(CTM_DATA_EVENT, refresh);
-      window.removeEventListener('storage', refresh);
+      window.removeEventListener(CRM_EVENT, onRefresh);
+      window.removeEventListener(CRM_AUTH_EVENT, onRefresh);
+      window.removeEventListener(CRM_CLIENT_EVENT, onRefresh);
+      window.removeEventListener(CTM_DATA_EVENT, onRefresh);
+      window.removeEventListener('storage', onRefresh);
     };
   }, [crmSession, apiEnabled]);
 
@@ -2474,6 +2465,11 @@ export function CrmPage() {
     : '';
   const selectedQuotes = selectedLead ? quotes.filter((quote) => quote.leadId === selectedLead.id).sort((a, b) => b.version - a.version) : [];
   const selectedQuote = selectedQuotes[0] ?? null;
+  const quoteLineSaveIndicator = quoteLineSaveState === 'idle' ? null : (
+    <span className={`text-xs ${quoteLineSaveState === 'error' ? 'text-red-300' : styles.muted}`}>
+      {quoteLineSaveState === 'saving' ? 'Saving…' : quoteLineSaveState === 'saved' ? 'Saved' : 'Could not save changes'}
+    </span>
+  );
   const selectedWorkflowState = selectedLead ? workflowStates[selectedLead.id] ?? null : null;
   const selectedWorkflowReminders = selectedLead ? workflowReminders.filter((reminder) => String(reminder.leadId) === String(selectedLead.id)) : [];
   const selectedPaymentRecords = selectedLead ? paymentRecords.filter((record) => record.leadId === selectedLead.id) : [];
@@ -3624,14 +3620,78 @@ export function CrmPage() {
     }
   }
 
-  async function saveQuoteLine(line: CrmQuoteLine, patch: Partial<Pick<CrmQuoteLine, 'category' | 'supplier' | 'description' | 'quantity' | 'unitCost' | 'unitSell' | 'status' | 'confirmationReference' | 'supplierDeadline' | 'bookingOwner' | 'bookingNotes' | 'confirmedAt' | 'notes'>>) {
+  function quoteLineValue<K extends keyof CrmQuoteLine>(line: CrmQuoteLine, field: K): CrmQuoteLine[K] {
+    const edits = quoteLineEdits[line.id] as Partial<CrmQuoteLine> | undefined;
+    const value = edits?.[field];
+    return value === undefined ? line[field] : value;
+  }
+
+  function setQuoteLineEdit(lineId: string, patch: QuoteLinePatch) {
+    quoteLineEditsRef.current = { ...quoteLineEditsRef.current, [lineId]: { ...quoteLineEditsRef.current[lineId], ...patch } };
+    setQuoteLineEdits(quoteLineEditsRef.current);
+  }
+
+  function clearSentQuoteLineEdits(lineId: string, sentPatch: QuoteLinePatch) {
+    const current = quoteLineEditsRef.current[lineId];
+    if (!current) return;
+    const remaining = { ...current };
+    for (const key of Object.keys(sentPatch) as (keyof QuoteLinePatch)[]) {
+      if (remaining[key] === sentPatch[key]) delete remaining[key];
+    }
+    const next = { ...quoteLineEditsRef.current };
+    if (Object.keys(remaining).length > 0) next[lineId] = remaining;
+    else delete next[lineId];
+    quoteLineEditsRef.current = next;
+    setQuoteLineEdits(next);
+  }
+
+  function applySavedQuoteLine(updatedLine: CrmQuoteLine) {
+    setQuotes((current) => current.map((quote) => (quote.id === updatedLine.quoteId
+      ? { ...quote, lines: quote.lines.map((item) => (item.id === updatedLine.id ? updatedLine : item)) }
+      : quote)));
+  }
+
+  async function refreshQuoteForLine(line: CrmQuoteLine) {
+    const quote = quotes.find((item) => item.id === line.quoteId);
+    if (!quote) return;
+    const freshQuotes = await fetchCrmQuotes(crmSession, quote.leadId);
+    setQuotes((current) => [...current.filter((item) => item.leadId !== quote.leadId), ...freshQuotes]);
+  }
+
+  async function persistQuoteLinePatch(line: CrmQuoteLine, patch: QuoteLinePatch) {
+    if (Object.keys(patch).length === 0) return;
+    setQuoteLineSaveState('saving');
     try {
-      await updateCrmQuoteLineRecord(line.id, patch, crmSession);
-      await reloadQuotes();
+      const updatedLine = await updateCrmQuoteLineRecord(line.id, patch, crmSession);
+      clearSentQuoteLineEdits(line.id, patch);
+      applySavedQuoteLine(updatedLine);
+      setQuoteLineSaveState('saved');
       setCrmError('');
+      await refreshQuoteForLine(line);
     } catch (error) {
+      setQuoteLineSaveState('error');
       setCrmError(error instanceof Error ? error.message : 'Could not update quote line.');
     }
+  }
+
+  function scheduleQuoteLineSave(line: CrmQuoteLine, patch: QuoteLinePatch) {
+    setQuoteLineEdit(line.id, patch);
+    const timers = quoteLineSaveTimersRef.current;
+    if (timers[line.id]) clearTimeout(timers[line.id]);
+    timers[line.id] = setTimeout(() => {
+      delete timers[line.id];
+      void persistQuoteLinePatch(line, quoteLineEditsRef.current[line.id] ?? {});
+    }, QUOTE_LINE_SAVE_DELAY_MS);
+  }
+
+  async function saveQuoteLine(line: CrmQuoteLine, patch: QuoteLinePatch) {
+    const timers = quoteLineSaveTimersRef.current;
+    if (timers[line.id]) {
+      clearTimeout(timers[line.id]);
+      delete timers[line.id];
+    }
+    const pending = quoteLineEditsRef.current[line.id] ?? {};
+    await persistQuoteLinePatch(line, { ...pending, ...patch });
   }
 
   async function submitQuoteLine(quote: CrmQuote) {
@@ -3842,7 +3902,7 @@ export function CrmPage() {
           <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Corporate Trip Design</div>
+                <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">Corporate Trip Design</div>
                 <div className="mt-2 text-xl font-semibold">{selectedItinerary?.title || selectedLead.destination || 'Route pending'}</div>
                 <div className={`mt-1 text-sm ${styles.muted}`}>
                   {selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : selectedLead.dates || 'Dates pending'} - {selectedLead.travelers || 'Travelers pending'}
@@ -3874,7 +3934,7 @@ export function CrmPage() {
             </div>
             {selectedItineraryStops.length > 0 ? selectedItineraryStops.map((stop, index) => (
               <div key={`${stop.city}-${index}`} className={`grid grid-cols-[60px_minmax(150px,1fr)_90px_minmax(180px,1.1fr)_minmax(150px,1fr)_100px] gap-3 border-b px-4 py-3 text-sm ${styles.panel}`}>
-                <div className="font-semibold text-[#d9b46f]">{index + 1}</div>
+                <div className="font-semibold crm-accent-text">{index + 1}</div>
                 <div>
                   <div className="font-semibold">{stop.city}</div>
                   {stop.dates ? <div className={`mt-1 text-xs ${styles.muted}`}>{stop.dates}</div> : null}
@@ -4325,57 +4385,63 @@ export function CrmPage() {
 
   if (!crmSession) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#07111d] px-4 text-white">
-        <form onSubmit={submitLogin} className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1828] p-6 shadow-2xl">
-          <CrmBrandMark theme="dark" />
+      <CrmLoginLayout>
+        <form onSubmit={submitLogin} className="crm-login-form">
+          <CrmBrandMark theme="light" />
           <div className="mt-8">
-            <h1 className="text-2xl font-semibold">CRM Sign In</h1>
-            <p className="mt-2 text-sm leading-6 text-white/60">Use a DPM staff account with CRM access to manage requests, client records, notes, and workflow status.</p>
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#9b4e06]">DPM CRM</p><h2>Welcome back.</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Sign in to care for your clients and keep every journey moving.</p>
           </div>
-          <label className="mt-6 block text-sm font-medium text-white/75">
+          <label className="mt-6 block text-sm font-medium text-slate-700">
             Username or email
             <input
               value={loginIdentifier}
               onChange={(event) => setLoginIdentifier(event.target.value)}
-              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              className="mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-[#b5661a]"
               placeholder="staff@dpmundo.com"
               autoComplete="username"
               required
             />
           </label>
-          <label className="mt-4 block text-sm font-medium text-white/75">
+          <label className="mt-4 block text-sm font-medium text-slate-700">
             Password
             <input
               value={loginPassword}
               onChange={(event) => setLoginPassword(event.target.value)}
-              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              className="mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-[#b5661a]"
               type="password"
               autoComplete="current-password"
               required
             />
           </label>
-          {crmError ? <div className="mt-4 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">{crmError}</div> : null}
+          {crmError ? <div className="mt-4 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-700">{crmError}</div> : null}
           <button
             type="submit"
             disabled={isLoggingIn}
-            className="mt-6 h-11 w-full rounded-lg bg-[#d4af37] px-4 text-sm font-semibold text-[#241f1b] transition hover:bg-[#e0bc4e] disabled:opacity-55"
+            className="mt-6 h-11 w-full rounded-lg bg-[#fe8500] px-4 text-sm font-semibold text-[#35180f] transition hover:bg-[#ff9828] disabled:opacity-55"
           >
             {isLoggingIn ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
-      </main>
+      </CrmLoginLayout>
     );
   }
 
   return (
-    <main className={`min-h-screen ${styles.shell}`}>
-      <div className="grid min-h-screen xl:grid-cols-[244px_minmax(0,1fr)]">
+    <main className={`crm-workspace min-h-screen ${styles.shell}`} data-theme={theme}>
+      <div className="grid min-h-screen xl:grid-cols-[252px_minmax(0,1fr)]">
         <aside className={`flex min-w-0 flex-col border-b px-4 py-3 xl:min-h-screen xl:border-r xl:py-5 ${styles.sidebar}`}>
           <div className="mb-3 xl:mb-7">
-            <CrmBrandMark theme={theme} />
+            <CrmBrandMark theme="dark" />
           </div>
 
-          <nav aria-label="CRM navigation" className="flex gap-2 overflow-x-auto xl:grid">
+          <p className="crm-sidebar-caption">Your workspace</p>
+          <label className="crm-mobile-nav md:hidden">Workspace
+            <select aria-label="CRM navigation" value={activeNav} onChange={event => activateNav(event.target.value as CrmNavId)}>
+              {navItems.map(item => <option key={item.id} value={item.id}>{item.label}{navCounts[item.id] ? ` (${navCounts[item.id]})` : ''}</option>)}
+            </select>
+          </label>
+          <nav aria-label="CRM navigation" className="hidden gap-2 overflow-x-auto md:flex xl:grid">
             {navItems.map(({ id, label, Icon }) => {
               const active = activeNav === id;
               const count = navCounts[id];
@@ -4383,15 +4449,14 @@ export function CrmPage() {
               <button
                 key={label}
                 type="button"
+                aria-current={active ? 'page' : undefined}
                 onClick={() => activateNav(id)}
-                className={`flex h-12 shrink-0 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
-                  active ? styles.buttonActive : styles.buttonGhost
-                }`}
+                className={`crm-nav-item flex h-12 shrink-0 items-center gap-3 px-3 font-medium transition ${id === 'clients' ? 'crm-sidebar-divider' : ''}`}
               >
                 <Icon className="h-4 w-4" />
                 <span>{label}</span>
                 {count && count > 0 && id !== 'settings' ? (
-                  <span className={`ml-auto rounded-full px-2 py-0.5 text-xs ${id === 'tasks' ? 'bg-red-500 text-white' : active ? 'bg-white/18 text-white' : 'bg-black/15 text-current'}`}>
+                  <span className={`ml-auto rounded-full px-2 py-0.5 text-xs ${id === 'tasks' ? 'bg-red-500 text-white' : 'crm-nav-count'}`}>
                     {count}
                   </span>
                 ) : null}
@@ -4400,6 +4465,7 @@ export function CrmPage() {
             })}
           </nav>
 
+          <div className="crm-session"><span className="crm-session-avatar" aria-hidden="true">{initials(crmSession.user.first_name || crmSession.user.username)}</span><div><p className="crm-session-name">{crmSession.user.first_name || crmSession.user.username}</p><p className="crm-session-role">{crmSession.user.role} access</p></div></div>
           <a
             href="https://etios.net"
             target="_blank"
@@ -4422,7 +4488,7 @@ export function CrmPage() {
           <header className={`border-b px-5 py-5 ${styles.header}`}>
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="min-w-[240px] flex-1">
-                <div className="text-[11px] uppercase tracking-[0.26em] text-[#d9b46f]">DPM CRM workspace</div>
+                <div className="crm-eyebrow">Destinos pelo Mundo / Workspace</div>
                 <h1 className="mt-1 text-2xl font-semibold tracking-tight">{navCopy[activeNav].title}</h1>
                 <p className={`mt-1 text-sm ${styles.muted}`}>{navCopy[activeNav].subtitle}</p>
               </div>
@@ -4433,11 +4499,12 @@ export function CrmPage() {
                     value={query}
                     onChange={(event) => changeQuery(event.target.value)}
                     className="w-full bg-transparent text-sm outline-none placeholder:inherit"
+                    aria-label="Search CRM"
                     placeholder="Search client, destination, date..."
                   />
                 </label>
               </div>
-              <div className="flex max-w-full flex-wrap items-center justify-start gap-2 lg:justify-end">
+              <div className="flex max-w-full flex-wrap items-center justify-start gap-1.5 sm:gap-2 lg:justify-end">
                 <button
                   type="button"
                   onClick={() =>
@@ -4454,10 +4521,11 @@ export function CrmPage() {
                     (activeNav === 'settings' && !canManageUsers(crmSession?.user)) ||
                     (activeNav === 'corporateAccounts' && !canManageUsers(crmSession?.user))
                   }
-                  className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#12305a] px-4 text-sm font-medium text-white transition hover:bg-[#173d72] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="crm-primary inline-flex h-11 items-center gap-2 px-4 text-sm transition disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Plus className="h-4 w-4" />
-                  {activeNav === 'clients' ? 'Register Client' : activeNav === 'settings' ? 'Add User' : activeNav === 'corporateAccounts' ? 'New Company' : 'New Leisure Request'}
+                  <span className="hidden sm:inline">{activeNav === 'clients' ? 'Register Client' : activeNav === 'settings' ? 'Add User' : activeNav === 'corporateAccounts' ? 'New Company' : activeNav === 'corporateDesk' ? 'New Request' : 'New Leisure Request'}</span>
+                  <span className="sm:hidden">{activeNav === 'clients' ? 'Add client' : activeNav === 'settings' ? 'Add user' : activeNav === 'corporateAccounts' ? 'New company' : 'New request'}</span>
                 </button>
                 <button
                   type="button"
@@ -4476,9 +4544,9 @@ export function CrmPage() {
                   {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 </button>
                 {apiEnabled ? (
-                  <button type="button" onClick={signOut} className={`inline-flex h-11 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
+                  <button type="button" aria-label="Sign out" onClick={signOut} className={`inline-flex h-11 min-w-11 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
                     <LogOut className="h-4 w-4" />
-                    Sign out
+                    <span className="hidden sm:inline">Sign out</span>
                   </button>
                 ) : null}
               </div>
@@ -4490,7 +4558,8 @@ export function CrmPage() {
                   value={query}
                   onChange={(event) => changeQuery(event.target.value)}
                   className="w-full bg-transparent text-sm outline-none placeholder:inherit"
-                  placeholder="Search client, destination, date..."
+                  aria-label="Search CRM"
+                    placeholder="Search client, destination, date..."
                 />
               </label>
             </div>
@@ -4502,7 +4571,7 @@ export function CrmPage() {
             {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
             {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading CRM requests...</div> : null}
             {activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
-              <div className={`grid gap-4 ${activeNav === 'command' ? 'md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6' : 'lg:grid-cols-4'}`}>
+              <div className={`grid gap-4 ${activeNav === 'command' ? 'grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6' : 'sm:grid-cols-2 lg:grid-cols-4'}`}>
                 {(activeNav === 'settings' ? settingsMetricCards : activeNav === 'corporateAccounts' ? corporateAccountMetricCards : metricCards).map((card) => (
                   <button
                     key={card.label}
@@ -4516,7 +4585,7 @@ export function CrmPage() {
                         else setCommandLens('attention');
                       } else if (card.filter) changeStatusFilter(card.filter);
                     }}
-                    className={`rounded-xl border p-4 text-left transition ${
+                    className={`crm-metric rounded-xl border p-4 text-left transition ${
                       activeNav === 'command'
                         ? ((card.label === 'Corporate' && commandLens === 'corporate') ||
                             (card.label === 'Leisure' && commandLens === 'leisure') ||
@@ -4532,7 +4601,7 @@ export function CrmPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <span className={`text-sm ${styles.soft}`}>{card.label}</span>
-                      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#12305a] text-white">
+                      <span className="crm-metric-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
                         <card.Icon className="h-4 w-4" />
                       </span>
                     </div>
@@ -4761,7 +4830,7 @@ export function CrmPage() {
                             className={`grid grid-cols-[1.5fr_110px_100px_1fr_84px] gap-4 border-b px-5 py-4 text-left transition ${styles.row}`}
                           >
                             <div className="flex min-w-0 items-center gap-4">
-                              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#12305a] text-sm font-semibold text-white">
+                              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#253f49] text-sm font-semibold text-white">
                                 {initials(user.displayName || user.username)}
                               </span>
                               <span className="min-w-0">
@@ -4837,7 +4906,7 @@ export function CrmPage() {
                             }`}
                           >
                             <div className="flex min-w-0 items-center gap-4">
-                              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#12305a] text-sm font-semibold text-white">
+                              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#253f49] text-sm font-semibold text-white">
                                 {initials(company.name)}
                               </span>
                               <span className="min-w-0">
@@ -5265,7 +5334,7 @@ export function CrmPage() {
                         <textarea value={corporateCompanyForm.notes} onChange={(event) => updateCorporateCompanyField('notes', event.target.value)} className={`mt-2 min-h-24 w-full rounded-lg border px-3 py-3 text-sm outline-none ${styles.input}`} />
                       </label>
                     </div>
-                    <button type="submit" disabled={isSavingCorporateCompany || !canManageUsers(crmSession?.user)} className="mt-4 inline-flex h-11 items-center gap-2 rounded-lg bg-[#12305a] px-4 text-sm font-medium text-white transition hover:bg-[#173d72] disabled:cursor-not-allowed disabled:opacity-45">
+                    <button type="submit" disabled={isSavingCorporateCompany || !canManageUsers(crmSession?.user)} className="mt-4 inline-flex h-11 items-center gap-2 rounded-lg bg-[#253f49] px-4 text-sm font-medium text-white transition hover:bg-[#34545f] disabled:cursor-not-allowed disabled:opacity-45">
                       <Building2 className="h-4 w-4" />
                       {isSavingCorporateCompany ? 'Saving...' : isCreatingCorporateCompany ? 'Create Company' : 'Save Company'}
                     </button>
@@ -5312,7 +5381,7 @@ export function CrmPage() {
                         <span>Active user</span>
                         <input type="checkbox" checked={corporateCompanyUserForm.isActive} onChange={(event) => updateCorporateCompanyUserField('isActive', event.target.checked)} className="h-4 w-4" />
                       </label>
-                      <button type="submit" disabled={isSavingCorporateCompanyUser || !selectedCorporateCompany || !canManageUsers(crmSession?.user)} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#12305a] px-4 text-sm font-medium text-white transition hover:bg-[#173d72] disabled:cursor-not-allowed disabled:opacity-45">
+                      <button type="submit" disabled={isSavingCorporateCompanyUser || !selectedCorporateCompany || !canManageUsers(crmSession?.user)} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#253f49] px-4 text-sm font-medium text-white transition hover:bg-[#34545f] disabled:cursor-not-allowed disabled:opacity-45">
                         <Users className="h-4 w-4" />
                         {isSavingCorporateCompanyUser ? 'Saving...' : editingCorporateUserId ? 'Save User' : 'Create CTM User'}
                       </button>
@@ -5400,7 +5469,7 @@ export function CrmPage() {
             <div className="grid gap-4">
               <div className={`rounded-xl border p-5 ${styles.panel}`}>
                 <div className="flex items-center gap-3">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#12305a] text-white">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#253f49] text-white">
                     <Shield className="h-5 w-5" />
                   </span>
                   <div>
@@ -5455,7 +5524,7 @@ export function CrmPage() {
               <div className="grid gap-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-4">
-                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-lg font-semibold text-white">
+                    <span className="crm-client-avatar flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
                       {initials(clientLabel(selectedClient))}
                     </span>
                     <div className="min-w-0">
@@ -5546,7 +5615,7 @@ export function CrmPage() {
               <div className="grid gap-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-4">
-                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-lg font-semibold text-white">
+                    <span className="crm-client-avatar flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
                       {initials(selectedLead.name)}
                     </span>
                     <div className="min-w-0">
@@ -5620,7 +5689,8 @@ export function CrmPage() {
                               return (
                                 <div key={step.stage} className="flex min-w-0 flex-col items-center text-center">
                                   <span
-                                    className={`flex h-9 w-9 items-center justify-center rounded-full border ${
+                                    data-state={isBlocked ? 'blocked' : isCurrent ? 'current' : isDone ? 'done' : 'pending'}
+                                    className={`crm-stage-node flex h-9 w-9 items-center justify-center rounded-full border ${
                                       isDone
                                         ? 'border-emerald-400/60 bg-emerald-500/12 text-emerald-300'
                                         : isCurrent
@@ -5707,7 +5777,7 @@ export function CrmPage() {
                       title={selectedReminderGeneration.reason}
                       className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium transition ${
                         selectedReminderGeneration.available
-                          ? 'bg-[#12305a] text-white hover:bg-[#173d72]'
+                          ? 'bg-[#253f49] text-white hover:bg-[#34545f]'
                           : 'cursor-not-allowed bg-slate-500/20 text-slate-400'
                       }`}
                     >
@@ -5807,7 +5877,7 @@ export function CrmPage() {
                     <div className={`rounded-xl border p-5 ${selectedBriefingReturned ? 'border-amber-400/25 bg-amber-500/10' : styles.panel}`}>
                       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                         <div className="min-w-0">
-                          <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Trip Owner Approval</div>
+                          <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">Trip Owner Approval</div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             <h2 className="text-2xl font-semibold">{selectedBriefingReturned ? 'Briefing changes requested' : 'Waiting for briefing approval'}</h2>
                             <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>CTM owner gate</span>
@@ -5836,7 +5906,7 @@ export function CrmPage() {
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="min-w-0">
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Selected request</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">Selected request</div>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <h2 className="text-2xl font-semibold">{selectedLead.name}</h2>
                           <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>Corporate</span>
@@ -5875,7 +5945,7 @@ export function CrmPage() {
                             <span className={`grid h-9 w-9 place-items-center rounded-full border transition group-hover:scale-105 ${crmCorporateStageDotClass(stage.state, selected)}`}>
                               <Icon className="h-4 w-4" />
                             </span>
-                            <span className={`mt-1 max-w-full truncate text-[10px] font-medium ${selected ? 'text-[#d9b46f]' : styles.muted}`}>{stage.label}</span>
+                            <span className={`mt-1 max-w-full truncate text-[10px] font-medium ${selected ? 'crm-accent-text' : styles.muted}`}>{stage.label}</span>
                           </button>
                         );
                       })}
@@ -5953,7 +6023,7 @@ export function CrmPage() {
                         <div className={`rounded-lg border p-5 ${selectedBriefingReturned ? 'border-amber-400/25 bg-amber-500/10' : styles.panelSoft}`}>
                           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                             <div className="min-w-0">
-                              <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Trip owner decision</div>
+                              <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">Trip owner decision</div>
                               <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <div className="text-xl font-semibold">{selectedBriefingReturned ? 'Briefing changes requested' : 'Waiting for owner approval'}</div>
                                 <span className={`rounded-full px-2.5 py-1 text-xs ${selectedBriefingApprovalPending ? 'bg-sky-500/15 text-sky-200' : selectedBriefingReturned ? 'bg-amber-500/15 text-amber-100' : styles.buttonGhost}`}>
@@ -6022,15 +6092,6 @@ export function CrmPage() {
                             </div>
                           ))}
                         </div>
-                        <div className="grid gap-3 md:grid-cols-3">
-                          {mockWorkflowItems(selectedLead, detailTab).map((item) => (
-                            <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                              <div className="font-semibold">{item.title}</div>
-                              <div className="mt-2 text-sm font-medium">{item.value}</div>
-                              <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
-                            </div>
-                          ))}
-                        </div>
                         {detailTab === 'documents' ? (
                           <label className="block">
                             <span className="font-semibold">Internal readiness notes</span>
@@ -6081,7 +6142,7 @@ export function CrmPage() {
                     <div className={`rounded-xl border p-5 ${styles.panel}`}>
                       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                         <div className="min-w-0">
-                          <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">DPM Leisure Studio</div>
+                          <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">DPM Leisure Studio</div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             <h2 className="text-2xl font-semibold">{selectedLead.destination || 'Destination pending'}</h2>
                             <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
@@ -6167,7 +6228,7 @@ export function CrmPage() {
                         <div className="font-semibold">Leisure value chain</div>
                         <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{currentWorkbenchLabel}</span>
                       </div>
-                      <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-7">
+                      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 min-[1900px]:grid-cols-8">
                         {leisureWorkbenchTabs.map(({ id, label, Icon }, index) => {
                           const isDone = currentWorkbenchIndex > index;
                           const isCurrent = currentWorkbenchIndex === index;
@@ -6176,7 +6237,8 @@ export function CrmPage() {
                               key={id}
                               type="button"
                               onClick={() => setDetailTab(id)}
-                              className={`rounded-xl border px-3 py-3 text-left transition ${
+                              aria-pressed={detailTab === id}
+                              className={`crm-workflow-tab rounded-xl border px-3 py-3 text-left transition ${
                                 isDone
                                   ? 'border-emerald-400/25 bg-emerald-500/10'
                                   : isCurrent
@@ -6186,7 +6248,8 @@ export function CrmPage() {
                             >
                               <div className="flex items-center gap-2">
                                 <span
-                                  className={`flex h-8 w-8 items-center justify-center rounded-full border ${
+                                  data-state={isCurrent ? 'current' : isDone ? 'done' : 'pending'}
+                                  className={`crm-stage-node flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${
                                     isDone
                                       ? 'border-emerald-400/60 text-emerald-300'
                                       : isCurrent
@@ -6226,7 +6289,7 @@ export function CrmPage() {
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
-                                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">Trip Design</div>
+                                  <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">Trip Design</div>
                                   <div className="mt-2 text-xl font-semibold">{selectedItinerary?.title || selectedLead.destination || 'Route pending'}</div>
                                   <div className={`mt-1 text-sm ${styles.muted}`}>
                                     {selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : selectedLead.dates || 'Dates pending'} - {selectedLead.travelers || 'Travelers pending'}
@@ -6258,7 +6321,7 @@ export function CrmPage() {
                               </div>
                               {selectedItineraryStops.map((stop, index) => (
                                 <div key={`${stop.city}-${index}`} className={`grid grid-cols-[70px_minmax(160px,1fr)_120px_minmax(180px,1.2fr)_minmax(160px,1fr)_110px] gap-3 border-b px-4 py-3 text-sm ${styles.panel}`}>
-                                  <div className="font-semibold text-[#d9b46f]">{index + 1}</div>
+                                  <div className="font-semibold crm-accent-text">{index + 1}</div>
                                   <div>
                                     <div className="font-semibold">{stop.city}</div>
                                     {stop.dates ? <div className={`mt-1 text-xs ${styles.muted}`}>{stop.dates}</div> : null}
@@ -6633,6 +6696,7 @@ export function CrmPage() {
 
                       {detailTab === 'costing' ? (
                         <div className="grid gap-4">
+                          {quoteLineSaveIndicator ? <div className="flex justify-end">{quoteLineSaveIndicator}</div> : null}
                           <div className={`overflow-hidden rounded-xl border ${styles.panelSoft}`}>
                             <div className={`grid grid-cols-[130px_1.1fr_1fr_90px_110px_110px_100px] gap-3 border-b px-4 py-3 text-xs uppercase tracking-[0.14em] ${styles.tableHead}`}>
                               <div>Category</div>
@@ -6651,11 +6715,11 @@ export function CrmPage() {
                                         <option key={category} value={category}>{quoteLineCategoryLabels[category]}</option>
                                       ))}
                                     </select>
-                                    <input value={line.description} onChange={(event) => saveQuoteLine(line, { description: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
-                                    <input value={line.supplier} onChange={(event) => saveQuoteLine(line, { supplier: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
-                                    <input value={line.quantity} onChange={(event) => saveQuoteLine(line, { quantity: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
-                                    <input value={line.unitCost} onChange={(event) => saveQuoteLine(line, { unitCost: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
-                                    <input value={line.unitSell} onChange={(event) => saveQuoteLine(line, { unitSell: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                    <input value={quoteLineValue(line, 'description')} onChange={(event) => scheduleQuoteLineSave(line, { description: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                    <input value={quoteLineValue(line, 'supplier')} onChange={(event) => scheduleQuoteLineSave(line, { supplier: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                    <input value={quoteLineValue(line, 'quantity')} onChange={(event) => scheduleQuoteLineSave(line, { quantity: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                    <input value={quoteLineValue(line, 'unitCost')} onChange={(event) => scheduleQuoteLineSave(line, { unitCost: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                    <input value={quoteLineValue(line, 'unitSell')} onChange={(event) => scheduleQuoteLineSave(line, { unitSell: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
                                     <select value={line.status} onChange={(event) => saveQuoteLine(line, { status: event.target.value as QuoteLineStatus })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
                                       {quoteLineStatuses.map((status) => (
                                         <option key={status} value={status}>{quoteLineStatusLabels[status]}</option>
@@ -6842,7 +6906,7 @@ export function CrmPage() {
                                   </p>
                                 </div>
                                 <div className="text-right">
-                                  <div className="text-lg font-semibold text-[#d9b46f]">DPM</div>
+                                  <div className="text-lg font-semibold crm-accent-text">DPM</div>
                                   <div className={`mt-1 text-xs ${styles.muted}`}>Destinos pelo Mundo</div>
                                 </div>
                               </div>
@@ -6872,7 +6936,7 @@ export function CrmPage() {
                                     <div key={`${stop.city}-${index}`} className={`rounded-xl border p-4 ${styles.panel}`}>
                                       <div className="flex flex-wrap items-start justify-between gap-3">
                                         <div>
-                                          <div className="text-xs font-semibold text-[#d9b46f]">Day block {index + 1}</div>
+                                          <div className="text-xs font-semibold crm-accent-text">Day block {index + 1}</div>
                                           <div className="mt-1 font-semibold">{stop.city}</div>
                                           <div className={`mt-1 text-sm ${styles.muted}`}>{stop.dates} - {stop.nights}</div>
                                         </div>
@@ -7120,7 +7184,10 @@ export function CrmPage() {
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
-                                  <div className="font-semibold">Booking confirmation workflow</div>
+                                  <div className="flex items-center gap-3">
+                                    <div className="font-semibold">Booking confirmation workflow</div>
+                                    {quoteLineSaveIndicator}
+                                  </div>
                                   <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
                                     Each priced quote line becomes an operational booking item. Move items to Held or Confirmed as suppliers respond.
                                   </p>
@@ -7159,11 +7226,11 @@ export function CrmPage() {
                                       </div>
                                     </div>
                                     <div className="mt-3 grid gap-2 md:grid-cols-2">
-                                      <input value={line.supplier} onChange={(event) => saveQuoteLine(line, { supplier: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Supplier" />
-                                      <input value={line.bookingOwner} onChange={(event) => saveQuoteLine(line, { bookingOwner: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Booking owner" />
-                                      <input value={line.confirmationReference} onChange={(event) => saveQuoteLine(line, { confirmationReference: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Confirmation reference" />
-                                      <input type="date" value={line.supplierDeadline ?? ''} onChange={(event) => saveQuoteLine(line, { supplierDeadline: event.target.value || null })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
-                                      <input value={line.bookingNotes} onChange={(event) => saveQuoteLine(line, { bookingNotes: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input} md:col-span-2`} placeholder="Booking note" />
+                                      <input value={quoteLineValue(line, 'supplier')} onChange={(event) => scheduleQuoteLineSave(line, { supplier: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Supplier" />
+                                      <input value={quoteLineValue(line, 'bookingOwner')} onChange={(event) => scheduleQuoteLineSave(line, { bookingOwner: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Booking owner" />
+                                      <input value={quoteLineValue(line, 'confirmationReference')} onChange={(event) => scheduleQuoteLineSave(line, { confirmationReference: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Confirmation reference" />
+                                      <input type="date" value={quoteLineValue(line, 'supplierDeadline') ?? ''} onChange={(event) => scheduleQuoteLineSave(line, { supplierDeadline: event.target.value || null })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                                      <input value={quoteLineValue(line, 'bookingNotes')} onChange={(event) => scheduleQuoteLineSave(line, { bookingNotes: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input} md:col-span-2`} placeholder="Booking note" />
                                     </div>
                                   </div>
                                 )) : (
@@ -7202,7 +7269,7 @@ export function CrmPage() {
                                   </p>
                                 </div>
                                 <div className="text-right">
-                                  <div className="text-lg font-semibold text-[#d9b46f]">DPM</div>
+                                  <div className="text-lg font-semibold crm-accent-text">DPM</div>
                                   <div className={`mt-1 text-xs ${styles.muted}`}>Travel support pack</div>
                                 </div>
                               </div>
@@ -7233,7 +7300,7 @@ export function CrmPage() {
                                       <div className="grid gap-4 md:grid-cols-[90px_1fr_1fr]">
                                         <div>
                                           <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Stop {index + 1}</div>
-                                          <div className="mt-2 text-xl font-semibold text-[#d9b46f]">{stop.nights}</div>
+                                          <div className="mt-2 text-xl font-semibold crm-accent-text">{stop.nights}</div>
                                         </div>
                                         <div>
                                           <div className="font-semibold">{stop.city}</div>
@@ -7267,7 +7334,7 @@ export function CrmPage() {
                                           </div>
                                           <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{itineraryBookingStatusLabels[segment.bookingStatus]}</span>
                                         </div>
-                                        {segment.reference ? <div className="mt-2 text-xs text-[#d9b46f]">Reference: {segment.reference}</div> : null}
+                                        {segment.reference ? <div className="mt-2 text-xs crm-accent-text">Reference: {segment.reference}</div> : null}
                                       </div>
                                     )) : (
                                       <div className={`text-sm ${styles.muted}`}>Movement instructions will appear when flights or transfers are added.</div>
@@ -7302,29 +7369,23 @@ export function CrmPage() {
                                   <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedQuote ? selectedQuote.quoteNumber : 'Quote pending'}</span>
                                 </div>
                                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                  {(selectedQuote?.lines.length ? selectedQuote.lines : mockBookingRecords(selectedLead).map((booking) => ({
-                                    id: booking.reference,
-                                    category: 'other' as QuoteLineCategory,
-                                    description: booking.service,
-                                    supplier: booking.supplier,
-                                    status: booking.status.toLowerCase().includes('confirm') ? 'confirmed' : 'held',
-                                    notes: booking.note,
-                                    totalSell: '0',
-                                  }))).map((item) => (
-                                    <div key={item.id} className={`rounded-xl border p-4 ${styles.panel}`}>
+                                  {selectedQuote?.lines.length ? selectedQuote.lines.map((line) => (
+                                    <div key={line.id} className={`rounded-xl border p-4 ${styles.panel}`}>
                                       <div className="flex items-start justify-between gap-3">
                                         <div>
-                                          <div className="font-semibold">{item.description}</div>
-                                          <div className={`mt-1 text-sm ${styles.muted}`}>{item.supplier || quoteLineCategoryLabels[item.category]}</div>
+                                          <div className="font-semibold">{line.description}</div>
+                                          <div className={`mt-1 text-sm ${styles.muted}`}>{line.supplier || quoteLineCategoryLabels[line.category]}</div>
                                         </div>
-                                        <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{item.status}</span>
+                                        <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{line.status}</span>
                                       </div>
                                       <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
-                                        {'confirmationReference' in item && item.confirmationReference ? `Reference: ${String(item.confirmationReference)}. ` : ''}
-                                        {'bookingNotes' in item && item.bookingNotes ? String(item.bookingNotes) : item.notes || 'Confirmation details should be attached before sending the pack.'}
+                                        {line.confirmationReference ? `Reference: ${line.confirmationReference}. ` : ''}
+                                        {line.bookingNotes || line.notes || 'Confirmation details should be attached before sending the pack.'}
                                       </p>
                                     </div>
-                                  ))}
+                                  )) : (
+                                    <div className={`text-sm ${styles.muted}`}>Confirmations will appear once booking items are released for this trip.</div>
+                                  )}
                                 </div>
                               </section>
                             </div>
@@ -7401,7 +7462,7 @@ export function CrmPage() {
             <div className="grid gap-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex min-w-0 items-center gap-4">
-                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-lg font-semibold text-white">
+                  <span className="crm-client-avatar flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
                     {initials(selectedLead.name)}
                   </span>
                   <div className="min-w-0">
@@ -7430,7 +7491,7 @@ export function CrmPage() {
 
               <div className={`rounded-xl border p-5 ${styles.panel}`}>
                 <div className={`mb-5 rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                  <div className="text-xs uppercase tracking-[0.14em] text-[#d9b46f]">{leadFlowTitle(selectedLead)}</div>
+                  <div className="text-xs uppercase tracking-[0.14em] crm-accent-text">{leadFlowTitle(selectedLead)}</div>
                   <div className={`mt-2 text-sm leading-6 ${styles.soft}`}>{leadFlowDescription(selectedLead)}</div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-3">
@@ -7588,7 +7649,7 @@ export function CrmPage() {
                           .map((item) => item.trim())
                           .filter(Boolean)
                           .map((item) => (
-                            <span key={item} className="rounded-full bg-[#12305a] px-3 py-1 text-xs text-white">
+                            <span key={item} className="rounded-full bg-[#253f49] px-3 py-1 text-xs text-white">
                               {item}
                             </span>
                           ))}
@@ -7621,15 +7682,6 @@ export function CrmPage() {
                           <div className={`text-sm ${styles.muted}`}>{card.label}</div>
                           <div className="mt-2 font-semibold">{card.value}</div>
                           {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      {mockWorkflowItems(selectedLead, 'proposal').map((item) => (
-                        <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="font-semibold">{item.title}</div>
-                          <div className="mt-2 text-sm font-medium">{item.value}</div>
-                          <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
                         </div>
                       ))}
                     </div>
@@ -7669,13 +7721,6 @@ export function CrmPage() {
                         {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
                       </div>
                     ))}
-                    {mockWorkflowItems(selectedLead, 'payments').map((item) => (
-                      <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                        <div className="font-semibold">{item.title}</div>
-                        <div className="mt-2 text-sm font-medium">{item.value}</div>
-                        <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
-                      </div>
-                    ))}
                   </div>
                 ) : null}
 
@@ -7695,38 +7740,6 @@ export function CrmPage() {
                           {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
                         </div>
                       ))}
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      {mockWorkflowItems(selectedLead, 'travelPack').map((item) => (
-                        <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="font-semibold">{item.title}</div>
-                          <div className="mt-2 text-sm font-medium">{item.value}</div>
-                          <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-semibold">Simulated booking snapshot</div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>Leisure fulfillment mock</span>
-                      </div>
-                      <div className="mt-4 grid gap-3">
-                        {mockBookingRecords(selectedLead).map((booking) => (
-                          <div key={booking.reference} className={`rounded-lg border p-4 ${styles.panel}`}>
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div>
-                                <div className="font-medium">{booking.service}</div>
-                                <div className={`mt-1 text-sm ${styles.muted}`}>{booking.supplier}</div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-sm font-semibold">{booking.status}</div>
-                                <div className={`mt-1 text-xs ${styles.muted}`}>{booking.reference}</div>
-                              </div>
-                            </div>
-                            <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{booking.note}</p>
-                          </div>
-                        ))}
-                      </div>
                     </div>
                     <div className="grid gap-3">
                       {selectedHistory.map((item) => (
@@ -7777,7 +7790,7 @@ export function CrmPage() {
                           <div key={`${stop.city}-${index}`} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
-                                <div className="text-xs uppercase tracking-[0.14em] text-[#d9b46f]">Stop {index + 1}</div>
+                                <div className="text-xs uppercase tracking-[0.14em] crm-accent-text">Stop {index + 1}</div>
                                 <div className="mt-2 text-lg font-semibold">{stop.city}</div>
                                 <div className={`mt-1 text-sm ${styles.muted}`}>{stop.nights} - {stop.stay}</div>
                                 {stop.dates ? <div className={`mt-1 text-xs ${styles.muted}`}>{stop.dates}</div> : null}
@@ -7874,15 +7887,6 @@ export function CrmPage() {
                         </div>
                       ))}
                     </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      {mockWorkflowItems(selectedLead, 'travelers').map((item) => (
-                        <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="font-semibold">{item.title}</div>
-                          <div className="mt-2 text-sm font-medium">{item.value}</div>
-                          <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 ) : null}
 
@@ -7914,15 +7918,6 @@ export function CrmPage() {
                           <div className={`text-sm ${styles.muted}`}>{card.label}</div>
                           <div className="mt-2 font-semibold">{card.value}</div>
                           {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      {mockWorkflowItems(selectedLead, 'approvals').map((item) => (
-                        <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="font-semibold">{item.title}</div>
-                          <div className="mt-2 text-sm font-medium">{item.value}</div>
-                          <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
                         </div>
                       ))}
                     </div>
@@ -8117,25 +8112,21 @@ export function CrmPage() {
                         {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
                       </div>
                     ))}
-                    {mockWorkflowItems(selectedLead, 'finance').map((item) => (
-                      <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                        <div className="font-semibold">{item.title}</div>
-                        <div className="mt-2 text-sm font-medium">{item.value}</div>
-                        <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
-                      </div>
-                    ))}
                     <div className={`rounded-lg border p-4 md:col-span-2 ${styles.panelSoft}`}>
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-semibold">{selectedQuote ? 'Quote release snapshot' : 'Simulated booking release snapshot'}</div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedQuote ? quoteStatusLabels[selectedQuote.status] : 'Corporate fulfillment mock'}</span>
+                        <div className="flex items-center gap-3">
+                          <div className="font-semibold">Quote release snapshot</div>
+                          {quoteLineSaveIndicator}
+                        </div>
+                        {selectedQuote ? <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{quoteStatusLabels[selectedQuote.status]}</span> : null}
                       </div>
                       <div className="mt-4 grid gap-3">
                         {selectedQuote ? selectedQuote.lines.map((line) => (
                           <div key={line.id} className={`rounded-lg border p-4 ${styles.panel}`}>
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
-                                <input value={line.description} onChange={(event) => saveQuoteLine(line, { description: event.target.value })} className={`h-9 rounded-lg border px-2 text-sm font-medium ${styles.input}`} />
-                                <input value={line.supplier} onChange={(event) => saveQuoteLine(line, { supplier: event.target.value })} className={`mt-2 h-9 rounded-lg border px-2 text-sm ${styles.input}`} placeholder="Supplier" />
+                                <input value={quoteLineValue(line, 'description')} onChange={(event) => scheduleQuoteLineSave(line, { description: event.target.value })} className={`h-9 rounded-lg border px-2 text-sm font-medium ${styles.input}`} />
+                                <input value={quoteLineValue(line, 'supplier')} onChange={(event) => scheduleQuoteLineSave(line, { supplier: event.target.value })} className={`mt-2 h-9 rounded-lg border px-2 text-sm ${styles.input}`} placeholder="Supplier" />
                               </div>
                               <div className="grid grid-cols-2 gap-2 text-right">
                                 <select value={line.status} onChange={(event) => saveQuoteLine(line, { status: event.target.value as QuoteLineStatus })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
@@ -8151,27 +8142,15 @@ export function CrmPage() {
                               </div>
                             </div>
                             <div className="mt-3 grid gap-2 md:grid-cols-4">
-                              <input value={line.quantity} onChange={(event) => saveQuoteLine(line, { quantity: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
-                              <input value={line.unitCost} onChange={(event) => saveQuoteLine(line, { unitCost: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
-                              <input value={line.unitSell} onChange={(event) => saveQuoteLine(line, { unitSell: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <input value={quoteLineValue(line, 'quantity')} onChange={(event) => scheduleQuoteLineSave(line, { quantity: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <input value={quoteLineValue(line, 'unitCost')} onChange={(event) => scheduleQuoteLineSave(line, { unitCost: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
+                              <input value={quoteLineValue(line, 'unitSell')} onChange={(event) => scheduleQuoteLineSave(line, { unitSell: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
                               <div className={`flex h-9 items-center justify-end rounded-lg border px-2 text-xs ${styles.panelSoft}`}>{moneyValue(line.margin, selectedQuote.currency)}</div>
                             </div>
                           </div>
-                        )) : mockBookingRecords(selectedLead).map((booking) => (
-                          <div key={booking.reference} className={`rounded-lg border p-4 ${styles.panel}`}>
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div>
-                                <div className="font-medium">{booking.service}</div>
-                                <div className={`mt-1 text-sm ${styles.muted}`}>{booking.supplier}</div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-sm font-semibold">{booking.status}</div>
-                                <div className={`mt-1 text-xs ${styles.muted}`}>{booking.reference}</div>
-                              </div>
-                            </div>
-                            <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{booking.note}</p>
-                          </div>
-                        ))}
+                        )) : (
+                          <div className={`rounded-lg border p-4 text-sm ${styles.panel}`}>Quote lines will appear here once a quote is drafted for this request.</div>
+                        )}
                         {selectedQuote ? (
                           <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                             <div className="grid gap-3 md:grid-cols-[130px_1fr_1fr_90px_110px_110px_100px_auto]">
@@ -8215,15 +8194,6 @@ export function CrmPage() {
                           <div className={`text-sm ${styles.muted}`}>{card.label}</div>
                           <div className="mt-2 font-semibold">{card.value}</div>
                           {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      {mockWorkflowItems(selectedLead, 'documents').map((item) => (
-                        <div key={item.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="font-semibold">{item.title}</div>
-                          <div className="mt-2 text-sm font-medium">{item.value}</div>
-                          <p className={`mt-2 text-sm leading-6 ${styles.muted}`}>{item.meta}</p>
                         </div>
                       ))}
                     </div>
@@ -8413,7 +8383,7 @@ export function CrmPage() {
               <button type="button" onClick={() => setShowManualRequest(false)} className={`rounded-lg px-4 py-2 text-sm ${styles.buttonGhost}`}>
                 Cancel
               </button>
-              <button type="submit" className="rounded-lg bg-[#12305a] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#173d72]">
+              <button type="submit" className="rounded-lg bg-[#253f49] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#34545f]">
                 Create leisure request
               </button>
             </div>
@@ -8553,7 +8523,7 @@ export function CrmPage() {
               <button type="button" onClick={() => setShowClientRegistration(false)} className={`rounded-lg px-4 py-2 text-sm ${styles.buttonGhost}`}>
                 Cancel
               </button>
-              <button type="submit" className="rounded-lg bg-[#12305a] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#173d72]">
+              <button type="submit" className="rounded-lg bg-[#253f49] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#34545f]">
                 {potentialClientMatch ? 'Link existing client' : selectedLead ? 'Convert to client' : 'Save client'}
               </button>
             </div>
@@ -8671,7 +8641,7 @@ export function CrmPage() {
               >
                 Cancel
               </button>
-              <button type="submit" className="rounded-lg bg-[#12305a] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#173d72]">
+              <button type="submit" className="rounded-lg bg-[#253f49] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#34545f]">
                 {editingUserId ? 'Save user' : 'Create user'}
               </button>
             </div>

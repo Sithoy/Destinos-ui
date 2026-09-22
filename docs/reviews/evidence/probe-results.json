@@ -1,0 +1,44 @@
+{
+  "cross_company_admin": {
+    "http": 200,
+    "granted_membership": true
+  },
+  "public_fields_read_only": {
+    "lifecycleStage": false,
+    "internalNotes": false,
+    "ctmRequestId": false,
+    "companyAccountId": false,
+    "clientId": false
+  },
+  "anonymous_internal_fields": {
+    "http": 201,
+    "values": {
+      "lifecycleStage": "closed",
+      "internalNotes": "Injected internal note",
+      "ctmRequestId": "REVIEW-LINK",
+      "companyAccountName": "Review company A",
+      "clientName": "Private review client"
+    }
+  },
+  "viewer_create": {
+    "http": 201
+  },
+  "viewer_workflow_bypass": {
+    "http": 200,
+    "stage": "closed"
+  },
+  "booking_without_approvals": {
+    "http": 201,
+    "trip_status": "booked",
+    "approval_count": 0
+  },
+  "mixed_currency_summary": {
+    "http": 200,
+    "invoiced": 200.0,
+    "currency": "EUR"
+  },
+  "employee_delete_others_trip": {
+    "http": 204,
+    "deleted": true
+  }
+}

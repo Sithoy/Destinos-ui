@@ -82,7 +82,7 @@ function buildPortalStats(requests: CorporateTripRequest[], billingSummary?: Cor
       id: 'documentAlerts',
       label: 'Document alerts',
       value: String(requests.reduce((sum, trip) => sum + trip.travelers.filter((traveler) => traveler.readiness.passport === 'Missing' || traveler.readiness.visa === 'Required').length, 0)),
-      hint: 'Passport or visa action needed',
+      hint: 'Passport or visa flags, counted per trip',
       tone: 'amber',
     },
   ];
@@ -163,30 +163,27 @@ export function CorporatePortalApp() {
     async function loadPortal() {
       setIsLoading(true);
       setError('');
-      try {
-        const [context, nextRequests, nextTravelers, nextBillingSummary, nextBillingInvoices, nextBillingPayments] = await Promise.all([
-          fetchCtmContext(ctmSession),
-          fetchCtmTripRequests(ctmSession),
-          fetchCtmTravelers(ctmSession),
-          fetchCtmBillingSummary(ctmSession),
-          fetchCtmBillingInvoices(ctmSession),
-          fetchCtmBillingPayments(ctmSession),
-        ]);
-        if (!active) return;
-        setCompany(context.company);
-        setRequests(nextRequests);
-        setTravelers(nextTravelers);
-        setBillingSummary(nextBillingSummary);
-        setBillingInvoices(nextBillingInvoices);
-        setBillingPayments(nextBillingPayments);
-      } catch (loadError) {
-        if (!active) return;
-        setError(loadError instanceof Error ? loadError.message : 'Could not load CTM data.');
-      } finally {
-        if (active) {
-          setIsLoading(false);
-        }
+      const [contextResult, requestsResult, travelersResult, billingSummaryResult, billingInvoicesResult, billingPaymentsResult] = await Promise.allSettled([
+        fetchCtmContext(ctmSession),
+        fetchCtmTripRequests(ctmSession),
+        fetchCtmTravelers(ctmSession),
+        fetchCtmBillingSummary(ctmSession),
+        fetchCtmBillingInvoices(ctmSession),
+        fetchCtmBillingPayments(ctmSession),
+      ]);
+      if (!active) return;
+      if (contextResult.status === 'fulfilled') setCompany(contextResult.value.company);
+      if (requestsResult.status === 'fulfilled') setRequests(requestsResult.value);
+      if (travelersResult.status === 'fulfilled') setTravelers(travelersResult.value);
+      if (billingSummaryResult.status === 'fulfilled') setBillingSummary(billingSummaryResult.value);
+      if (billingInvoicesResult.status === 'fulfilled') setBillingInvoices(billingInvoicesResult.value);
+      if (billingPaymentsResult.status === 'fulfilled') setBillingPayments(billingPaymentsResult.value);
+      const firstFailure = [contextResult, requestsResult, travelersResult, billingSummaryResult, billingInvoicesResult, billingPaymentsResult]
+        .find((result) => result.status === 'rejected');
+      if (firstFailure && firstFailure.status === 'rejected') {
+        setError(firstFailure.reason instanceof Error ? firstFailure.reason.message : 'Could not load CTM data.');
       }
+      setIsLoading(false);
     }
 
     void loadPortal();

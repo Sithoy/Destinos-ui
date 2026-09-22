@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { InquiryModal } from './components/InquiryModal';
 import { Nav } from './components/Nav';
-import { PrestigeGateway } from './components/PrestigeGateway';
 import { BrandLockup, InstagramIcon } from './components/ui';
 import { CRM_AUTH_EVENT, canAccessCrm, clearCrmSession, fetchCrmCurrentUser, hasCrmApi, readCrmSession, saveCrmSession } from './data/crm';
 import { ctmLegacyRoute, ctmPrimaryRoute, getPageFromPathname, pageMeta, pageRoutes } from './data/travel';
@@ -15,6 +14,7 @@ import { CorporatePage } from './pages/CorporatePage';
 import { InspirationPage } from './pages/InspirationPage';
 import type { TravelExperience } from './data/experiences';
 import { LuxuryPage } from './pages/LuxuryPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 
 import type { InquiryKind } from './types';
 
@@ -30,8 +30,6 @@ export default function DestinosPeloMundoUIConcept() {
   const inspiration = location.pathname === '/inspiracao' || location.pathname.startsWith('/inspiracao/');
   const experienceSlug = location.pathname.split('/')[2] || '';
   const [inquiryExperience, setInquiryExperience] = useState<TravelExperience | undefined>();
-  const [showPrestigeGate, setShowPrestigeGate] = useState(false);
-  const [isGatewayNavigating, setIsGatewayNavigating] = useState(false);
   const [inquiryKind, setInquiryKind] = useState<InquiryKind | null>(null);
   const [inquiryDestination, setInquiryDestination] = useState('');
   const [crmSession, setCrmSession] = useState(() => readCrmSession());
@@ -64,7 +62,8 @@ export default function DestinosPeloMundoUIConcept() {
       Icon: InstagramIcon,
     },
   } as const;
-  const socialLink = socialByPage[page];
+  const displayPage = page ?? 'home';
+  const socialLink = socialByPage[displayPage];
   const canEnterCrm = hasCrmApi() && canAccessCrm(crmSession?.user);
 
   useEffect(() => {
@@ -114,20 +113,24 @@ export default function DestinosPeloMundoUIConcept() {
   useEffect(() => {
     const portuguese = i18n.language.startsWith('pt');
     const titles = { home: 'Destinos pelo Mundo', luxury: 'DPM Luxury Travel', corporate: 'DPM Corporate Travel', crm: 'DPM CRM', corporatePortal: 'DPM CTM' };
-    if (!inspiration) document.title = titles[page];
+    const setMetaContent = (selector: string, content: string) => {
+      document.querySelector(selector)?.setAttribute('content', content);
+    };
+    if (!inspiration) document.title = page ? titles[page] : `${t('notFound.title')} | Destinos pelo Mundo`;
     document.documentElement.lang = portuguese ? 'pt' : 'en';
     if (inspiration) return;
     const description = portuguese
       ? 'Planeie viagens de lazer, luxo e negócios com a Destinos pelo Mundo em Moçambique. Peça um itinerário à sua medida.'
       : 'Plan leisure, luxury and corporate travel with Destinos pelo Mundo in Mozambique. Request a tailored itinerary.';
-    document.querySelector('meta[name="description"]')?.setAttribute('content', description);
-    if (!inspiration) document.querySelector('link[rel="canonical"]')?.setAttribute('href', `https://www.dpmundo.com${pageRoutes[page]}`);
-  }, [page, i18n.language, inspiration]);
-
-  const openPrestige = () => {
-    setIsGatewayNavigating(false);
-    setShowPrestigeGate(true);
-  };
+    setMetaContent('meta[name="description"]', description);
+    setMetaContent('meta[property="og:title"]', document.title);
+    setMetaContent('meta[property="og:description"]', description);
+    if (page) {
+      const url = `https://www.dpmundo.com${pageRoutes[page]}`;
+      document.querySelector('link[rel="canonical"]')?.setAttribute('href', url);
+      setMetaContent('meta[property="og:url"]', url);
+    }
+  }, [page, i18n.language, inspiration, t]);
 
   const openInquiry = (kind: InquiryKind, destination = '') => {
     setInquiryExperience(undefined);
@@ -135,20 +138,15 @@ export default function DestinosPeloMundoUIConcept() {
     setInquiryKind(kind);
   };
 
-  const closePrestige = () => {
-    setIsGatewayNavigating(false);
-    setShowPrestigeGate(false);
-  };
-
   const goHome = () => {
     navigate(pageRoutes.home);
-    setIsGatewayNavigating(false);
-    setShowPrestigeGate(false);
   };
 
   const screen =
     inspiration ? (
       <InspirationPage key={experienceSlug} slug={experienceSlug} onCustomise={(item) => { setInquiryExperience(item); setInquiryDestination(i18n.language.startsWith('pt') ? item.pt.destination : item.en.destination); setInquiryKind('classic'); }} />
+    ) : page === null ? (
+      <NotFoundPage />
     ) : page === 'crm' ? (
       <CrmPage />
     ) : page === 'corporatePortal' ? (
@@ -162,17 +160,14 @@ export default function DestinosPeloMundoUIConcept() {
     );
 
   return (
-    <div className={`min-h-screen ${pageMeta[page].bg} ${page === 'home' ? 'classic-theme' : ''}`}>
+    <div className={`min-h-screen ${pageMeta[displayPage].bg} ${displayPage === 'home' ? 'classic-theme' : ''}`}>
       {page !== 'crm' && page !== 'corporatePortal' ? (
         <Nav
-          page={page}
+          page={displayPage}
           goHome={goHome}
-          openPrestige={openPrestige}
           openInquiry={() => openInquiry('classic')}
           setPrestigePage={(nextPage) => {
             navigate(pageRoutes[nextPage]);
-            setIsGatewayNavigating(false);
-            setShowPrestigeGate(false);
           }}
         />
       ) : null}
@@ -185,35 +180,21 @@ export default function DestinosPeloMundoUIConcept() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
         >
-          <Suspense fallback={<div role="status" className="p-8 text-center">Loading workspace…</div>}>{screen}</Suspense>
+          <Suspense fallback={<div role="status" className="p-8 text-center">{t('landing.loading')}</div>}>{screen}</Suspense>
         </motion.div>
       </AnimatePresence>
-
-      <PrestigeGateway
-        isOpen={showPrestigeGate}
-        isNavigating={isGatewayNavigating}
-        onClose={closePrestige}
-        onSelect={(selectedPage) => {
-          navigate(pageRoutes[selectedPage]);
-          setIsGatewayNavigating(true);
-          window.setTimeout(() => {
-            setShowPrestigeGate(false);
-            setIsGatewayNavigating(false);
-          }, 1200);
-        }}
-      />
 
       <InquiryModal experience={inquiryExperience} kind={inquiryKind} initialDestination={inquiryDestination} onClose={() => setInquiryKind(null)} />
 
       {page !== 'crm' && page !== 'corporatePortal' ? (
-      <footer className={`border-t ${page === 'home' ? 'border-[#eadcc8] bg-[#fffaf2] text-slate-700' : 'border-white/10 bg-black/20 text-white/70'}`}>
+      <footer className={`border-t ${displayPage === 'home' ? 'border-[#eadcc8] bg-[#fffaf2] text-slate-700' : 'border-white/10 bg-black/20 text-white/70'}`}>
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 md:grid-cols-3 md:px-6">
           <div>
             <div className="mb-4">
               <BrandLockup
-                src={pageMeta[page].logo}
+                src={pageMeta[displayPage].logo}
                 alt={t('brand.footerAlt')}
-                theme={page === 'home' ? 'dark' : 'gold'}
+                theme={displayPage === 'home' ? 'dark' : 'gold'}
                 compact
               />
             </div>
@@ -260,7 +241,10 @@ export default function DestinosPeloMundoUIConcept() {
             </div>
           </div>
         </div>
-        <div className={`border-t ${page === 'home' ? 'border-slate-200' : 'border-white/10'}`}>
+        <div className="mx-auto max-w-7xl px-4 pb-8 md:px-6">
+          <p className="text-xs leading-6 opacity-60">{t('footer.privacy')}</p>
+        </div>
+        <div className={`border-t ${displayPage === 'home' ? 'border-slate-200' : 'border-white/10'}`}>
           <a
             href="https://etios.net"
             target="_blank"

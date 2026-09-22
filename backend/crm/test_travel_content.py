@@ -42,6 +42,31 @@ class TravelContentTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(Lead.objects.exists())
 
+    def test_malformed_revision_content_still_accepts_lead(self):
+        item = TravelExperience.objects.get(slug='paris-essencial')
+        revision = TravelExperienceRevision.objects.create(experience=item, content={'pt': {'title': 'Legacy partial'}})
+        response = self.client.post('/api/public/leads/', {'service': 'Classic', 'serviceKey': 'classic', 'name': 'Test', 'email': 'test@example.com', 'experienceRevision': str(revision.id), 'notes': 'Keep my notes'}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        lead = Lead.objects.get(pk=response.data['id'])
+        self.assertEqual(lead.experience_snapshot, {})
+        self.assertEqual(lead.notes, 'Keep my notes')
+
+    def test_noop_save_keeps_revision_and_referenced_versions_survive_pruning(self):
+        from .travel_models import REVISION_RETENTION_LIMIT
+        item = TravelExperience.objects.get(slug='paris-essencial')
+        original_revision = item.revision
+        original_count = TravelExperienceRevision.objects.filter(experience=item).count()
+        item.save()
+        item.refresh_from_db()
+        self.assertEqual(item.revision, original_revision)
+        self.assertEqual(TravelExperienceRevision.objects.filter(experience=item).count(), original_count)
+        Lead.objects.create(service='Classic travel', service_key='classic', name='Referenced', experience_snapshot=item.content())
+        for index in range(REVISION_RETENTION_LIMIT + 5):
+            item.pt['title'] = f'Title {index}'
+            item.save()
+        self.assertLessEqual(TravelExperienceRevision.objects.filter(experience=item).count(), REVISION_RETENTION_LIMIT + 1)
+        self.assertTrue(TravelExperienceRevision.objects.filter(id=original_revision).exists())
+
     def test_editor_saves_plain_text_fields_and_new_revision(self):
         item = TravelExperience.objects.get(slug='paris-essencial')
         original_revision = item.revision

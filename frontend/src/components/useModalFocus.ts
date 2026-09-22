@@ -15,7 +15,10 @@ export function useModalFocus(open: boolean, onClose: () => void) {
     const focusable = () => Array.from(ref.current?.querySelectorAll<HTMLElement>(
       'button:not([disabled]), a[href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]',
     ) ?? []).filter((element) => element.getClientRects().length > 0);
-    const frame = requestAnimationFrame(() => focusable()[0]?.focus());
+    const frame = requestAnimationFrame(() => {
+      if (!ref.current || ref.current.contains(document.activeElement)) return;
+      focusable()[0]?.focus();
+    });
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); close(); }
       if (event.key !== 'Tab') return;

@@ -1084,6 +1084,12 @@ class CompanyUserViewSet(viewsets.ModelViewSet):
         company_user = serializer.save()
         return Response(CorporateCompanyUserSerializer(company_user).data)
 
+    def destroy(self, request, *args, **kwargs):
+        denied = self._ensure_manage_access(request)
+        if denied is not None:
+            return denied
+        return super().destroy(request, *args, **kwargs)
+
 
 class ItineraryViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CorporateItinerarySerializer

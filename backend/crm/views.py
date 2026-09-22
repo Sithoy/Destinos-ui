@@ -520,6 +520,27 @@ class PublicLeadCreateView(APIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "public_inquiry"
 
+    @staticmethod
+    def _revision_summary_lines(content, revision_id):
+        try:
+            pt, en = content["pt"], content["en"]
+            itinerary, included = pt["itinerary"], pt["included"]
+            if not (
+                isinstance(pt, dict)
+                and isinstance(en, dict)
+                and isinstance(itinerary, list)
+                and isinstance(included, list)
+            ):
+                return None
+            return [
+                f"Experience: {pt['title']} / {en['title']}",
+                f"Suggested nights: {content['nights']} | Revision: {revision_id}",
+                "Original itinerary: " + " / ".join(itinerary),
+                "Suggested inclusions: " + " / ".join(included),
+            ]
+        except (KeyError, TypeError):
+            return None
+
     def post(self, request):
         serializer = PublicLeadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -532,15 +553,10 @@ class PublicLeadCreateView(APIView):
             revision = TravelExperienceRevision.objects.filter(pk=revision_id).first()
             if revision is None:
                 return Response({'detail': 'Experience version not found.'}, status=400)
-            values['experience_snapshot'] = revision.content
-            content = revision.content
-            values['notes'] = '\n'.join([
-                f"Experience: {content['pt']['title']} / {content['en']['title']}",
-                f"Suggested nights: {content['nights']} | Revision: {revision_id}",
-                'Original itinerary: ' + ' / '.join(content['pt']['itinerary']),
-                'Suggested inclusions: ' + ' / '.join(content['pt']['included']),
-                'Client preferences:', values.get('notes', ''),
-            ])
+            summary = self._revision_summary_lines(revision.content, revision_id)
+            if summary is not None:
+                values['experience_snapshot'] = revision.content
+                values['notes'] = '\n'.join(summary + ['Client preferences:', values.get('notes', '')])
         with transaction.atomic():
             lead, created = Lead.objects.get_or_create(
                 submission_id=submission_id,

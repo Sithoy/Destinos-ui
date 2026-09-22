@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom';
-import { Crown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { pageMeta } from '../data/travel';
 import type { Page, PrestigePage } from '../types';
@@ -35,13 +34,11 @@ function PrestigeNavToggle({
 export function Nav({
   page,
   goHome,
-  openPrestige,
   openInquiry,
   setPrestigePage,
 }: {
   page: Page;
   goHome: () => void;
-  openPrestige: () => void;
   openInquiry: () => void;
   setPrestigePage: (page: PrestigePage) => void;
 }) {
@@ -128,16 +125,7 @@ export function Nav({
                 {page === 'luxury' ? t('nav.corporate') : t('nav.luxury')}
               </button>
             </>
-          ) : (
-            <button
-              onClick={openPrestige}
-              className="inline-flex min-h-10 items-center gap-2 rounded-full bg-[#d4af37] px-3 py-2 text-sm font-medium text-[#241f1b] transition hover:bg-[#e0bc4e] sm:px-5"
-              aria-label={t('nav.enterPrestige')}
-            >
-              <Crown className="h-4 w-4" />
-              <span className="hidden sm:inline">{t('nav.enterPrestige')}</span>
-            </button>
-          )}
+          ) : null}
         </div>
       </div>
       <nav aria-label="Travel services" className="mx-auto flex max-w-7xl flex-wrap gap-x-6 gap-y-2 px-4 pb-3 text-sm text-white/85 md:px-6">

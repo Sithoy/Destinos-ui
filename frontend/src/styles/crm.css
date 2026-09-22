@@ -1,0 +1,123 @@
+/* CRM-only surfaces: shared semantic classes retain the existing workflow. */
+.crm-workspace {
+  --crm-bg: #f5f3ef;
+  --crm-surface: #fff;
+  --crm-soft: #faf8f4;
+  --crm-border: #e4e1da;
+  --crm-ink: #20333d;
+  --crm-muted: #66747b;
+  --crm-hover: #f5eee4;
+  --crm-selected: #fff0dc;
+  --crm-accent: #9b4e06;
+  --crm-shadow: 0 3px 16px #22333d05;
+  color-scheme: light;
+  background: var(--crm-bg);
+  color: var(--crm-ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.crm-workspace[data-theme='dark'] {
+  --crm-bg: #101c24;
+  --crm-surface: #182730;
+  --crm-soft: #1d2e37;
+  --crm-border: #30424b;
+  --crm-ink: #f1f4f3;
+  --crm-muted: #aab9bf;
+  --crm-hover: #263b44;
+  --crm-selected: #3b3025;
+  --crm-accent: #ffb56a;
+  --crm-shadow: 0 3px 16px #0000000a;
+  color-scheme: dark;
+}
+.crm-workspace :where(button, a, input, select, textarea):focus-visible,
+.crm-login :where(button, a, input):focus-visible { outline: 2px solid #da730c; outline-offset: 3px; }
+.crm-workspace :where(button, input, select, textarea) { transition: background-color 140ms, border-color 140ms, box-shadow 140ms; }
+.crm-workspace :where(button):disabled { cursor: not-allowed; }
+.crm-panel { background: var(--crm-surface); border-color: var(--crm-border); box-shadow: var(--crm-shadow); }
+.crm-panel-soft { background: var(--crm-soft); border-color: var(--crm-border); }
+.crm-row { background: var(--crm-surface); border-color: var(--crm-border); }
+.crm-row:hover { background: var(--crm-hover); }
+.crm-row-active { background: var(--crm-selected); border-color: var(--crm-border); box-shadow: inset 3px 0 #fe8500; }
+.crm-input, .crm-select { background: var(--crm-surface); border-color: var(--crm-border); color: var(--crm-ink); }
+.crm-input::placeholder, .crm-input input::placeholder { color: var(--crm-muted); }
+.crm-input:focus-within, .crm-select:focus { border-color: #b5661a; box-shadow: 0 0 0 3px #fe850012; }
+.crm-select { color-scheme: inherit; }
+.crm-muted { color: var(--crm-muted); }
+.crm-accent-text { color: var(--crm-accent); }
+.crm-soft-text { color: var(--crm-ink); }
+.crm-table-head { background: var(--crm-soft); border-color: var(--crm-border); color: var(--crm-muted); font-size: 10px; font-weight: 600; letter-spacing: .1em; }
+.crm-button-ghost { background: var(--crm-soft); color: var(--crm-ink); }
+.crm-button-ghost:hover { background: var(--crm-hover); }
+.crm-button-active { background: #253f49; color: #fff; }
+.crm-detail-pane { background: var(--crm-bg); border-color: var(--crm-border); }
+.crm-detail-pane > .grid { grid-template-columns: minmax(0, 1fr); }
+.crm-detail-pane > .grid > .flex { flex-wrap: wrap; }
+.crm-client-avatar { background: #f7e8d4; color: #884700; }
+.crm-metric-icon { background: var(--crm-soft); color: var(--crm-accent); border: 1px solid var(--crm-border); }
+.crm-stage-node { background: var(--crm-surface); color: var(--crm-muted); border-color: var(--crm-border); }
+.crm-stage-node[data-state='current'] { background: #fff0dc; color: #955005; border-color: #e0ac72; }
+.crm-stage-node[data-state='done'] { background: #e6f3ec; color: #21714a; border-color: #a7cdb8; }
+.crm-stage-node[data-state='blocked'] { background: #fff0ed; color: #ae3f32; border-color: #e7b8b1; }
+.crm-workflow-tab[aria-pressed='true'] { border-color: #c88844; box-shadow: 0 0 0 1px #c8884430; }
+.crm-workflow-tab .text-sm { font-size: 12px; }
+.crm-workflow-tab .crm-stage-node { width: 28px; height: 28px; }
+.crm-header { background: var(--crm-surface); border-color: var(--crm-border); padding: 26px 28px; }
+.crm-header h1 { font-family: Georgia, 'Times New Roman', serif; font-size: 32px; font-weight: 400; line-height: 1.15; letter-spacing: -.025em; }
+.crm-eyebrow { color: var(--crm-accent, #ffb56a); font-size: 10px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+.crm-primary { background: #fe8500; color: #35180f; border-radius: 12px; font-weight: 600; box-shadow: 0 3px 8px #fe850018; }
+.crm-primary:hover { background: #ff9828; }
+.crm-sidebar { background: #152b34; border-color: #ffffff10; color: #e4ecee; padding: 26px 18px; overflow-x: hidden; }
+.crm-sidebar-caption { margin: 24px 10px 12px; color: #a5b9c1; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; }
+.crm-mobile-nav { color: #b7c9d0; font-size: 11px; }
+.crm-mobile-nav select { display: block; width: 100%; margin-top: 7px; padding: 10px 12px; border-radius: 10px; border: 1px solid #ffffff25; background: #203c46; color: #fff; color-scheme: dark; }
+.crm-sidebar nav { gap: 5px; }
+.crm-nav-item { min-height: 46px; border-radius: 10px; color: #c3d0d5; background: transparent; font-size: 13px; }
+.crm-nav-item:hover { background: #ffffff0a; color: white; }
+.crm-nav-item[aria-current='page'] { background: #fe8500; color: #35180f; box-shadow: 0 4px 12px #00000012; }
+.crm-nav-item[aria-current='page'] svg { stroke-width: 2; }
+.crm-nav-count { background: #ffffff10; color: #e4ecee; font-size: 10px; }
+.crm-nav-item[aria-current='page'] .crm-nav-count { background: #35180f12; color: #35180f; }
+.crm-sidebar-divider { margin-top: 14px; border-top: 1px solid #ffffff12; padding-top: 14px; }
+.crm-session { display: flex; align-items: center; gap: 10px; margin: 28px 4px 18px; padding-top: 18px; border-top: 1px solid #ffffff12; }
+.crm-session-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: #ffffff0e; color: #ffbc77; font-size: 12px; }
+.crm-session-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: #f2f5f6; }
+.crm-session-role { color: #a5b9c1; font-size: 11px; text-transform: capitalize; }
+.crm-metric { border-radius: 15px; min-height: 116px; position: relative; }
+.crm-metric:hover { border-color: #c9a77e; }
+.crm-metric > div:last-child { letter-spacing: -.035em; }
+.crm-workspace .crm-panel.rounded-xl, .crm-workspace .crm-panel-soft.rounded-xl { border-radius: 15px; }
+.crm-login { min-height: 100svh; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(400px, 1fr); background: #faf7f1; color: #20333d; }
+.crm-login-story { position: relative; background: linear-gradient(180deg, #132c3650, #132c36e8), url('/images/dpm-corporate-lounge.webp') center/cover; color: white; }
+.crm-login-story-content { min-height: 100svh; padding: clamp(36px, 5vw, 88px); display: flex; flex-direction: column; justify-content: space-between; gap: 80px; }
+.crm-login-home { display: inline-flex; align-items: center; gap: 12px; width: fit-content; font-size: 14px; }
+.crm-login-story h1 { margin-top: 22px; font-family: Georgia, 'Times New Roman', serif; font-weight: 400; font-size: clamp(48px, 5vw, 84px); line-height: 1.05; letter-spacing: -.04em; }
+.crm-login-story h1 em { color: #ffbc77; }
+.crm-login-intro { max-width: 350px; margin-top: 25px; font-size: 16px; line-height: 1.8; color: #e1e8e9; }
+.crm-login-signature { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #c2d1d5; }
+.crm-login-form-area { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 28px; }
+.crm-login-form { width: 100%; max-width: 390px; }
+.crm-login-form h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 36px; font-weight: 400; letter-spacing: -.025em; }
+.crm-login-form input { border: 1px solid #d9dcd8; border-radius: 10px; background: white; color: #20333d; min-height: 48px; }
+.crm-login-form input::placeholder { color: #819096; }
+.crm-login-footnote { margin-top: 44px; color: #68777d; font-size: 11px; }
+@media (min-width: 1280px) {
+  .crm-sidebar { position: sticky; top: 0; height: 100svh; min-height: 0; overflow-y: auto; }
+}
+@media (max-width: 1279px) {
+  .crm-sidebar { padding: 18px 20px 12px; }
+  .crm-sidebar-caption, .crm-session { display: none; }
+  .crm-sidebar nav { scrollbar-width: thin; padding-bottom: 6px; }
+  .crm-sidebar-divider { margin-top: 0; padding-top: 0; border: 0; }
+}
+@media (max-width: 767px) {
+  .crm-header { padding: 22px 20px; }
+  .crm-header h1 { font-size: 30px; }
+  .crm-metric-icon { width: 28px; height: 28px; }
+  .crm-login { grid-template-columns: minmax(0, 1fr); }
+  .crm-login-story { display: none; }
+  .crm-login-form-area { min-height: 100svh; padding: 32px 24px; }
+  .crm-workspace :where(input, select, textarea) { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .crm-workspace :where(button, input, select, textarea) { transition: none; }
+}

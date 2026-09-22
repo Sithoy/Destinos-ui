@@ -6,6 +6,8 @@ from django.contrib import admin
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
+
 
 
 TEXT_KEYS = ('title', 'destination', 'intro', 'suited', 'price', 'travelInfo')
@@ -76,6 +78,8 @@ class TravelExperienceAdmin(admin.ModelAdmin):
 class PublicExperiencesView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'public_experiences'
 
     def get(self, request, slug=None):
         query = TravelExperience.objects.filter(published=True).order_by('slug')

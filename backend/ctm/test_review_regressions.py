@@ -29,6 +29,21 @@ class ReviewRegressionTests(APITestCase):
         self.assertEqual(response.status_code, 405)
         self.assertTrue(TripRequest.objects.filter(pk=self.trip.pk).exists())
 
+    def test_company_user_destroy_requires_company_admin(self):
+        target_user = User.objects.create_user(username="target-employee", password="pass")
+        target = CompanyUser.objects.create(company=self.company, user=target_user, role="employee", access_roles=["employee"])
+        url = reverse("ctm-company-user-detail", args=[target.pk])
+        manager_user = User.objects.create_user(username="tenant-manager", password="pass")
+        CompanyUser.objects.create(company=self.company, user=manager_user, role="manager", access_roles=["manager"])
+        self.client.force_authenticate(manager_user)
+        response = self.client.delete(url, HTTP_X_CTM_COMPANY_CODE="TENANTA")
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(CompanyUser.objects.filter(pk=target.pk).exists())
+        self.client.force_authenticate(self.user)
+        response = self.client.delete(url, HTTP_X_CTM_COMPANY_CODE="TENANTA")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(CompanyUser.objects.filter(pk=target.pk).exists())
+
     def payload(self):
         return {"department": "Operations", "origin": "Maputo", "destination": "Lisbon", "departureDate": (timezone.localdate() + timedelta(days=30)).isoformat(), "purpose": "Meeting", "budgetBand": "lt1k", "services": ["Flight"], "travelers": [{"name": "New traveler", "email": "test@example.com", "department": "Operations"}]}
 

@@ -43,6 +43,7 @@ export const pt = {
     tailored: 'Viagens pensadas à sua medida',
     navLabel: 'Serviços de viagem',
     skip: 'Saltar para o conteúdo principal',
+    loading: 'A carregar a área de trabalho…',
     leisure: 'Lazer',
     luxury: 'Luxo',
     corporate: 'Empresas',
@@ -90,7 +91,6 @@ export const pt = {
     luxury: 'Luxury',
     corporate: 'Corporate',
     backHome: 'Início',
-    enterPrestige: 'Entrar no Prestige',
   },
   footer: {
     description: 'Planeamento de viagens de lazer, luxo e corporativas de Moçambique para o mundo.',
@@ -100,6 +100,12 @@ export const pt = {
     luxury: 'Viagens Prestige Luxury',
     corporate: 'Viagens Prestige Corporate',
     poweredBy: 'Desenvolvido por',
+    privacy: 'Usamos os dados que partilha connosco apenas para responder aos seus pedidos de viagem. Não envie documentos, dados de pagamento ou informação sensível.',
+  },
+  notFound: {
+    title: 'Página não encontrada',
+    text: 'A página que procura não existe ou pode ter sido movida.',
+    home: 'Voltar ao início',
   },
   inquiry: {
     privacyNotice: 'Usamos estes dados para responder ao seu pedido e planear a sua viagem. Inclua apenas a informação necessária para o pedido.',
@@ -320,10 +326,6 @@ export const pt = {
         name: 'Mónaco',
         tag: 'Prestígio, glamour e escapadas refinadas',
       },
-      parisExperiences: {
-        name: 'Experiências em Paris',
-        tag: 'Momentos românticos e descoberta personalizada',
-      },
     },
     offer: {
       eyebrow: 'O que oferecemos',
@@ -379,46 +381,6 @@ export const pt = {
       title: 'Comece hoje a planear a sua próxima viagem.',
       text: 'Diga-nos para onde quer ir e ajudaremos a criar a experiência certa para si.',
       cta: 'Pedir um Plano de Viagem',
-    },
-  },
-  gateway: {
-    backgroundAlt: 'Fundo do portal Prestige',
-    visualAlt: 'Imagem do portal Prestige',
-    brandAlt: 'Marca do portal Prestige',
-    watermarkAlt: 'Marca de água Prestige',
-    close: 'Fechar seletor Prestige',
-    badge: 'Portal Prestige',
-    title: 'Entre numa experiência de viagem mais elevada.',
-    text:
-      'Escolha o caminho que combina com as suas expectativas. Luxury é pensado para escapadas privadas e experiências refinadas. Corporate foi criado para viagens executivas, coordenação e apoio premium a empresas.',
-    positioning: 'Posicionamento assinatura',
-    positioningTitle: 'De cidades icónicas a retiros privados tranquilos, Prestige vai além do planeamento padrão.',
-    positioningText:
-      'Uma camada de serviço mais atenta para viajantes e organizações que procuram destinos selecionados, hospitalidade elevada e suporte dedicado.',
-    features: {
-      destinations: 'Destinos selecionados',
-      hospitality: 'Hospitalidade premium',
-      support: 'Apoio dedicado',
-    },
-    luxury: {
-      backgroundAlt: 'Fundo Prestige Luxury',
-      title: 'Prestige Luxury',
-      text: 'Para escapadas privadas, estadias excecionais, viagens românticas, retiros de bem-estar e momentos de luxo orientados pelo destino.',
-      items: {
-        villas: 'Villas, resorts e suites premium',
-        occasions: 'Luas de mel e ocasiões especiais',
-        curated: 'Gastronomia, compras e experiências selecionadas',
-      },
-    },
-    corporate: {
-      backgroundAlt: 'Fundo Prestige Corporate',
-      title: 'Prestige Corporate',
-      text: 'Para viagens executivas, coordenação de equipas, alojamento premium, eventos e suporte eficiente para negócios.',
-      items: {
-        planning: 'Planeamento de viagens executivas e empresariais',
-        logistics: 'Coordenação e logística fiáveis',
-        clarity: 'Serviço premium com clareza operacional',
-      },
     },
   },
   luxury: {
