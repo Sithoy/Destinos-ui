@@ -50,6 +50,7 @@ class LeadWorkflowApiTests(APITestCase):
             "requested_services": "Flights, hotel",
             "lifecycle_stage": Lead.LifecycleStage.NEW_REQUEST,
             "status": Lead.Status.NEW,
+            "owner": self.user,
         }
         defaults.update(overrides)
         return Lead.objects.create(**defaults)
@@ -91,7 +92,19 @@ class LeadWorkflowApiTests(APITestCase):
         self.assertEqual(response.data["currentStage"], Lead.LifecycleStage.NEW_REQUEST)
         self.assertEqual(response.data["nextStage"], Lead.LifecycleStage.PENDING_INFORMATION)
         self.assertTrue(response.data["canAdvance"])
-        self.assertEqual(response.data["responsibleOwner"], "Leisure Studio")
+        self.assertEqual(response.data["responsibleOwner"], "agent")
+        self.assertEqual(response.data["responsibleOwnerId"], self.user.id)
+        self.assertEqual(response.data["serviceDesk"], "Leisure Studio")
+
+    def test_workflow_state_shows_unassigned_owner_without_masking_desk_hint(self):
+        lead = self.make_lead(owner=None)
+
+        response = self.client.get(reverse("lead-workflow", args=[lead.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["responsibleOwner"], "Unassigned")
+        self.assertIsNone(response.data["responsibleOwnerId"])
+        self.assertEqual(response.data["serviceDesk"], "Leisure Studio")
 
     def test_advance_workflow_moves_to_next_stage_when_gates_pass(self):
         lead = self.make_lead()
@@ -137,7 +150,7 @@ class LeadWorkflowApiTests(APITestCase):
         self.assertIsNotNone(reminder)
         self.assertEqual(reminder.status, WorkflowReminder.Status.PENDING)
 
-    def test_complete_workflow_reminder_marks_done(self):
+    def test_complete_workflow_reminder_marks_completed(self):
         lead = self.make_lead()
         reminder = WorkflowReminder.objects.create(
             lead=lead,
@@ -146,7 +159,7 @@ class LeadWorkflowApiTests(APITestCase):
             title="Follow up client",
             message="Client response is due.",
             due_at=timezone.now(),
-            assigned_to="Leisure Studio",
+            assigned_to=self.user,
             created_by=self.user,
         )
 
@@ -154,7 +167,7 @@ class LeadWorkflowApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         reminder.refresh_from_db()
-        self.assertEqual(reminder.status, WorkflowReminder.Status.DONE)
+        self.assertEqual(reminder.status, WorkflowReminder.Status.COMPLETED)
         self.assertIsNotNone(reminder.completed_at)
 
     def test_generate_workflow_reminders_can_target_one_lead(self):

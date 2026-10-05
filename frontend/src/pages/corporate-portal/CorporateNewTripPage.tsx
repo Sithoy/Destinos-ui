@@ -27,13 +27,13 @@ function formatReadableDate(value: string) {
 }
 
 function RequiredMark() {
-  return <span className="text-[#d9b46f]">*</span>;
+  return <span className="crm-accent-text">*</span>;
 }
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <div className="mt-2 flex items-start gap-1.5 text-xs text-rose-200">
+    <div className="mt-2 flex items-start gap-1.5 text-xs ctm-tone-rose">
       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{message}</span>
     </div>
@@ -241,7 +241,7 @@ export function CorporateNewTripPage({
                         setDepartureDate(item.value);
                         markTouched('departureDate');
                       }}
-                      className={`h-11 rounded-lg border px-3 text-sm transition ${departureDate === item.value ? 'border-[#d9b46f]/45 bg-[#d9b46f]/10 text-[#d9b46f]' : styles.buttonGhost}`}
+                      className={`h-11 rounded-lg border px-3 text-sm transition ${departureDate === item.value ? 'border-[#fe8500]/45 bg-[#fe8500]/10 crm-accent-text' : styles.buttonGhost}`}
                     >
                       {item.label}
                     </button>
@@ -280,7 +280,7 @@ export function CorporateNewTripPage({
                       type="button"
                       onClick={() => toggleService(service)}
                       className={`inline-flex h-10 items-center rounded-lg border px-3 text-sm transition ${
-                        checked ? 'border-[#d9b46f]/45 bg-[#d9b46f]/10 text-[#d9b46f]' : styles.buttonGhost
+                        checked ? 'border-[#fe8500]/45 bg-[#fe8500]/10 crm-accent-text' : styles.buttonGhost
                       }`}
                     >
                       {service}
@@ -295,7 +295,7 @@ export function CorporateNewTripPage({
           <div>
             <div className={`mb-3 flex flex-wrap items-center justify-between gap-3 border-b pb-2 ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}>
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#d9b46f]">Travelers</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] crm-accent-text">Travelers</div>
                 <div className={`mt-1 text-xs ${styles.muted}`}>Reuse saved profiles or add traveler details manually.</div>
               </div>
               <button type="button" onClick={addTraveler} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold ${styles.buttonGhost}`}>
@@ -380,7 +380,7 @@ export function CorporateNewTripPage({
         </div>
 
         {showErrors && !canSubmit ? (
-          <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm ctm-tone-rose">
             Fill destination, departure date, purpose, at least one service, and complete every traveler row before submitting.
           </div>
         ) : null}
@@ -394,7 +394,7 @@ export function CorporateNewTripPage({
               <div
                 key={item.key}
                 className={`rounded-2xl border px-4 py-3 ${
-                  item.key === budgetBand ? 'border-[#d9b46f]/35 bg-[#d9b46f]/10' : theme === 'dark' ? 'border-white/10 bg-black/20' : 'border-slate-200 bg-slate-50'
+                  item.key === budgetBand ? 'border-[#fe8500]/35 bg-[#fe8500]/10' : theme === 'dark' ? 'border-white/10 bg-black/20' : 'border-slate-200 bg-slate-50'
                 }`}
               >
                 <div className="font-medium">{item.label}</div>

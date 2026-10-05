@@ -34,7 +34,7 @@ export function CorporateSectionPlaceholderPage({
       </div>
 
       <aside className={`rounded-xl border p-6 shadow-2xl ${styles.panel}`}>
-        <div className="text-sm uppercase tracking-[0.24em] text-[#d9b46f]">Next layer</div>
+        <div className="text-sm uppercase tracking-[0.24em] crm-accent-text">Next layer</div>
         <div className="mt-3 text-xl font-semibold">This section is staged after the request and approval loop.</div>
         <p className={`mt-3 text-sm leading-7 ${styles.muted}`}>
           We already have the shell in place, so the next build can connect this area to the CTM backend without reshaping the portal.

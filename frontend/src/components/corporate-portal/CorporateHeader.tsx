@@ -29,7 +29,7 @@ export function CorporateHeader({
     <header className={`border-b px-5 py-5 ${styles.header}`}>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.26em] text-[#d9b46f]">{descriptor}</div>
+          <div className="crm-eyebrow">{descriptor}</div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
           <p className={`mt-1 text-sm ${styles.muted}`}>{subtitle}</p>
         </div>
@@ -52,9 +52,9 @@ export function CorporateHeader({
           <button type="button" onClick={onToggleTheme} className={`inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`} aria-label="Toggle theme">
             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
-          <button type="button" onClick={onSignOut} className={`inline-flex h-11 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
+          <button type="button" onClick={onSignOut} aria-label="Sign out" className={`inline-flex h-11 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
             <LogOut className="h-4 w-4" />
-            Sign out
+            <span className="hidden sm:inline">Sign out</span>
           </button>
         </div>
       </div>

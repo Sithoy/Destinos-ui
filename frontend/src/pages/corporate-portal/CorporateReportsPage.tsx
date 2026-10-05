@@ -14,10 +14,10 @@ function formatInvoiceStatus(status: CorporateTripInvoice['status']) {
 }
 
 function statusTone(status: CorporateTripInvoice['status'] | CorporateTripPayment['status']) {
-  if (status === 'paid' || status === 'received' || status === 'reconciled') return 'text-emerald-300 bg-emerald-500/10';
-  if (status === 'overdue' || status === 'failed') return 'text-rose-300 bg-rose-500/10';
-  if (status === 'partially_paid') return 'text-amber-300 bg-amber-500/10';
-  return 'text-sky-300 bg-sky-500/10';
+  if (status === 'paid' || status === 'received' || status === 'reconciled') return 'ctm-tone-emerald bg-emerald-500/10';
+  if (status === 'overdue' || status === 'failed') return 'ctm-tone-rose bg-rose-500/10';
+  if (status === 'partially_paid') return 'ctm-tone-amber bg-amber-500/10';
+  return 'ctm-tone-sky bg-sky-500/10';
 }
 
 export function CorporateReportsPage({
@@ -54,11 +54,11 @@ export function CorporateReportsPage({
             </div>
             <div className={`rounded-xl border p-4 ${styles.surface}`}>
               <div className={`text-xs ${styles.muted}`}>Collected</div>
-              <div className="mt-1 text-lg font-semibold text-emerald-300">{amounts('totalCollected')}</div>
+              <div className="mt-1 text-lg font-semibold ctm-tone-emerald">{amounts('totalCollected')}</div>
             </div>
             <div className={`rounded-xl border p-4 ${styles.surface}`}>
               <div className={`text-xs ${styles.muted}`}>Outstanding</div>
-              <div className="mt-1 text-lg font-semibold text-amber-300">{amounts('outstandingBalance')}</div>
+              <div className="mt-1 text-lg font-semibold ctm-tone-amber">{amounts('outstandingBalance')}</div>
             </div>
             <div className={`rounded-xl border p-4 ${styles.surface}`}>
               <div className={`text-xs ${styles.muted}`}>Invoice count</div>

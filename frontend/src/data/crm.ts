@@ -1,12 +1,14 @@
 import type {
   AccommodationType,
   CrmAccommodationBlock,
+  CrmCapability,
   CrmExperienceBlock,
   CrmItineraryStop,
   CrmClient,
   CrmCommunicationRecord,
   CrmLead,
   CrmManagedUser,
+  CrmMyDayResponse,
   CrmPaymentRecord,
   CrmQuote,
   CrmQuoteLine,
@@ -656,6 +658,15 @@ export function canManageUsers(user?: CrmUser | null) {
   return Boolean(user?.canManageUsers);
 }
 
+// Capability check against the /api/auth/me/ payload. When the backend does
+// not send a capabilities list (older backend or a stored legacy session),
+// everything stays visible for backward compatibility.
+export function userHasCapability(user: CrmUser | null | undefined, capability: CrmCapability) {
+  const capabilities = user?.capabilities;
+  if (!capabilities) return true;
+  return capabilities.includes(capability);
+}
+
 export async function loginCrm(username: string, password: string) {
   const base = crmApiBase();
   if (!base) throw new Error('CRM API URL is not configured.');
@@ -1021,6 +1032,17 @@ export async function advanceCrmWorkflow(leadId: string, session?: CrmSession | 
   }
 
   return parseApiResponse<CrmWorkflowState>(response);
+}
+
+export async function fetchCrmMyDay(session?: CrmSession | null): Promise<CrmMyDayResponse | null> {
+  const base = crmApiBase();
+  if (!base || !session?.token) return null;
+
+  return parseApiResponse<CrmMyDayResponse>(
+    await fetch(`${base}/api/my-day/`, {
+      headers: authHeaders(session),
+    }),
+  );
 }
 
 export async function fetchCrmWorkflowReminders(session?: CrmSession | null, status?: CrmWorkflowReminder['status']): Promise<CrmWorkflowReminder[]> {

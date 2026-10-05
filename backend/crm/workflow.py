@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from .models import CommunicationRecord, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine
+from .models import CommunicationRecord, Lead, PaymentRecord, Quote, QuoteApproval, QuoteLine, WorkflowReminder
 
 
 LEISURE_STAGE_LABELS = {
@@ -95,7 +95,9 @@ def workflow_for_lead(lead: Lead) -> dict:
     current_index = stages.index(current_stage)
     next_stage = stages[current_index + 1] if current_index + 1 < len(stages) else None
     checklist = _checklist_for_stage(lead, current_stage)
-    blockers = [item for item in checklist if not item["ready"]]
+    # Only blocker-severity checks gate advancement; missing_info and advisory
+    # checks are surfaced in the payload without blocking.
+    blockers = [item for item in checklist if not item["ready"] and item["severity"] == "blocker"]
 
     return {
         "leadId": str(lead.id),
@@ -105,7 +107,9 @@ def workflow_for_lead(lead: Lead) -> dict:
         "nextStage": next_stage,
         "nextStageLabel": _stage_label(lead, next_stage) if next_stage else "",
         "canAdvance": next_stage is not None and not blockers,
-        "responsibleOwner": _owner_for_stage(lead, current_stage),
+        "responsibleOwner": _owner_display(lead),
+        "responsibleOwnerId": lead.owner_id,
+        "serviceDesk": _owner_for_stage(lead, current_stage),
         "checklist": checklist,
         "blockers": blockers,
         "stages": [_stage_payload(lead, stage, current_index, index) for index, stage in enumerate(stages)],
@@ -127,6 +131,7 @@ def advance_workflow(lead: Lead, target_stage: str | None = None) -> tuple[Lead,
                 "label": "Target stage",
                 "ready": False,
                 "detail": f"Only {allowed_stage} is allowed from {state['currentStage']}.",
+                "severity": "blocker",
             }
         ]
         return lead, state
@@ -171,7 +176,17 @@ def _stage_payload(lead: Lead, stage: str, current_index: int, index: int) -> di
     }
 
 
+def _owner_display(lead: Lead) -> str:
+    """The real accountable owner; "Unassigned" when nobody owns the lead."""
+    owner = lead.owner
+    if owner is None:
+        return "Unassigned"
+    full_name = f"{owner.first_name} {owner.last_name}".strip()
+    return full_name or owner.username
+
+
 def _owner_for_stage(lead: Lead, stage: str) -> str:
+    """Service-desk queue hint only — never treated as a record owner."""
     if stage in {Lead.LifecycleStage.AWAITING_PAYMENT_FINANCE, Lead.LifecycleStage.APPROVED}:
         return "Finance"
     if stage in {Lead.LifecycleStage.BOOKING_IN_PROGRESS, Lead.LifecycleStage.CONFIRMED, Lead.LifecycleStage.TRAVEL_PACK_SENT, Lead.LifecycleStage.IN_TRAVEL}:
@@ -199,16 +214,26 @@ def _checklist_for_stage(lead: Lead, stage: str) -> list[dict]:
     return checks_by_stage.get(stage, _closed_checks)(lead)
 
 
-def _check(key: str, label: str, ready: bool, detail: str) -> dict:
-    return {"key": key, "label": label, "ready": ready, "detail": detail}
+def _check(key: str, label: str, ready: bool, detail: str, severity: str = "blocker") -> dict:
+    # severity is "blocker" (gates advancement), "missing_info", or "advisory"
+    # (surfaced in the payload without blocking).
+    return {"key": key, "label": label, "ready": ready, "detail": detail, "severity": severity}
 
 
 def _intake_checks(lead: Lead) -> list[dict]:
     has_contact = bool(lead.email or lead.whatsapp or lead.contact)
     has_request = bool(lead.destination or lead.requested_services or lead.trip_type)
     return [
+        _check("assigned", "Owner assigned", bool(lead.owner_id), "Assign an owner before the request leaves intake."),
         _check("contact", "Client contact", has_contact, "Email, WhatsApp, or contact name must be present."),
         _check("request_scope", "Request scope", has_request, "Destination, service scope, or trip type must be known."),
+        _check(
+            "preferred_contact",
+            "Preferred contact channel",
+            bool(lead.preferred_contact),
+            "Capture the client's preferred contact channel for follow-ups.",
+            severity="advisory",
+        ),
     ]
 
 
@@ -243,9 +268,17 @@ def _design_input_checks(lead: Lead) -> list[dict]:
 def _quote_build_checks(lead: Lead) -> list[dict]:
     quote = _latest_quote(lead)
     line_count = quote.lines.count() if quote else 0
+    lines_without_supplier = quote.lines.filter(supplier="").count() if quote else 0
     return [
         _check("quote", "Quote exists", bool(quote), "Create a quote for this workflow."),
         _check("quote_lines", "Quote lines", line_count > 0, "Add at least one priced or researched quote line."),
+        _check(
+            "line_suppliers",
+            "Line suppliers",
+            lines_without_supplier == 0,
+            "Record the supplier for each quote line.",
+            severity="missing_info",
+        ),
     ]
 
 
@@ -273,9 +306,24 @@ def _payment_record_checks(lead: Lead) -> list[dict]:
 
 
 def _payment_clearance_checks(lead: Lead) -> list[dict]:
-    return [
-        _check("payment_clearance", "Payment clearance", _payment_is_cleared(lead), "Payment or finance clearance must be marked paid/proof received."),
+    checks = [
+        _check("payment_clearance", "Payment clearance", _payment_is_cleared(lead), "Payments must be verified: received amounts must cover expected amounts, or a record must be marked paid."),
     ]
+    has_unverified_proof = any(
+        record.proof_received and record.status != PaymentRecord.Status.PAID
+        for record in lead.payment_records.all()
+    )
+    if has_unverified_proof:
+        checks.append(
+            _check(
+                "unverified_proofs",
+                "Unverified payment proofs",
+                False,
+                "Payment proof received but not yet verified; proof alone does not clear payment.",
+                severity="advisory",
+            )
+        )
+    return checks
 
 
 def _booking_checks(lead: Lead) -> list[dict]:
@@ -322,15 +370,57 @@ def _latest_quote(lead: Lead) -> Quote | None:
 
 
 def _payment_is_cleared(lead: Lead) -> bool:
+    """Verified payment clearance: received amounts cover expected amounts, or
+    a payment record is marked paid. Proof of payment alone never clears."""
     records = list(lead.payment_records.all())
     if not records:
         return False
 
     expected = sum((record.amount_expected for record in records), Decimal("0"))
     received = sum((record.amount_received for record in records), Decimal("0"))
-    has_paid_record = any(record.status == PaymentRecord.Status.PAID or record.proof_received for record in records)
+    has_paid_record = any(record.status == PaymentRecord.Status.PAID for record in records)
 
     if expected > 0:
         return received >= expected or has_paid_record
 
     return has_paid_record
+
+
+def completion_condition_status(reminder: WorkflowReminder) -> tuple[bool, str]:
+    """Whether a task's completion condition is met by underlying records.
+
+    Returns (met, explanation); the explanation is empty when the condition is
+    met and describes the missing evidence otherwise.
+    """
+    condition = reminder.completion_condition
+    lead = reminder.lead
+
+    if condition == WorkflowReminder.CompletionCondition.PAYMENT_VERIFIED:
+        if _payment_is_cleared(lead):
+            return True, ""
+        return False, "Payment is not verified: received amounts must cover expected amounts, or a payment record must be marked paid."
+
+    if condition == WorkflowReminder.CompletionCondition.SUPPLIER_CONFIRMED:
+        quote = _latest_quote(lead)
+        actionable_lines = quote.lines.exclude(category=QuoteLine.Category.SERVICE_FEE) if quote else QuoteLine.objects.none()
+        if actionable_lines.exists() and not actionable_lines.exclude(status=QuoteLine.Status.CONFIRMED).exists():
+            return True, ""
+        return False, "Suppliers are not confirmed: every operational quote line on the latest quote must be confirmed."
+
+    if condition == WorkflowReminder.CompletionCondition.CLIENT_RESPONDED:
+        communication = reminder.communication
+        if communication is not None:
+            if communication.response_status == CommunicationRecord.ResponseStatus.RESPONDED:
+                return True, ""
+            return False, "The client has not responded to the linked communication yet."
+        awaiting = lead.communications.filter(
+            response_status__in=[
+                CommunicationRecord.ResponseStatus.AWAITING,
+                CommunicationRecord.ResponseStatus.ACTION_REQUIRED,
+            ]
+        ).exclude(status__in=[CommunicationRecord.Status.CANCELLED, CommunicationRecord.Status.FAILED])
+        if not awaiting.exists():
+            return True, ""
+        return False, "There are still communications awaiting a client response."
+
+    return True, ""

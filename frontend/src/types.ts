@@ -30,6 +30,18 @@ export type ItineraryBookingStatus = 'draft' | 'quoted' | 'held' | 'confirmed' |
 export type TransportMode = 'flight' | 'train' | 'car' | 'ferry' | 'transfer' | 'other';
 export type CrmRole = 'admin' | 'manager' | 'agent' | 'client' | 'viewer' | 'none';
 
+export type CrmCapability =
+  | 'leads.view_all'
+  | 'leads.view_own'
+  | 'clients.manage'
+  | 'quotes.send'
+  | 'workflow.advance'
+  | 'payments.create'
+  | 'payments.verify'
+  | 'financials.view'
+  | 'reports.export'
+  | 'users.admin';
+
 export type CrmUser = {
   id: number;
   username: string;
@@ -38,6 +50,8 @@ export type CrmUser = {
   last_name?: string;
   is_staff?: boolean;
   role: CrmRole;
+  roles?: string[];
+  capabilities?: CrmCapability[];
   canAccessCrm: boolean;
   canManageClients: boolean;
   canManageUsers: boolean;
@@ -120,6 +134,8 @@ export type CrmLead = {
   ctmRequestId?: string;
   clientId?: string | null;
   clientName?: string;
+  ownerId?: number | null;
+  ownerName?: string | null;
 };
 
 export type CrmQuoteLine = {
@@ -186,11 +202,14 @@ export type CrmCommunicationRecord = {
   notes: string;
 };
 
+export type CrmChecklistSeverity = 'blocker' | 'missing_info' | 'advisory';
+
 export type CrmWorkflowChecklistItem = {
   key: string;
   label: string;
   ready: boolean;
   detail: string;
+  severity?: CrmChecklistSeverity;
 };
 
 export type CrmWorkflowStage = {
@@ -208,10 +227,17 @@ export type CrmWorkflowState = {
   nextStageLabel: string;
   canAdvance: boolean;
   responsibleOwner: string;
+  responsibleOwnerId?: number | null;
+  serviceDesk?: string;
   checklist: CrmWorkflowChecklistItem[];
   blockers: CrmWorkflowChecklistItem[];
   stages: CrmWorkflowStage[];
 };
+
+export type CrmReminderStatus = 'pending' | 'in_progress' | 'waiting' | 'completed' | 'cancelled';
+export type CrmReminderOrigin = 'system' | 'manager' | 'automation';
+export type CrmReminderCompletionCondition = 'none' | 'payment_verified' | 'supplier_confirmed' | 'client_responded';
+export type CrmReminderWaitingOn = 'client' | 'supplier' | 'internal';
 
 export type CrmWorkflowReminder = {
   id: string;
@@ -221,12 +247,18 @@ export type CrmWorkflowReminder = {
   leadName: string;
   communicationId?: string | null;
   reminderType: 'blocker' | 'follow_up' | 'payment_due' | 'booking_deadline' | 'travel_pack';
-  status: 'pending' | 'done' | 'cancelled';
+  status: CrmReminderStatus;
+  origin?: CrmReminderOrigin;
+  completionCondition?: CrmReminderCompletionCondition;
+  waitingOn?: CrmReminderWaitingOn | null;
+  followUpAt?: string | null;
   sourceStage: LeadLifecycleStage | '';
   title: string;
   message: string;
   dueAt: string;
   assignedTo: string;
+  assignedToId?: number | null;
+  assignedToName?: string | null;
   createdBy?: number | null;
   completedAt?: string | null;
 };
@@ -342,4 +374,75 @@ export type CrmTripItinerary = {
   notes: string;
   stops: CrmItineraryStop[];
   transports: CrmTransportSegment[];
+};
+
+export type CrmMyDayWaitingClient = {
+  communicationId: string;
+  leadId: string;
+  leadName: string;
+  kind: string;
+  channel: string;
+  subject: string;
+  followUpDue: string | null;
+  responseStatus: string;
+  ownerId: number | null;
+  ownerName: string | null;
+};
+
+export type CrmMyDaySupplierHold = {
+  quoteLineId: string;
+  quoteId: string;
+  quoteNumber: string;
+  leadId: string;
+  leadName: string;
+  category: string;
+  description: string;
+  supplier: string;
+  status: string;
+  supplierDeadline: string | null;
+  bookingOwnerId: number | null;
+  bookingOwnerName: string | null;
+};
+
+export type CrmMyDayPendingApproval = {
+  approvalId: string;
+  quoteId: string;
+  quoteNumber: string;
+  leadId: string;
+  leadName: string;
+  approverName: string;
+  approverEmail: string;
+  createdAt: string;
+};
+
+export type CrmMyDayDeparture = {
+  itineraryId: string;
+  leadId: string;
+  leadName: string;
+  title: string;
+  status: string;
+  startDate: string | null;
+  endDate: string | null;
+  ownerId: number | null;
+  ownerName: string | null;
+};
+
+export type CrmMyDaySectionKey =
+  | 'waitingClients'
+  | 'expiringSupplierHolds'
+  | 'pendingApprovals'
+  | 'upcomingDepartures'
+  | 'overdueTasks'
+  | 'todayTasks';
+
+export type CrmMyDayResponse = {
+  generatedAt: string;
+  scope: 'team' | 'own';
+  counts: Record<CrmMyDaySectionKey, number>;
+  waitingClients: CrmMyDayWaitingClient[];
+  expiringSupplierHolds: CrmMyDaySupplierHold[];
+  pendingApprovals: CrmMyDayPendingApproval[];
+  upcomingDepartures: CrmMyDayDeparture[];
+  overdueTasks: CrmWorkflowReminder[];
+  todayTasks: CrmWorkflowReminder[];
 };

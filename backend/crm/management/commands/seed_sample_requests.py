@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
+from django.contrib.auth.models import Group, User
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -610,6 +611,32 @@ def quote_number_for_lead(lead: Lead) -> str:
     return f"DPM-Q-{str(lead.id)[:8].upper()}"
 
 
+def owner_users_for_samples() -> dict[str, User]:
+    """Create/resolve real consultant users for the seeded owner names.
+
+    Seeds must assign real owners so the unassigned-advance gate and record
+    scoping behave meaningfully against sample data.
+    """
+    consultant_group, _ = Group.objects.get_or_create(name="crm_consultant")
+    owners: dict[str, User] = {}
+    names = {sample.owner for sample in [*LEISURE_SAMPLES, *CORPORATE_SAMPLES] if sample.owner}
+    for full_name in names:
+        first_name, _, last_name = full_name.partition(" ")
+        username = full_name.lower().replace(" ", ".")
+        user, _ = User.objects.get_or_create(
+            username=username,
+            defaults={"first_name": first_name, "last_name": last_name, "email": f"{username}@dpm.test"},
+        )
+        if not user.has_usable_password():
+            user.set_unusable_password()
+        user.first_name = user.first_name or first_name
+        user.last_name = user.last_name or last_name
+        user.save()
+        user.groups.add(consultant_group)
+        owners[full_name] = user
+    return owners
+
+
 def quote_lines_for_sample(sample: SampleLead):
     if sample.service_key == Lead.ServiceKey.CORPORATE:
         return [
@@ -904,6 +931,8 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
+        owner_users = owner_users_for_samples()
+
         created_clients = 0
         updated_clients = 0
         created_leads = 0
@@ -914,6 +943,7 @@ class Command(BaseCommand):
         updated_itineraries = 0
 
         for sample in [*LEISURE_SAMPLES, *CORPORATE_SAMPLES]:
+            owner_user = owner_users.get(sample.owner)
             client_defaults = {
                 "name": sample.client_name,
                 "client_type": sample.client_type,
@@ -922,7 +952,8 @@ class Command(BaseCommand):
                 "phone": sample.whatsapp,
                 "preferred_contact": sample.preferred_contact,
                 "service_level": sample.service_level or sample.service_key,
-                "owner": sample.owner,
+                "owner": owner_user,
+                "owner_label": sample.owner,
                 "notes": "Seeded sample client record for local CRM review.",
             }
 
@@ -962,6 +993,7 @@ class Command(BaseCommand):
                 "email_status": Lead.EmailStatus.PENDING,
                 "internal_notes": sample.internal_notes,
                 "client": client,
+                "owner": owner_user,
             }
             lead, lead_created = Lead.objects.update_or_create(
                 email=sample.email,

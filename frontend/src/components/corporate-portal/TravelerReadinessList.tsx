@@ -13,10 +13,10 @@ export function TravelerReadinessList({ travelers, theme }: { travelers: Corpora
             <div className={`mt-0.5 truncate text-xs ${styles.muted}`}>{traveler.department}</div>
           </div>
           <div className="shrink-0 text-right text-[11px] leading-5">
-            <div className={traveler.readiness.passport === 'OK' ? 'text-emerald-300' : 'text-amber-300'}>
+            <div className={traveler.readiness.passport === 'OK' ? 'ctm-tone-emerald' : 'ctm-tone-amber'}>
               Passport {traveler.readiness.passport}
             </div>
-            <div className={traveler.readiness.visa === 'OK' || traveler.readiness.visa === 'N/A' ? styles.soft : 'text-amber-300'}>
+            <div className={traveler.readiness.visa === 'OK' || traveler.readiness.visa === 'N/A' ? styles.soft : 'ctm-tone-amber'}>
               Visa {traveler.readiness.visa}
             </div>
           </div>

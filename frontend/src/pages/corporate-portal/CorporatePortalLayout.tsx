@@ -33,8 +33,8 @@ export function CorporatePortalLayout({
   const styles = corporatePortalThemeStyles[theme];
 
   return (
-    <div className={`min-h-screen ${styles.shell}`}>
-      <div className="grid min-h-screen xl:grid-cols-[244px_minmax(0,1fr)]">
+    <div className={`min-h-screen ${styles.shell}`} data-theme={theme}>
+      <div className="grid min-h-screen xl:grid-cols-[252px_minmax(0,1fr)]">
         <CorporateSidebar activeHref={pathname} onNavigate={navigate} theme={theme} />
         <section className="min-w-0">
           <CorporateHeader
@@ -57,7 +57,7 @@ export function CorporatePortalLayout({
               </button>
             }
           />
-          <main className="p-3 sm:p-5">{children}</main>
+          <main className="p-4 sm:p-6">{children}</main>
         </section>
       </div>
     </div>

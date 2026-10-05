@@ -35,7 +35,7 @@ export function CorporateDashboardPage({
         <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
           <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
-              <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[#d9b46f]">
+              <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-[0.18em] crm-accent-text">
                 <FolderKanban className="h-4 w-4" />
                 Dashboard
               </div>
@@ -94,7 +94,7 @@ export function CorporateDashboardPage({
       <aside className="grid min-h-0 grid-rows-[auto_auto_1fr] gap-4">
         <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
           <div className="mb-3 flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-emerald-300" />
+            <CheckCircle2 className="h-5 w-5 ctm-tone-emerald" />
             <h3 className="text-base font-semibold">Approvals pressure</h3>
           </div>
           <div className="space-y-3">
@@ -112,7 +112,7 @@ export function CorporateDashboardPage({
                 >
                   <div className="font-medium">{trip.id}</div>
                   <div className={`mt-1 text-xs ${styles.muted}`}>{trip.route}</div>
-                  <div className="mt-1 text-xs text-[#d9b46f]">
+                  <div className="mt-1 text-xs crm-accent-text">
                     {trip.approvals.filter((approval) => approval.status === 'Pending').length} approval stage(s) still open
                   </div>
                 </button>
@@ -123,7 +123,7 @@ export function CorporateDashboardPage({
 
         <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
           <div className="mb-3 flex items-center gap-2">
-            <FileWarning className="h-5 w-5 text-amber-300" />
+            <FileWarning className="h-5 w-5 ctm-tone-amber" />
             <h3 className="text-base font-semibold">Document alerts</h3>
           </div>
           <div className="space-y-3">
@@ -141,7 +141,7 @@ export function CorporateDashboardPage({
                 >
                   <div className="font-medium">{trip.id}</div>
                   <div className={`mt-1 text-xs ${styles.muted}`}>{trip.travelers.length} travelers - {trip.destination}</div>
-                  <div className="mt-1 text-xs text-amber-300">Passport or visa input still needed</div>
+                  <div className="mt-1 text-xs ctm-tone-amber">Passport or visa input still needed</div>
                 </button>
               ))
             )}

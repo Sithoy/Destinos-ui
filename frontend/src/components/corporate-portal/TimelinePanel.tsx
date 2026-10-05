@@ -10,19 +10,19 @@ export type UnifiedTimelineEvent = CorporateTimelineEvent & {
 };
 
 function TimelineIcon({ type, source }: { type: CorporateTimelineEvent['type']; source?: TimelineSource }) {
-  if (source === 'Messages') return <MessageSquare className="h-4 w-4 text-sky-300" />;
-  if (source === 'Finance') return <ReceiptText className="h-4 w-4 text-[#d9b46f]" />;
-  if (type === 'done') return <CheckCircle2 className="h-4 w-4 text-emerald-300" />;
-  if (type === 'pending') return <Clock3 className="h-4 w-4 text-sky-300" />;
-  return <AlertTriangle className="h-4 w-4 text-amber-300" />;
+  if (source === 'Messages') return <MessageSquare className="h-4 w-4 ctm-tone-sky" />;
+  if (source === 'Finance') return <ReceiptText className="h-4 w-4 crm-accent-text" />;
+  if (type === 'done') return <CheckCircle2 className="h-4 w-4 ctm-tone-emerald" />;
+  if (type === 'pending') return <Clock3 className="h-4 w-4 ctm-tone-sky" />;
+  return <AlertTriangle className="h-4 w-4 ctm-tone-amber" />;
 }
 
 function sourceTone(source: TimelineSource | undefined, theme: CorporatePortalTheme) {
-  if (source === 'DPM') return 'border-sky-400/25 bg-sky-500/10 text-sky-200';
-  if (source === 'Company') return 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200';
-  if (source === 'Finance') return 'border-[#d9b46f]/25 bg-[#d9b46f]/10 text-[#d9b46f]';
+  if (source === 'DPM') return 'border-sky-400/25 bg-sky-500/10 ctm-tone-sky';
+  if (source === 'Company') return 'border-emerald-400/25 bg-emerald-500/10 ctm-tone-emerald';
+  if (source === 'Finance') return 'border-[#fe8500]/25 bg-[#fe8500]/10 crm-accent-text';
   if (source === 'Documents') return 'border-violet-400/25 bg-violet-500/10 text-violet-200';
-  if (source === 'Messages') return 'border-cyan-400/25 bg-cyan-500/10 text-cyan-200';
+  if (source === 'Messages') return 'border-cyan-400/25 bg-cyan-500/10 ctm-tone-sky';
   return theme === 'dark' ? 'border-white/10 bg-white/[0.04] text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-600';
 }
 

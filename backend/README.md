@@ -77,13 +77,30 @@ CRM access is allowed for:
 
 - superusers
 - staff users
-- Django group members in `crm_admin`, `crm_manager`, `crm_agent`, or `crm_viewer`
+- Django group members in any `crm_*` group below
+
+Responsibility groups (combinable; a user may hold several):
+
+- `crm_admin` - full access, user administration, export
+- `crm_manager` - full access, user administration (non-admin targets), export
+- `crm_team_manager` - full record access, assign work, send quotes, export
+- `crm_consultant` / legacy `crm_agent` (consultant-equivalent) - read/write, sees own + unassigned records, sends quotes, sees financial fields
+- `crm_operations` - full record access, read/write, sees financial fields, cannot send quotes or verify payments
+- `crm_finance` - full record access, creates and verifies payment records, export, cannot send quotes
+- `crm_viewer` - read-only, full record access, no financial fields (costs/margins)
+- `crm_auditor` - read-only, full record access, export, no financial fields (costs/margins)
+
+Record scoping: consultant/agent see records they own (`Lead.owner` / `Client.owner`) plus unassigned records; all other CRM roles see every record. Quotes, quote lines, payments, communications, reminders, approvals, and itinerary records are scoped through their lead's owner.
 
 Client registration/editing is allowed for:
 
 - superusers
 - staff users
-- Django group members in `crm_admin`, `crm_manager`, or `crm_agent`
+- Django group members in `crm_admin`, `crm_manager`, `crm_team_manager`, `crm_agent`, or `crm_consultant`
+
+Action permissions enforced server-side: sending quotes (`quotes.send`), advancing workflows (`workflow.advance`), creating payment records (`payments.create`), verifying payments (`payments.verify`), user administration (`users.admin`). `GET /api/auth/me/` returns the user's `roles` and `capabilities` so the frontend can hide what the API forbids.
+
+Ownership: `Lead.owner`, `Client.owner`, `WorkflowReminder.assigned_to`, and `QuoteLine.booking_owner` are real user FKs (null = Unassigned). The legacy free-text labels are preserved as `owner_label` / `assigned_to_label` / `booking_owner_label` and still exposed under the old API keys for backward compatibility.
 
 ## Production Notes
 

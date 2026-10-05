@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from crm.travel_content import PublicExperiencesView
 
 from ctm.views import BillingInvoiceReportView, BillingPaymentReportView, BillingSummaryReportView, CompanyAccountViewSet, CompanyUserViewSet, CorporatePortalContextView, CtmAuthLoginView, CtmAuthLogoutView, CtmAuthMeView, ItineraryViewSet, TravelerViewSet, TripBookingView, TripDocumentDetailView, TripDocumentListView, TripInvoiceView, TripMessageListView, TripPaymentDetailView, TripPaymentListView, TripQuoteView, TripRequestViewSet, TripTaskDetailView, TripTaskListView
-from crm.views import AccommodationBlockViewSet, AuthLoginView, AuthLogoutView, AuthMeView, ClientViewSet, CommunicationRecordViewSet, ExperienceBlockViewSet, ItineraryStopViewSet, LeadViewSet, PaymentRecordViewSet, PublicLeadCreateView, QuoteApprovalViewSet, QuoteLineViewSet, QuoteViewSet, TransportSegmentViewSet, TripItineraryViewSet, UserViewSet, WorkflowReminderViewSet
+from crm.views import AccommodationBlockViewSet, AuthLoginView, AuthLogoutView, AuthMeView, ClientViewSet, CommunicationRecordViewSet, ExperienceBlockViewSet, ItineraryStopViewSet, LeadViewSet, MyDayView, PaymentRecordViewSet, PublicLeadCreateView, QuoteApprovalViewSet, QuoteLineViewSet, QuoteViewSet, TransportSegmentViewSet, TripItineraryViewSet, UserViewSet, WorkflowReminderViewSet
 
 router = DefaultRouter()
 router.register("leads", LeadViewSet, basename="lead")
@@ -34,6 +34,7 @@ urlpatterns = [
     path("api/auth/login/", AuthLoginView.as_view(), name="auth-login"),
     path("api/auth/logout/", AuthLogoutView.as_view(), name="auth-logout"),
     path("api/auth/me/", AuthMeView.as_view(), name="auth-me"),
+    path("api/my-day/", MyDayView.as_view(), name="my-day"),
     path("api/ctm/auth/login/", CtmAuthLoginView.as_view(), name="ctm-auth-login"),
     path("api/ctm/auth/logout/", CtmAuthLogoutView.as_view(), name="ctm-auth-logout"),
     path("api/ctm/auth/me/", CtmAuthMeView.as_view(), name="ctm-auth-me"),

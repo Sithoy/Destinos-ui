@@ -30,6 +30,7 @@ import {
   Shield,
   Sparkles,
   Sun,
+  Sunrise,
   Users,
   X,
   type LucideIcon,
@@ -79,6 +80,7 @@ import {
   updateCrmQuoteLineRecord,
   updateCrmClientRecord,
   updateCrmUserRecord,
+  userHasCapability,
 } from '../data/crm';
 import {
   createCtmTripBooking,
@@ -101,10 +103,15 @@ import {
 import { classicLogo } from '../data/travel';
 import { BrandLockup } from '../components/ui';
 import { BriefingGate, appendBriefingDecisionNote, briefingChecklistItems, briefingReadiness, type BriefingDecision } from '../modules/crm/briefing';
+import { RequestQueueCard, RequestStatusReport, csvEscape, dateTimeValue, fallbackPriority, formatDate, formatDateOnly, initials, isCorporateLead, leadFlowTitle, leadLifecycleLabel, leadLifecycleStage, leadOwner, leadPrimaryBlocker, leadSegment, leftRailStatusCards, lifecycleStageLabels, priorityLabels, processForLead, statusLabels, typeLabels, type InfoCard, type LeadTypeFilter } from '../modules/crm/shared';
+import { leadTasks, taskQueueCount, tasksSurfaceMeta, workflowReminderGenerationAvailability } from '../modules/crm/tasks';
+import { calendarRequestCount, calendarSurfaceMeta, leadHasTravelDates } from '../modules/crm/calendar';
+import { exportCsv, reportsSurfaceMeta } from '../modules/crm/reports';
+import { MyDay } from '../modules/crm/myday';
+import { TasksQueue } from '../modules/crm/tasks';
 import type { CrmClient, CrmCommunicationRecord, CrmLead, CrmManagedUser, CrmPaymentRecord, CrmQuote, CrmQuoteLine, CrmRole, CrmSession, CrmTripItinerary, CrmWorkflowReminder, CrmWorkflowState, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus, QuoteLineCategory, QuoteLineStatus } from '../types';
 import type { CorporateBookingStatus, CorporateCompanyAccount, CorporateCompanyAccountInput, CorporateCompanyAccountStatus, CorporateCompanyServiceLevel, CorporateCompanyUserAccount, CorporateCompanyUserInput, CorporateCompanyUserRole, CorporateInvoiceStatus, CorporatePaymentMethod, CorporatePaymentStatus, CorporateQuoteStatus, CorporateTripRequest } from '../types/corporatePortal';
 
-type LeadTypeFilter = 'all' | InquiryKind;
 type StatusFilter = 'all' | LeadStatus | 'confirmedGroup' | 'workflowGroup';
 type PriorityFilter = 'all' | LeadPriority | 'attention';
 type CrmTheme = 'dark' | 'light';
@@ -128,8 +135,7 @@ type DetailTab =
   | 'payment';
 type DeskView = 'all' | 'leisure' | 'corporate';
 type CommandLens = 'all' | 'corporate' | 'leisure' | 'attention' | 'blocked' | 'ready';
-type CrmNavId = 'command' | 'leisureStudio' | 'corporateDesk' | 'corporateAccounts' | 'tasks' | 'calendar' | 'clients' | 'reports' | 'settings';
-type ProcessTaskTone = 'urgent' | 'normal' | 'upcoming';
+type CrmNavId = 'myday' | 'command' | 'leisureStudio' | 'corporateDesk' | 'corporateAccounts' | 'tasks' | 'calendar' | 'clients' | 'reports' | 'settings';
 type CommunicationKind = 'proposal' | 'payment' | 'travel_pack' | 'follow_up';
 type CommunicationChannel = 'email' | 'whatsapp' | 'phone';
 type CorporateDeskSignalTone = 'success' | 'warning' | 'danger' | 'info';
@@ -235,33 +241,10 @@ type CommunicationDraft = {
   followUpDue: string;
 };
 
-type ProcessTask = {
-  title: string;
-  due: string;
-  tone: ProcessTaskTone;
-};
-
-type FlowProcessMap = Record<
-  LeadStatus,
-  {
-    primaryAction: string;
-    nextAction: string;
-    nextStatus: LeadStatus | null;
-    stageGate: string;
-    taskTitles: [string, string, string];
-  }
->;
-
 type ProcessHistoryItem = {
   label: string;
   meta: string;
   tone: 'done' | 'current' | 'upcoming' | 'closed';
-};
-
-type InfoCard = {
-  label: string;
-  value: string;
-  meta?: string;
 };
 
 type QuoteLinePatch = Partial<Pick<CrmQuoteLine, 'category' | 'supplier' | 'description' | 'quantity' | 'unitCost' | 'unitSell' | 'status' | 'confirmationReference' | 'supplierDeadline' | 'bookingOwner' | 'bookingNotes' | 'confirmedAt' | 'notes'>>;
@@ -312,34 +295,6 @@ const PAGE_SIZE = 10;
 const CRM_THEME_STORAGE_KEY = 'dpm.crm.theme';
 const QUOTE_LINE_SAVE_DELAY_MS = 650;
 
-const statusLabels: Record<LeadStatus, string> = {
-  new: 'New',
-  contacted: 'Qualification',
-  planning: 'Trip Design',
-  proposal: 'Proposal Sent',
-  won: 'Confirmed',
-  execution: 'Execution',
-  completed: 'Completed',
-  lost: 'Cancelled',
-};
-
-const lifecycleStageLabels: Record<LeadLifecycleStage, string> = {
-  new_request: 'New Request',
-  pending_information: 'Pending Information',
-  validated: 'Validated',
-  quote_in_progress: 'Quote in Progress',
-  quote_sent: 'Quote Sent',
-  awaiting_approval: 'Awaiting Approval',
-  approved: 'Approved',
-  awaiting_payment_finance: 'Awaiting Payment / Finance',
-  booking_in_progress: 'Booking in Progress',
-  confirmed: 'Confirmed',
-  travel_pack_sent: 'Travel Pack Sent',
-  in_travel: 'In Travel',
-  completed: 'Completed',
-  closed: 'Closed',
-};
-
 const lifecycleStageOrder: LeadLifecycleStage[] = [
   'new_request',
   'pending_information',
@@ -358,17 +313,6 @@ const lifecycleStageOrder: LeadLifecycleStage[] = [
 
 const lifecycleWorkflowSteps = lifecycleStageOrder.map((stage) => [stage, lifecycleStageLabels[stage]] as const);
 
-const statusToLifecycleStage: Record<LeadStatus, LeadLifecycleStage> = {
-  new: 'new_request',
-  contacted: 'pending_information',
-  planning: 'quote_in_progress',
-  proposal: 'quote_sent',
-  won: 'awaiting_payment_finance',
-  execution: 'booking_in_progress',
-  completed: 'completed',
-  lost: 'closed',
-};
-
 const lifecycleStageToStatus: Record<LeadLifecycleStage, LeadStatus> = {
   new_request: 'new',
   pending_information: 'contacted',
@@ -384,13 +328,6 @@ const lifecycleStageToStatus: Record<LeadLifecycleStage, LeadStatus> = {
   in_travel: 'execution',
   completed: 'completed',
   closed: 'lost',
-};
-
-const priorityLabels: Record<LeadPriority, string> = {
-  low: 'Low',
-  normal: 'Normal',
-  high: 'High',
-  urgent: 'Urgent',
 };
 
 const quoteStatusLabels: Record<CrmQuote['status'], string> = {
@@ -528,13 +465,6 @@ const communicationChannelLabels: Record<CommunicationChannel, string> = {
 const communicationKinds = Object.keys(communicationKindLabels) as CommunicationKind[];
 const communicationChannels = Object.keys(communicationChannelLabels) as CommunicationChannel[];
 
-const typeLabels: Record<LeadTypeFilter, string> = {
-  all: 'All',
-  classic: 'Classic',
-  luxury: 'Luxury',
-  corporate: 'Corporate',
-};
-
 const statusOrder: LeadStatus[] = ['new', 'contacted', 'planning', 'proposal', 'won', 'execution', 'completed', 'lost'];
 const typeFilters = ['all', 'luxury', 'corporate', 'classic'] as LeadTypeFilter[];
 
@@ -558,137 +488,8 @@ const corporateWorkflowSteps = [
   ['completed', 'Completed'],
 ] as const;
 
-const ownerByService: Record<InquiryKind, string> = {
-  classic: 'Marta Lopes',
-  luxury: 'Nadia Cossa',
-  corporate: 'Carlos Mavie',
-};
-
-const serviceProcessFocus: Record<InquiryKind, string> = {
-  classic: 'simple package clarity, budget fit, and practical travel options',
-  luxury: 'concierge preferences, premium availability, and discreet service details',
-  corporate: 'traveler list, approval flow, policy fit, and invoice structure',
-};
-
-const traditionalStatusProcess: FlowProcessMap = {
-  new: {
-    primaryAction: 'Qualify request',
-    nextAction: 'Confirm client intent, dates, budget, and service expectations.',
-    nextStatus: 'contacted',
-    stageGate: 'Move to Qualification when the request is real enough to invest planning time.',
-    taskTitles: ['Call or WhatsApp client', 'Validate dates and destination', 'Confirm budget range'],
-  },
-  contacted: {
-    primaryAction: 'Start trip design',
-    nextAction: 'Turn the qualified request into a small set of viable travel options.',
-    nextStatus: 'planning',
-    stageGate: 'Move to Trip Design when constraints and decision makers are clear.',
-    taskTitles: ['Capture missing requirements', 'Check travel constraints', 'Assign supplier research'],
-  },
-  planning: {
-    primaryAction: 'Prepare proposal',
-    nextAction: 'Build the itinerary, pricing logic, supplier holds, and recommendation notes.',
-    nextStatus: 'proposal',
-    stageGate: 'Move to Proposal Sent only when the offer is complete enough for client approval.',
-    taskTitles: ['Compare supplier options', 'Draft itinerary and quote', 'Check service inclusions'],
-  },
-  proposal: {
-    primaryAction: 'Follow up approval',
-    nextAction: 'Track client approval, payment conditions, and expiring fare or room holds.',
-    nextStatus: 'won',
-    stageGate: 'Move to Confirmed after client approval and payment conditions are satisfied.',
-    taskTitles: ['Follow up proposal', 'Extend critical holds', 'Clarify approval blockers'],
-  },
-  won: {
-    primaryAction: 'Launch execution',
-    nextAction: 'Convert approval into bookings, documents, and operational ownership.',
-    nextStatus: 'execution',
-    stageGate: 'Move to Execution when core bookings and payment conditions are controlled.',
-    taskTitles: ['Confirm bookings', 'Prepare invoice or payment record', 'Create service checklist'],
-  },
-  execution: {
-    primaryAction: 'Complete trip',
-    nextAction: 'Deliver documents, concierge notes, reminders, and active travel support.',
-    nextStatus: 'completed',
-    stageGate: 'Move to Completed when the trip is delivered and follow-up is ready.',
-    taskTitles: ['Send final travel pack', 'Confirm special requests', 'Schedule travel-day support'],
-  },
-  completed: {
-    primaryAction: 'Review relationship',
-    nextAction: 'Capture feedback, repeat preferences, and future opportunity signals.',
-    nextStatus: null,
-    stageGate: 'Keep completed trips as relationship intelligence for future sales.',
-    taskTitles: ['Request feedback', 'Log preferences', 'Create future follow-up cue'],
-  },
-  lost: {
-    primaryAction: 'Reopen request',
-    nextAction: 'Record cancellation reason and decide whether this lead should be nurtured later.',
-    nextStatus: 'new',
-    stageGate: 'Closed requests should explain why the opportunity stopped.',
-    taskTitles: ['Record loss reason', 'Tag future interest', 'Schedule nurture follow-up'],
-  },
-};
-
-const corporateStatusProcess: FlowProcessMap = {
-  new: {
-    primaryAction: 'Qualify account need',
-    nextAction: 'Confirm traveler count, route, timing, and whether policy or invoice constraints already exist.',
-    nextStatus: 'contacted',
-    stageGate: 'Move to Qualification when the company need is real and the coordinating contact is confirmed.',
-    taskTitles: ['Confirm company requester', 'Capture traveler scope', 'Check policy or billing requirements'],
-  },
-  contacted: {
-    primaryAction: 'Build travel brief',
-    nextAction: 'Capture traveler list shape, approval owner, flexibility, and the operational constraints that affect quoting.',
-    nextStatus: 'planning',
-    stageGate: 'Move to Travel Plan when DPM can prepare options against a stable company brief.',
-    taskTitles: ['Confirm traveler matrix', 'Validate approval owner', 'Clarify fare and hotel policy'],
-  },
-  planning: {
-    primaryAction: 'Prepare proposal',
-    nextAction: 'Turn the movement brief into pricing, routing logic, service scope, and approval-ready commercial notes.',
-    nextStatus: 'proposal',
-    stageGate: 'Move to Proposal when pricing, policy fit, and operational assumptions are clear enough for company review.',
-    taskTitles: ['Build traveler option set', 'Draft approval-ready proposal', 'Check invoicing structure'],
-  },
-  proposal: {
-    primaryAction: 'Follow up approval',
-    nextAction: 'Track company approval, traveler changes, expiring fares, and internal finance dependencies before locking travel.',
-    nextStatus: 'won',
-    stageGate: 'Move to Approval Secured when the company signs off the proposal and commercial conditions are controlled.',
-    taskTitles: ['Follow up approver', 'Track traveler changes', 'Protect time-sensitive holds'],
-  },
-  won: {
-    primaryAction: 'Launch fulfilment',
-    nextAction: 'Convert approval into bookings, traveler documentation, invoicing, and coordinated operational ownership.',
-    nextStatus: 'execution',
-    stageGate: 'Move to Fulfilment when travel is approved and the operating team can execute confidently.',
-    taskTitles: ['Confirm booking path', 'Prepare invoice record', 'Lock traveler support checklist'],
-  },
-  execution: {
-    primaryAction: 'Close operating loop',
-    nextAction: 'Deliver travel packs, support active movement, and keep the company informed across traveler changes.',
-    nextStatus: 'completed',
-    stageGate: 'Move to Completed when the movement is delivered and the account notes are updated for future travel.',
-    taskTitles: ['Deliver final movement pack', 'Support active travelers', 'Capture post-trip account notes'],
-  },
-  completed: {
-    primaryAction: 'Review account delivery',
-    nextAction: 'Capture service feedback, repeat routes, and policy learnings for the next corporate movement.',
-    nextStatus: null,
-    stageGate: 'Keep completed corporate trips as account intelligence for future requests.',
-    taskTitles: ['Request account feedback', 'Log repeat route patterns', 'Prepare next-travel follow-up'],
-  },
-  lost: {
-    primaryAction: 'Reopen request',
-    nextAction: 'Record why the company movement stopped and whether the account should be nurtured later.',
-    nextStatus: 'new',
-    stageGate: 'Closed corporate requests should explain whether budget, timing, policy, or traveler readiness stopped the work.',
-    taskTitles: ['Record loss reason', 'Tag account risk', 'Schedule follow-up if relevant'],
-  },
-};
-
 const navItems: Array<{ id: CrmNavId; label: string; Icon: LucideIcon }> = [
+  { id: 'myday', label: 'My Day', Icon: Sunrise },
   { id: 'command', label: 'Command Center', Icon: LayoutDashboard },
   { id: 'leisureStudio', label: 'Leisure Studio', Icon: Sparkles },
   { id: 'corporateDesk', label: 'Corporate Desk', Icon: Briefcase },
@@ -812,23 +613,6 @@ const themeStyles = {
   },
 } as const;
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
-
-function formatDateOnly(value?: string | null) {
-  if (!value) return 'Date pending';
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(value));
-}
 
 function formatDateRange(start?: string | null, end?: string | null) {
   if (!start && !end) return 'Dates pending';
@@ -836,11 +620,6 @@ function formatDateRange(start?: string | null, end?: string | null) {
   return `${formatDateOnly(start)} - ${formatDateOnly(end)}`;
 }
 
-function dateTimeValue(value?: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
 
 function parseStoredTravelDates(value?: string | null) {
   if (!value) return { startDate: null, endDate: null };
@@ -891,64 +670,6 @@ function dateContainmentError(value: string | null | undefined, min: string | nu
   if (date && minDate && date.getTime() < minDate.getTime()) return `${label} must be inside ${parentLabel}.`;
   if (date && maxDate && date.getTime() > maxDate.getTime()) return `${label} must be inside ${parentLabel}.`;
   return '';
-}
-
-function isDueBy(value: string | null | undefined, limit: Date) {
-  const date = dateTimeValue(value);
-  return Boolean(date && date.getTime() <= limit.getTime());
-}
-
-function workflowReminderGenerationAvailability(
-  lead: CrmLead | null,
-  workflowState: CrmWorkflowState | null,
-  pendingReminders: CrmWorkflowReminder[],
-  paymentRecords: CrmPaymentRecord[],
-  communicationRecords: CrmCommunicationRecord[],
-  leadQuotes: CrmQuote[],
-) {
-  if (!lead) return { available: false, reason: 'Select a request before generating reminders.' };
-  if (!workflowState) return { available: false, reason: 'Workflow state is still loading.' };
-
-  if (lead.status === 'completed' || lead.status === 'lost' || workflowState.currentStage === 'completed' || workflowState.currentStage === 'closed') {
-    return { available: false, reason: 'No reminders are needed for completed or closed requests.' };
-  }
-
-  if (pendingReminders.length > 0) {
-    return { available: false, reason: 'Pending reminders already exist for this request.' };
-  }
-
-  const now = new Date();
-  const twoDayLimit = new Date(now);
-  twoDayLimit.setDate(twoDayLimit.getDate() + 2);
-  const hasWorkflowBlocker = workflowState.blockers.length > 0;
-  const hasOverdueFollowUp = communicationRecords.some((record) => (
-    record.followUpDue
-    && isDueBy(record.followUpDue, now)
-    && record.status !== 'cancelled'
-    && record.status !== 'failed'
-  ));
-  const hasDuePayment = paymentRecords.some((record) => (
-    record.dueDate
-    && isDueBy(record.dueDate, twoDayLimit)
-    && !['paid', 'cancelled', 'refunded'].includes(record.status)
-  ));
-  const hasSupplierDeadline = leadQuotes.some((quote) => quote.lines.some((line) => (
-    line.supplierDeadline
-    && isDueBy(line.supplierDeadline, twoDayLimit)
-    && line.status !== 'confirmed'
-  )));
-  const hasTravelPack = communicationRecords.some((record) => (
-    record.kind === 'travel_pack' && (record.status === 'ready' || record.status === 'sent')
-  ));
-  const needsTravelPack = workflowState.currentStage === 'confirmed' && !hasTravelPack;
-
-  if (hasWorkflowBlocker) return { available: true, reason: 'Generate reminders for current workflow blockers.' };
-  if (hasOverdueFollowUp) return { available: true, reason: 'Generate reminders for overdue client follow-ups.' };
-  if (hasDuePayment) return { available: true, reason: 'Generate reminders for payment deadlines.' };
-  if (hasSupplierDeadline) return { available: true, reason: 'Generate reminders for supplier deadlines.' };
-  if (needsTravelPack) return { available: true, reason: 'Generate a reminder to prepare the travel pack.' };
-
-  return { available: false, reason: 'No reminder rule is active for this stage.' };
 }
 
 function moneyValue(value: string | number | null | undefined, currency = 'USD') {
@@ -1075,46 +796,9 @@ function getCorporateDeskNextAction(trip: CorporateTripRequest) {
   return 'Keep monitoring CTM signals.';
 }
 
-function csvEscape(value: unknown) {
-  return `"${String(value ?? '').replace(/"/g, '""')}"`;
-}
-
-function fallbackPriority(lead: CrmLead): LeadPriority {
-  if (lead.priority) return lead.priority;
-  const urgency = (lead.urgency ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (urgency.includes('semana') || urgency.includes('week')) return 'urgent';
-  if (urgency.includes('mes') || urgency.includes('mês') || urgency.includes('month')) return 'high';
-  if (urgency.includes('pesquisar') || urgency.includes('research')) return 'low';
-  return 'normal';
-}
-
-function attentionLevel(lead: CrmLead) {
-  const priority = fallbackPriority(lead);
-  if (priority === 'urgent' || priority === 'high') return 'urgent';
-  if (lead.status === 'new') return 'new';
-  if (lead.status === 'contacted' || lead.status === 'planning' || lead.status === 'proposal' || lead.status === 'execution') return 'active';
-  if (lead.status === 'won' || lead.status === 'completed') return 'settled';
-  return 'quiet';
-}
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return `${parts[0]?.[0] ?? 'D'}${parts[1]?.[0] ?? ''}`.toUpperCase();
-}
-
 function readCrmTheme(): CrmTheme {
   if (typeof window === 'undefined') return 'light';
   return window.localStorage.getItem(CRM_THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
-}
-
-function leadSegment(lead: CrmLead) {
-  if (lead.serviceKey === 'corporate') return 'Corporate';
-  if (lead.serviceKey === 'luxury') return 'Private Client';
-  return 'Private Client';
-}
-
-function isCorporateLead(lead: CrmLead) {
-  return lead.serviceKey === 'corporate';
 }
 
 function isLeisureLead(lead: CrmLead) {
@@ -1123,14 +807,6 @@ function isLeisureLead(lead: CrmLead) {
 
 function workflowStepsForLead(lead: CrmLead) {
   return isCorporateLead(lead) ? corporateWorkflowSteps : traditionalWorkflowSteps;
-}
-
-function leadLifecycleStage(lead: CrmLead): LeadLifecycleStage {
-  return lead.lifecycleStage ?? statusToLifecycleStage[lead.status];
-}
-
-function leadLifecycleLabel(lead: CrmLead) {
-  return lifecycleStageLabels[leadLifecycleStage(lead)];
 }
 
 function nextLifecycleStage(lead: CrmLead): LeadLifecycleStage | null {
@@ -1142,10 +818,6 @@ function nextLifecycleStage(lead: CrmLead): LeadLifecycleStage | null {
 
 function lifecycleStageActionLabel(nextStage: LeadLifecycleStage | null) {
   return nextStage ? `Move to ${lifecycleStageLabels[nextStage]}` : 'Lifecycle complete';
-}
-
-function leadFlowTitle(lead: CrmLead) {
-  return isCorporateLead(lead) ? 'Corporate travel operations flow' : 'Traditional trip design flow';
 }
 
 function leadFlowDescription(lead: CrmLead) {
@@ -1329,53 +1001,10 @@ function corporateDocumentCards(lead: CrmLead): InfoCard[] {
   ];
 }
 
-function leadPrimaryBlocker(lead: CrmLead) {
-  const lifecycleStage = leadLifecycleStage(lead);
-  if (lifecycleStage === 'pending_information') return 'Missing information before validation';
-  if (lifecycleStage === 'awaiting_approval') return isCorporateLead(lead) ? 'Company approval still pending' : 'Client approval still pending';
-  if (lifecycleStage === 'awaiting_payment_finance') return isCorporateLead(lead) ? 'Finance clearance before booking release' : 'Payment confirmation before booking release';
-  if (lifecycleStage === 'booking_in_progress') return 'Supplier confirmations still in progress';
-  if (lifecycleStage === 'travel_pack_sent') return 'Travel pack sent, monitor readiness';
-  if (lifecycleStage === 'in_travel') return 'Active travel support in progress';
-  if (lifecycleStage === 'closed') return 'Request closed';
-
-  if (lead.serviceKey === 'corporate') {
-    if (lead.status === 'proposal') return 'Client approval still pending';
-    if (lead.status === 'won') return 'Finance clearance before booking release';
-    if (lead.requestedServices.toLowerCase().includes('visa')) return 'Traveler visa readiness still open';
-    return 'Traveler coordination still needs control';
-  }
-
-  if (lead.status === 'proposal') return 'Client decision still pending';
-  if (lead.status === 'won') return 'Payment confirmation before release';
-  if (lead.serviceKey === 'luxury') return 'Premium inventory timing still sensitive';
-  return 'Trip details still need final confirmation';
-}
-
 function extractManagerBoardMeta(notes: string | undefined) {
   const match = (notes || '').match(/\[Manager board\] Owner: (.+?) \| Task: (.+?)(?:\r?\n|$)/);
   if (!match) return null;
   return { owner: match[1], task: match[2] };
-}
-
-function leftRailStatusCards(lead: CrmLead): InfoCard[] {
-  return [
-    {
-      label: 'Current stage',
-      value: leadLifecycleLabel(lead),
-      meta: leadFlowTitle(lead),
-    },
-    {
-      label: 'Primary blocker',
-      value: leadPrimaryBlocker(lead),
-      meta: processForLead(lead).stageGate,
-    },
-    {
-      label: 'Next owner',
-      value: leadOwner(lead),
-      meta: processForLead(lead).primaryAction,
-    },
-  ];
 }
 
 function itinerarySummaryCards(lead: CrmLead, itinerary?: CrmTripItinerary | null): InfoCard[] {
@@ -1762,14 +1391,9 @@ function crmOwnerFallback(lead: CrmLead) {
   return leadOwner(lead);
 }
 
-
 function leisurePackageOptions(lead: CrmLead): LeisurePackageOption[] {
   void lead;
   return [];
-}
-
-function leadOwner(lead: CrmLead) {
-  return ownerByService[lead.serviceKey];
 }
 
 function clientLabel(client: CrmClient) {
@@ -1810,85 +1434,11 @@ function canEditManagedUser(actor: CrmSession['user'] | null | undefined, target
   return false;
 }
 
-function processForLead(lead: CrmLead) {
-  const process = (isCorporateLead(lead) ? corporateStatusProcess : traditionalStatusProcess)[lead.status];
-  return {
-    ...process,
-    nextAction: `${process.nextAction} Focus on ${serviceProcessFocus[lead.serviceKey]}.`,
-  };
-}
-
-function leadTasks(lead: CrmLead): ProcessTask[] {
-  const process = processForLead(lead);
-  const priority = fallbackPriority(lead);
-  const due = priority === 'urgent' ? 'Due now' : priority === 'high' ? 'Today' : priority === 'normal' ? '24h' : 'This week';
-  return process.taskTitles.map((title, index) => ({
-    title,
-    due: index === 0 ? due : index === 1 ? 'Next step' : 'Before stage move',
-    tone: index === 0 && (priority === 'urgent' || priority === 'high') ? 'urgent' : index === 2 ? 'upcoming' : 'normal',
-  }));
-}
-
 function workflowHistory(lead: CrmLead): ProcessHistoryItem[] {
   return [
     { label: 'Request created', meta: formatDate(lead.createdAt), tone: 'done' },
     { label: lifecycleStageLabels[leadLifecycleStage(lead)], meta: 'Current recorded stage', tone: 'current' },
   ];
-}
-
-function exportCsv(leads: CrmLead[]) {
-  const headers = [
-    'Created',
-    'Type',
-    'Service',
-    'Status',
-    'Lifecycle stage',
-    'Priority',
-    'Name',
-    'Email',
-    'WhatsApp',
-    'Preferred contact',
-    'Requested services',
-    'Trip type',
-    'Departure city',
-    'Destination',
-    'Dates',
-    'Travelers',
-    'Budget',
-    'Urgency',
-    'Notes',
-    'Internal notes',
-  ];
-  const rows = leads.map((lead) => [
-    lead.createdAt,
-    typeLabels[lead.serviceKey] ?? lead.serviceKey,
-    lead.service,
-    statusLabels[lead.status],
-    leadLifecycleLabel(lead),
-    priorityLabels[fallbackPriority(lead)],
-    lead.name,
-    lead.email,
-    lead.whatsapp,
-    lead.preferredContact,
-    lead.requestedServices,
-    lead.tripType,
-    lead.departureCity,
-    lead.destination,
-    lead.dates,
-    lead.travelers,
-    lead.budget,
-    lead.urgency,
-    lead.notes,
-    lead.internalNotes,
-  ]);
-  const csv = [headers, ...rows].map((row) => row.map((cell) => csvEscape(cell)).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `dpm-leads-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 function exportClientsCsv(clients: CrmClient[]) {
@@ -1926,10 +1476,10 @@ function CrmBrandMark({ theme }: { theme: CrmTheme }) {
         compact
         align="left"
         gapClass="gap-2.5"
-        logoSize="h-10"
-        logoArtScale="scale-[1.06]"
+        logoSize="h-[52px]"
+        logoArtScale="scale-[1.55]"
         logoArtOffset="translate-x-0"
-        wordmarkWidthClass="w-[9.5rem] max-w-[calc(100vw-9rem)]"
+        wordmarkWidthClass="w-[8.5rem]"
       />
     </div>
   );
@@ -2177,7 +1727,7 @@ export function CrmPage() {
   const [selectedCorporateWorkflowStageId, setSelectedCorporateWorkflowStageId] = useState('');
   const [page, setPage] = useState(1);
   const [theme, setTheme] = useState<CrmTheme>(() => readCrmTheme());
-  const [activeNav, setActiveNav] = useState<CrmNavId>('command');
+  const [activeNav, setActiveNav] = useState<CrmNavId>('myday');
   const [showFilters, setShowFilters] = useState(false);
   const [showManualRequest, setShowManualRequest] = useState(false);
   const [manualRequest, setManualRequest] = useState<Record<string, string>>(() => emptyManualRequest());
@@ -2202,6 +1752,14 @@ export function CrmPage() {
   const [activeTripDesignEditor, setActiveTripDesignEditor] = useState<TripDesignEditor>('stop');
   const [communicationDraft, setCommunicationDraft] = useState<CommunicationDraft>(() => emptyCommunicationDraft());
   const styles = themeStyles[theme];
+  const canSendQuotes = userHasCapability(crmSession?.user, 'quotes.send');
+  const canAdvanceWorkflow = userHasCapability(crmSession?.user, 'workflow.advance');
+  const canCreatePayments = userHasCapability(crmSession?.user, 'payments.create');
+  const canVerifyPayments = userHasCapability(crmSession?.user, 'payments.verify');
+  const canExportReports = userHasCapability(crmSession?.user, 'reports.export');
+  const canAdminUsers = userHasCapability(crmSession?.user, 'users.admin');
+  const canViewFinancials = userHasCapability(crmSession?.user, 'financials.view');
+  const visibleNavItems = navItems.filter((item) => item.id !== 'settings' || canAdminUsers);
   const quoteLineEditsRef = useRef<Record<string, QuoteLinePatch>>({});
   const quoteLineSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -2302,7 +1860,7 @@ export function CrmPage() {
             : lead.status === statusFilter);
       const priority = fallbackPriority(lead);
       const matchesPriority = priorityFilter === 'all' || (priorityFilter === 'attention' ? priority === 'high' || priority === 'urgent' : priority === priorityFilter);
-      const matchesNav = activeNav !== 'calendar' || Boolean(lead.dates);
+      const matchesNav = activeNav !== 'calendar' || leadHasTravelDates(lead);
       const matchesQuery =
         !needle ||
         [
@@ -2489,10 +2047,13 @@ export function CrmPage() {
     : selectedProcess?.nextAction || '';
   const selectedDetailTabs = useMemo(() => {
     if (!selectedLead) return [];
-    if (activeNav === 'leisureStudio') return leisureWorkbenchTabs.map((tab) => tab.id);
-    if (activeNav === 'corporateDesk') return corporateWorkbenchTabs.map((tab) => tab.id);
-    return detailTabsForLead(selectedLead);
-  }, [activeNav, selectedLead]);
+    const tabs = activeNav === 'leisureStudio'
+      ? leisureWorkbenchTabs.map((tab) => tab.id)
+      : activeNav === 'corporateDesk'
+        ? corporateWorkbenchTabs.map((tab) => tab.id)
+        : detailTabsForLead(selectedLead);
+    return canViewFinancials ? tabs : tabs.filter((tab) => tab !== 'finance' && tab !== 'costing');
+  }, [activeNav, canViewFinancials, selectedLead]);
   const selectedTasks = selectedLead ? leadTasks(selectedLead) : [];
   const selectedBriefing = selectedLead ? briefingReadiness(selectedLead) : null;
   const selectedCorporateBriefReady = selectedLead?.serviceKey === 'corporate' ? Boolean(selectedBriefing?.canApprove) : true;
@@ -2646,8 +2207,8 @@ export function CrmPage() {
   const corporateFinanceCount = corporateLeads.filter((lead) => lead.status === 'won').length;
   const corporateFulfilmentCount = corporateLeads.filter((lead) => lead.status === 'execution' || lead.status === 'completed').length;
   const urgentNewCount = leads.filter((lead) => lead.status === 'new' && (fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high')).length;
-  const taskCount = workflowReminders.length || leads.filter((lead) => fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high').length;
-  const calendarCount = leads.filter((lead) => Boolean(lead.dates) && lead.status !== 'lost' && lead.status !== 'completed').length;
+  const taskCount = taskQueueCount(leads, workflowReminders);
+  const calendarCount = calendarRequestCount(leads);
   const clientCount = clients.length;
   const activeUserCount = crmUsers.filter((user) => user.isActive).length;
   const managerAdminCount = crmUsers.filter((user) => user.role === 'admin' || user.role === 'manager').length;
@@ -2668,14 +2229,15 @@ export function CrmPage() {
     settings: crmUsers.length,
   };
   const navCopy: Record<CrmNavId, { title: string; subtitle: string }> = {
+    myday: { title: 'My Day', subtitle: 'What needs attention right now: waiting clients, expiring holds, pending approvals, and tasks due' },
     command: { title: 'Command Center', subtitle: 'Incoming requests from website forms and phone intake' },
     leisureStudio: { title: 'Leisure Studio', subtitle: 'Classic and luxury trip workspaces for proposal, payment, itinerary, and travel-pack delivery' },
     corporateDesk: { title: 'Corporate Desk', subtitle: 'Corporate request workspace for travelers, approvals, finance, documents, and fulfilment' },
     corporateAccounts: { title: 'Corporate Accounts', subtitle: 'Create company accounts and CTM users before corporate travel requests start flowing' },
-    tasks: { title: 'Priority Tasks', subtitle: 'Backend workflow reminders and high-attention requests that need action from the team' },
-    calendar: { title: 'Travel Calendar', subtitle: 'Requests with travel dates, useful for upcoming movement planning' },
+    tasks: tasksSurfaceMeta,
+    calendar: calendarSurfaceMeta,
     clients: { title: 'Clients', subtitle: 'Client and company requests captured in the CRM pipeline' },
-    reports: { title: 'Reports', subtitle: 'Filtered CRM data ready for export and review' },
+    reports: reportsSurfaceMeta,
     settings: { title: 'Settings', subtitle: 'CRM access, user roles, and operating preferences' },
   };
   const requestCentricNav = activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'corporateAccounts' && activeNav !== 'command';
@@ -3337,6 +2899,13 @@ export function CrmPage() {
     setDeskView('all');
     setStatusFilter('all');
     setShowFilters(false);
+  }
+
+  function openLeadWorkspace(leadId: string) {
+    const lead = leads.find((item) => String(item.id) === String(leadId));
+    if (!lead) return;
+    activateNav(isCorporateLead(lead) ? 'corporateDesk' : 'leisureStudio');
+    setSelectedLeadId(lead.id);
   }
 
   function showPriorityQueue() {
@@ -4438,11 +4007,11 @@ export function CrmPage() {
           <p className="crm-sidebar-caption">Your workspace</p>
           <label className="crm-mobile-nav md:hidden">Workspace
             <select aria-label="CRM navigation" value={activeNav} onChange={event => activateNav(event.target.value as CrmNavId)}>
-              {navItems.map(item => <option key={item.id} value={item.id}>{item.label}{navCounts[item.id] ? ` (${navCounts[item.id]})` : ''}</option>)}
+              {visibleNavItems.map(item => <option key={item.id} value={item.id}>{item.label}{navCounts[item.id] ? ` (${navCounts[item.id]})` : ''}</option>)}
             </select>
           </label>
           <nav aria-label="CRM navigation" className="hidden gap-2 overflow-x-auto md:flex xl:grid">
-            {navItems.map(({ id, label, Icon }) => {
+            {visibleNavItems.map(({ id, label, Icon }) => {
               const active = activeNav === id;
               const count = navCounts[id];
               return (
@@ -4565,6 +4134,20 @@ export function CrmPage() {
             </div>
           </header>
 
+          {activeNav === 'myday' || activeNav === 'tasks' ? (
+            <div className="block">
+              <div className="min-w-0">
+                <div className="p-5">
+                  {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
+                  {activeNav === 'myday' ? (
+                    <MyDay session={crmSession} styles={styles} onOpenLead={openLeadWorkspace} />
+                  ) : (
+                    <TasksQueue session={crmSession} assignableUsers={crmUsers} styles={styles} onOpenLead={openLeadWorkspace} />
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className={activeNav === 'corporateAccounts' || activeNav === 'corporateDesk' ? 'block' : activeNav === 'leisureStudio' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid 2xl:grid-cols-[minmax(0,1fr)_380px]'}>
             <div className={`min-w-0 ${activeNav === 'corporateDesk' && selectedLead ? 'hidden' : activeNav === 'corporateDesk' ? '' : `border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}`}>
           <div className="p-5">
@@ -4613,27 +4196,7 @@ export function CrmPage() {
             ) : null}
 
             {activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'corporateAccounts' && activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' && selectedLead ? (
-              <div className={`mt-5 rounded-xl border p-4 ${styles.panel}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Status report</div>
-                    <div className="mt-2 text-base font-semibold">{selectedLead.name}</div>
-                    <div className={`mt-1 text-sm ${styles.muted}`}>{leadSegment(selectedLead)} · {selectedLead.destination || 'Destination pending'}</div>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
-                    {leadLifecycleLabel(selectedLead)}
-                  </span>
-                </div>
-                <div className="mt-4 grid gap-3">
-                  {selectedStatusCards.map((card) => (
-                    <div key={card.label} className={`rounded-lg border p-3 ${styles.panelSoft}`}>
-                      <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>{card.label}</div>
-                      <div className="mt-2 text-sm font-semibold">{card.value}</div>
-                      {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <RequestStatusReport lead={selectedLead} statusCards={selectedStatusCards} styles={styles} />
             ) : null}
 
             {activeNav !== 'settings' && activeNav !== 'corporateAccounts' && activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
@@ -4794,7 +4357,9 @@ export function CrmPage() {
                   <button
                     type="button"
                     onClick={() => (activeNav === 'clients' ? exportClientsCsv(filteredClients) : exportCsv(filteredLeads))}
-                    className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
+                    disabled={!canExportReports}
+                    title={canExportReports ? 'Export the filtered records as CSV' : 'Your role cannot export reports'}
+                    className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45 ${styles.buttonGhost}`}
                   >
                     <Download className="h-4 w-4" />
                     CSV
@@ -5217,53 +4782,16 @@ export function CrmPage() {
                                     </div>
                                   </button>
                                 ) : (
-                                <button
+                                <RequestQueueCard
                                   key={lead.id}
-                                  type="button"
-                                  onClick={() => {
+                                  lead={lead}
+                                  isSelected={isSelected}
+                                  styles={styles}
+                                  onSelect={() => {
                                     setSelectedLeadId(lead.id);
                                     setDetailTab('overview');
                                   }}
-                                  className={`rounded-xl border p-4 text-left transition ${isSelected ? styles.rowActive : styles.row}`}
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <div className="flex min-w-0 items-center gap-3">
-                                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-sm font-semibold text-white">
-                                          {initials(lead.name)}
-                                        </span>
-                                        <div className="min-w-0">
-                                          <div className="truncate text-sm font-semibold">{lead.name}</div>
-                                          <div className={`mt-1 truncate text-xs ${styles.muted}`}>
-                                            {leadSegment(lead)} · {lead.destination || 'Destination pending'}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
-                                      {typeLabels[lead.serviceKey]}
-                                    </span>
-                                  </div>
-                                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                                    <div>
-                                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Travel dates</div>
-                                      <div className="mt-1 text-sm font-medium">{lead.dates || 'Dates pending'}</div>
-                                      <div className={`mt-1 text-xs ${styles.muted}`}>{lead.travelers || 'Travelers pending'}</div>
-                                    </div>
-                                    <div>
-                                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Budget</div>
-                                      <div className="mt-1 text-sm font-medium">{lead.budget || 'Budget pending'}</div>
-                                      <div className={`mt-1 text-xs ${styles.muted}`}>Received {formatDate(lead.createdAt)}</div>
-                                    </div>
-                                  </div>
-                                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.priority[priority]}`}>
-                                      <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${styles.attention[attentionLevel(lead)]}`} />
-                                      {priorityLabels[priority]}
-                                    </span>
-                                    <span className={`text-xs ${styles.muted}`}>Blocker: {leadPrimaryBlocker(lead)}</span>
-                                  </div>
-                                </button>
+                                />
                                 )
                               );
                             })}
@@ -5743,7 +5271,25 @@ export function CrmPage() {
                               <div className="mt-3 grid gap-2">
                                 {selectedWorkflowState.blockers.map((blocker) => (
                                   <div key={blocker.key} className="rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs text-red-100">
-                                    <span className="font-semibold">{blocker.label}:</span> {blocker.detail}
+                                    <span className="font-semibold">Blocker — {blocker.label}:</span> {blocker.detail}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                            {selectedWorkflowState?.checklist.some((item) => !item.ready && item.severity === 'missing_info') ? (
+                              <div className="mt-3 grid gap-2">
+                                {selectedWorkflowState.checklist.filter((item) => !item.ready && item.severity === 'missing_info').map((item) => (
+                                  <div key={item.key} className="rounded-lg border border-amber-300/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                                    <span className="font-semibold">Missing info — {item.label}:</span> {item.detail}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                            {selectedWorkflowState?.checklist.some((item) => !item.ready && item.severity === 'advisory') ? (
+                              <div className="mt-3 grid gap-2">
+                                {selectedWorkflowState.checklist.filter((item) => !item.ready && item.severity === 'advisory').map((item) => (
+                                  <div key={item.key} className="rounded-lg border border-sky-300/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+                                    <span className="font-semibold">Suggestion — {item.label}:</span> {item.detail}
                                   </div>
                                 ))}
                               </div>
@@ -5751,7 +5297,8 @@ export function CrmPage() {
                             <button
                               type="button"
                               onClick={() => advanceLeadLifecycle(selectedLead)}
-                              disabled={!canAdvance}
+                              disabled={!canAdvance || !canAdvanceWorkflow}
+                              title={canAdvanceWorkflow ? undefined : 'Your role cannot advance the workflow'}
                               className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               <CheckSquare className="h-4 w-4" />
@@ -6175,7 +5722,8 @@ export function CrmPage() {
                           <button
                             type="button"
                             onClick={() => advanceLeadLifecycle(selectedLead)}
-                            disabled={!nextStage}
+                            disabled={!nextStage || !canAdvanceWorkflow}
+                            title={canAdvanceWorkflow ? undefined : 'Your role cannot advance the workflow'}
                             className="mt-4 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                           >
                             <CheckSquare className="h-4 w-4" />
@@ -7143,7 +6691,7 @@ export function CrmPage() {
                                     <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Payment records</div>
                                     <div className={`mt-1 text-sm ${styles.soft}`}>{selectedPaymentRecords.length ? `${selectedPaymentRecords.length} persisted checkpoint(s)` : 'No payment record yet'}</div>
                                   </div>
-                                  <button type="button" onClick={createPaymentCheckpoint} className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>
+                                  <button type="button" onClick={createPaymentCheckpoint} disabled={!canCreatePayments} title={canCreatePayments ? undefined : 'Your role cannot create payment records'} className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs disabled:cursor-not-allowed disabled:opacity-45 ${styles.buttonGhost}`}>
                                     <Plus className="h-4 w-4" />
                                     Add checkpoint
                                   </button>
@@ -7158,7 +6706,7 @@ export function CrmPage() {
                                         </div>
                                         <div className={styles.muted}>{record.proofReference || 'Proof pending'}</div>
                                         {record.status !== 'paid' ? (
-                                          <button type="button" onClick={() => markPaymentRecordPaid(record)} className="h-8 rounded-lg bg-emerald-600 px-3 font-medium text-white">
+                                          <button type="button" onClick={() => markPaymentRecordPaid(record)} disabled={!canVerifyPayments} title={canVerifyPayments ? undefined : 'Your role cannot verify payments'} className="h-8 rounded-lg bg-emerald-600 px-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-45">
                                             Mark paid
                                           </button>
                                         ) : (
@@ -7554,7 +7102,8 @@ export function CrmPage() {
                   <button
                     type="button"
                     onClick={() => advanceLeadLifecycle(selectedLead)}
-                    disabled={!nextLifecycleStage(selectedLead)}
+                    disabled={!nextLifecycleStage(selectedLead) || !canAdvanceWorkflow}
+                    title={canAdvanceWorkflow ? undefined : 'Your role cannot advance the workflow'}
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <Phone className="h-4 w-4" />
@@ -8011,7 +7560,7 @@ export function CrmPage() {
                               <button type="button" disabled={isSavingCorporateOutput || !selectedCorporateBriefReady} onClick={() => saveCorporateQuoteOutput('draft')} className={`h-9 rounded-lg border px-3 text-xs font-medium ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-50`}>
                                 Save draft
                               </button>
-                              <button type="button" disabled={isSavingCorporateOutput || !selectedCorporateBriefReady} onClick={() => saveCorporateQuoteOutput('sent')} className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                              <button type="button" disabled={isSavingCorporateOutput || !selectedCorporateBriefReady || !canSendQuotes} title={canSendQuotes ? undefined : 'Your role cannot send quotes'} onClick={() => saveCorporateQuoteOutput('sent')} className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
                                 Send to CTM
                               </button>
                             </div>
@@ -8251,6 +7800,7 @@ export function CrmPage() {
         </aside>
         ) : null}
           </div>
+          )}
         </section>
       </div>
       {showManualRequest ? (

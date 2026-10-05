@@ -45,6 +45,7 @@ from .serializers import (
     briefing_approval_gate,
     can_access_ctm,
     can_approve_ctm_stage,
+    can_decide_trip_approval,
     can_manage_company_users,
     can_manage_company_collaboration,
     can_manage_trip_operations,
@@ -136,10 +137,11 @@ def sync_trip_approval_state(trip: TripRequest):
     trip.save(update_fields=["status", "approval_stage", "internal_notes", "updated_at"])
 
 
-def get_active_company_membership(request) -> CompanyUser | None:
-    if not get_request_company_code(request):
+def get_request_company(request) -> CompanyAccount | None:
+    company_code = get_request_company_code(request)
+    if not company_code:
         return None
-    return get_ctm_membership_for_request(request)
+    return CompanyAccount.objects.filter(account_code__iexact=company_code, status=CompanyAccount.Status.ACTIVE).first()
 
 
 class HasCtmAccess(permissions.BasePermission):
@@ -147,6 +149,8 @@ class HasCtmAccess(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated or not request.user.is_active:
             return False
         if get_request_company_code(request):
+            if can_manage_trip_operations(request.user):
+                return get_request_company(request) is not None
             return get_ctm_membership_for_request(request) is not None
         return bool(request.user and request.user.is_authenticated and (can_access_ctm(request.user) or can_manage_trip_operations(request.user)))
 
@@ -305,9 +309,9 @@ class CtmTripScopedView(APIView):
 
     def get_trip(self, request, reference_code: str) -> TripRequest:
         queryset = ctm_trip_queryset()
-        membership = get_active_company_membership(request)
-        if membership is not None:
-            queryset = queryset.filter(company=membership.company)
+        company = get_request_company(request)
+        if company is not None:
+            queryset = queryset.filter(company=company)
         elif not can_manage_trip_operations(request.user):
             membership = get_ctm_membership_for_request(request)
             queryset = queryset.filter(company=membership.company) if membership else TripRequest.objects.none()
@@ -699,9 +703,9 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         return CorporateTripRequestSerializer
 
     def get_queryset(self):
-        membership = get_active_company_membership(self.request)
-        if membership is not None:
-            queryset = ctm_trip_queryset().filter(company=membership.company)
+        company = get_request_company(self.request)
+        if company is not None:
+            queryset = ctm_trip_queryset().filter(company=company)
         elif can_manage_trip_operations(self.request.user):
             queryset = ctm_trip_queryset()
         else:
@@ -794,6 +798,8 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         approval = trip.approvals.filter(approval_type=approval_type, status=TripApproval.Status.PENDING).first()
         if approval is None:
             return Response({"detail": "No pending approval was found for this stage."}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_decide_trip_approval(membership, approval):
+            return Response({"detail": "This approval is assigned to a different approver."}, status=status.HTTP_403_FORBIDDEN)
         if approval_type == TripApproval.ApprovalType.BRIEFING:
             gate = briefing_approval_gate(trip)
             if not gate["ready"]:
@@ -831,6 +837,8 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         approval = trip.approvals.filter(approval_type=approval_type, status=TripApproval.Status.PENDING).first()
         if approval is None:
             return Response({"detail": "No pending approval was found for this stage."}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_decide_trip_approval(membership, approval):
+            return Response({"detail": "This approval is assigned to a different approver."}, status=status.HTTP_403_FORBIDDEN)
 
         if approval_type == TripApproval.ApprovalType.BRIEFING:
             approval.status = TripApproval.Status.RETURNED

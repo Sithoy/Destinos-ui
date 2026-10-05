@@ -45,11 +45,11 @@ export function CorporateRequestsPage({
           </div>
           <div className={`rounded-xl border px-3 py-2.5 ${styles.surface}`}>
             <div className={styles.muted}>Pending approvals</div>
-            <div className="mt-1 text-base font-semibold text-[#d9b46f]">{pendingCount}</div>
+            <div className="mt-1 text-base font-semibold crm-accent-text">{pendingCount}</div>
           </div>
           <div className={`rounded-xl border px-3 py-2.5 ${styles.surface}`}>
             <div className={styles.muted}>Doc alerts</div>
-            <div className="mt-1 text-base font-semibold text-amber-300">{documentCount}</div>
+            <div className="mt-1 text-base font-semibold ctm-tone-amber">{documentCount}</div>
           </div>
         </div>
       </div>
@@ -61,7 +61,7 @@ export function CorporateRequestsPage({
             onClick={() => onFilterChange(item.id)}
             className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
               activeFilter === item.id
-                ? 'border-[#d9b46f]/35 bg-[#d9b46f]/10 text-[#d9b46f]'
+                ? 'border-[#fe8500]/35 bg-[#fe8500]/10 crm-accent-text'
                 : styles.buttonGhost
             }`}
           >

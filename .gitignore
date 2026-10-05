@@ -16,6 +16,7 @@ dist-ssr
 !.env.example
 backend/.env
 backend/db.sqlite3
+backend/db.sqlite3.bak
 backend/staticfiles
 __pycache__/
 *.py[cod]

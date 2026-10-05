@@ -32,8 +32,8 @@ export function TripRequestRow({
       className={`grid w-full grid-cols-[1fr_auto] gap-3 rounded-xl border p-3.5 text-left transition ${
         active
           ? theme === 'dark'
-            ? 'border-[#d9b46f]/40 bg-[#d9b46f]/10'
-            : 'border-[#d9b46f]/40 bg-[#fff7df]'
+            ? 'border-[#fe8500]/40 bg-[#fe8500]/10'
+            : 'border-[#fe8500]/40 bg-[#fff7df]'
           : styles.surface
       }`}
     >

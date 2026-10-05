@@ -54,7 +54,7 @@ export function CorporateApprovalsPage({
             onClick={() => onFilterChange(item.id)}
             className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
               activeFilter === item.id
-                ? 'border-[#d9b46f]/35 bg-[#d9b46f]/10 text-[#d9b46f]'
+                ? 'border-[#fe8500]/35 bg-[#fe8500]/10 crm-accent-text'
                 : styles.buttonGhost
             }`}
           >
@@ -80,7 +80,7 @@ export function CorporateApprovalsPage({
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <button type="button" onClick={() => onOpenRequest(trip.id)} className="font-semibold hover:text-[#d9b46f]">
+                      <button type="button" onClick={() => onOpenRequest(trip.id)} className="font-semibold ctm-accent-link">
                         {trip.id}
                       </button>
                       <TripStatusBadge status={trip.status} theme={theme} />
@@ -105,7 +105,7 @@ export function CorporateApprovalsPage({
                             <div className="font-medium">{approval.stage}</div>
                             <div className={`mt-1 text-sm ${styles.muted}`}>{approval.approver}</div>
                           </div>
-                          <span className={`rounded-full px-2.5 py-1 text-xs ${theme === 'dark' ? 'bg-sky-500/12 text-sky-200' : 'bg-sky-50 text-sky-800'}`}>Pending</span>
+                          <span className={`rounded-full px-2.5 py-1 text-xs ${theme === 'dark' ? 'bg-sky-500/12 ctm-tone-sky' : 'bg-sky-50 text-sky-800'}`}>Pending</span>
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
                           {approval.canApprove === false ? (
@@ -123,7 +123,7 @@ export function CorporateApprovalsPage({
                               <button
                                 type="button"
                                 onClick={() => onReject(trip.id, approval.stage)}
-                                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold ${theme === 'dark' ? 'border-rose-300/20 bg-rose-500/10 text-rose-100' : 'border-rose-200 bg-rose-50 text-rose-700'}`}
+                                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold ${theme === 'dark' ? 'border-rose-300/20 bg-rose-500/10 ctm-tone-rose' : 'border-rose-200 bg-rose-50 text-rose-700'}`}
                               >
                                 <X className="h-4 w-4" />
                                 {approval.stage === 'Briefing' ? 'Request changes' : 'Reject'}

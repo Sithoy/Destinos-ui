@@ -42,25 +42,25 @@ function labelize(value: string) {
 
 function statusTone(status: string, theme: CorporatePortalTheme) {
   if (['verified', 'issued', 'done', 'confirmed', 'ticketed', 'completed', 'approved', 'paid'].includes(status)) {
-    return 'bg-emerald-500/12 text-emerald-200';
+    return 'bg-emerald-500/12 ctm-tone-emerald';
   }
   if (['missing', 'blocked', 'cancelled', 'rejected', 'overdue'].includes(status)) {
-    return 'bg-rose-500/12 text-rose-200';
+    return 'bg-rose-500/12 ctm-tone-rose';
   }
   if (['requested', 'in_progress', 'sent', 'partially_paid'].includes(status)) {
-    return 'bg-amber-500/12 text-amber-100';
+    return 'bg-amber-500/12 ctm-tone-amber';
   }
-  return theme === 'dark' ? 'bg-sky-500/12 text-sky-200' : 'bg-sky-50 text-sky-800';
+  return theme === 'dark' ? 'bg-sky-500/12 ctm-tone-sky' : 'bg-sky-50 text-sky-800';
 }
 
 function RequiredMark() {
-  return <span className="text-[#d9b46f]">*</span>;
+  return <span className="crm-accent-text">*</span>;
 }
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <div className="mt-2 flex items-start gap-1.5 text-xs text-rose-200">
+    <div className="mt-2 flex items-start gap-1.5 text-xs ctm-tone-rose">
       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{message}</span>
     </div>
@@ -83,17 +83,17 @@ function formatDraftDateTime(value?: string | null) {
 }
 
 function stageClass(state: ProcessingStageState, theme: CorporatePortalTheme) {
-  if (state === 'done') return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200';
-  if (state === 'active') return 'border-sky-400/35 bg-sky-500/10 text-sky-200';
-  if (state === 'blocked') return 'border-rose-400/35 bg-rose-500/10 text-rose-100';
+  if (state === 'done') return 'border-emerald-400/30 bg-emerald-500/10 ctm-tone-emerald';
+  if (state === 'active') return 'border-sky-400/35 bg-sky-500/10 ctm-tone-sky';
+  if (state === 'blocked') return 'border-rose-400/35 bg-rose-500/10 ctm-tone-rose';
   return theme === 'dark' ? 'border-white/10 bg-white/[0.03] text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500';
 }
 
 function stageDotClass(state: ProcessingStageState, selected: boolean, theme: CorporatePortalTheme) {
-  const selectedRing = selected ? 'ring-2 ring-[#d9b46f]/70 ring-offset-2 ring-offset-transparent' : '';
-  if (state === 'done') return `border-emerald-400/45 bg-emerald-500/15 text-emerald-200 ${selectedRing}`;
-  if (state === 'active') return `border-sky-400/45 bg-sky-500/15 text-sky-200 ${selectedRing}`;
-  if (state === 'blocked') return `border-rose-400/45 bg-rose-500/15 text-rose-100 ${selectedRing}`;
+  const selectedRing = selected ? 'ring-2 ring-[#fe8500]/70 ring-offset-2 ring-offset-transparent' : '';
+  if (state === 'done') return `border-emerald-400/45 bg-emerald-500/15 ctm-tone-emerald ${selectedRing}`;
+  if (state === 'active') return `border-sky-400/45 bg-sky-500/15 ctm-tone-sky ${selectedRing}`;
+  if (state === 'blocked') return `border-rose-400/45 bg-rose-500/15 ctm-tone-rose ${selectedRing}`;
   return `${theme === 'dark' ? 'border-white/10 bg-white/[0.03] text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'} ${selectedRing}`;
 }
 
@@ -542,7 +542,7 @@ export function CorporateRequestDetailPage({
               <span className={`grid h-9 w-9 place-items-center rounded-full border transition group-hover:scale-105 ${stageDotClass(stage.state, selected, theme)}`}>
                 <Icon className="h-4 w-4" />
               </span>
-              <span className={`max-w-full truncate text-[10px] font-medium ${selected ? 'text-[#d9b46f]' : styles.muted}`}>{stage.label}</span>
+              <span className={`max-w-full truncate text-[10px] font-medium ${selected ? 'crm-accent-text' : styles.muted}`}>{stage.label}</span>
             </button>
           );
         })}
@@ -557,7 +557,7 @@ export function CorporateRequestDetailPage({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="mb-2 flex items-center gap-2">
-                <span className="text-sm font-medium text-[#d9b46f]">{trip.id}</span>
+                <span className="text-sm font-medium crm-accent-text">{trip.id}</span>
                 <TripStatusBadge status={trip.status} theme={theme} />
               </div>
               <h2 className="text-xl font-semibold">{trip.route}</h2>
@@ -600,7 +600,7 @@ export function CorporateRequestDetailPage({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="flex items-center gap-2 text-base font-semibold">
-                  <CircleDot className="h-4 w-4 text-[#d9b46f]" />
+                  <CircleDot className="h-4 w-4 crm-accent-text" />
                   Corporate workflow visibility
                 </div>
                 <p className={`mt-1 text-sm ${styles.muted}`}>Same lifecycle used by CRM and CTM, calculated from the linked CTM request.</p>
@@ -712,7 +712,7 @@ export function CorporateRequestDetailPage({
                     <span className={theme === 'dark' ? 'rounded-full bg-white/8 px-2.5 py-1 text-[11px] text-slate-300' : 'rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600'}>Locked</span>
                   </div>
                   <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${styles.surface}`}>
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 ctm-tone-amber" />
                     <span className={styles.muted}>{approval.blocker || 'Complete the previous workflow gate before this approval opens.'}</span>
                   </div>
                 </div>
@@ -744,11 +744,11 @@ export function CorporateRequestDetailPage({
                             ? 'bg-white/8 text-slate-300'
                             : 'bg-slate-100 text-slate-600'
                           : approval.status === 'Approved'
-                          ? 'bg-emerald-500/12 text-emerald-200'
+                          ? 'bg-emerald-500/12 ctm-tone-emerald'
                           : approval.status === 'Rejected'
-                            ? 'bg-rose-500/12 text-rose-200'
+                            ? 'bg-rose-500/12 ctm-tone-rose'
                             : theme === 'dark'
-                              ? 'bg-sky-500/12 text-sky-200'
+                              ? 'bg-sky-500/12 ctm-tone-sky'
                               : 'bg-sky-50 text-sky-800'
                       }`}
                     >
@@ -781,7 +781,7 @@ export function CorporateRequestDetailPage({
                     setWorkbenchError('');
                   }}
                   className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
-                    activeTab === id ? 'border-[#d9b46f]/35 bg-[#d9b46f]/10 text-[#d9b46f]' : styles.buttonGhost
+                    activeTab === id ? 'border-[#fe8500]/35 bg-[#fe8500]/10 crm-accent-text' : styles.buttonGhost
                   }`}
                 >
                   <Icon className="h-4 w-4" />
@@ -793,7 +793,7 @@ export function CorporateRequestDetailPage({
           </div>
 
           {workbenchError ? (
-            <div className="mx-4 mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <div className="mx-4 mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm ctm-tone-rose">
               {workbenchError}
             </div>
           ) : null}
@@ -806,7 +806,7 @@ export function CorporateRequestDetailPage({
                     <div className={`rounded-xl border p-4 ${styles.surface}`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">DPM itinerary draft</div>
+                          <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">DPM itinerary draft</div>
                           <h3 className="mt-2 text-lg font-semibold">{itineraryDraft.title}</h3>
                           <p className={`mt-1 text-sm ${styles.muted}`}>
                             {formatDraftDate(itineraryDraft.startDate)} - {formatDraftDate(itineraryDraft.endDate)}
@@ -830,7 +830,7 @@ export function CorporateRequestDetailPage({
                         const firstStay = stop.accommodations[0];
                         return (
                           <div key={stop.id} className="grid grid-cols-[52px_minmax(150px,1fr)_110px_minmax(180px,1.1fr)] gap-3 border-b border-inherit px-4 py-3 text-sm last:border-b-0">
-                            <div className="font-semibold text-[#d9b46f]">{stop.sequenceNumber}</div>
+                            <div className="font-semibold crm-accent-text">{stop.sequenceNumber}</div>
                             <div>
                               <div className="font-semibold">{stop.city}{stop.country ? `, ${stop.country}` : ''}</div>
                               <div className={`mt-1 text-xs ${styles.muted}`}>{formatDraftDate(stop.arrivalDate)} - {formatDraftDate(stop.departureDate)}</div>
@@ -911,7 +911,7 @@ export function CorporateRequestDetailPage({
               ) : (
                 <div className={`rounded-xl border p-5 text-sm xl:col-span-2 ${styles.surface}`}>
                   <div className="flex items-start gap-3">
-                    <PlaneTakeoff className="mt-0.5 h-5 w-5 text-[#d9b46f]" />
+                    <PlaneTakeoff className="mt-0.5 h-5 w-5 crm-accent-text" />
                     <div>
                       <div className="font-semibold">Itinerary draft not published yet</div>
                       <p className={`mt-2 leading-6 ${styles.muted}`}>
@@ -928,7 +928,7 @@ export function CorporateRequestDetailPage({
             <div className="grid gap-4 p-4 xl:grid-cols-[0.95fr_1.05fr]">
               <form onSubmit={submitDocument} className={`rounded-xl border p-4 ${styles.surface}`}>
                 <div className="mb-3 flex items-center gap-2 font-semibold">
-                  <Plus className="h-4 w-4 text-[#d9b46f]" />
+                  <Plus className="h-4 w-4 crm-accent-text" />
                   Add document record
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
@@ -1006,7 +1006,7 @@ export function CorporateRequestDetailPage({
                     </div>
                     {document.notes ? <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{document.notes}</p> : null}
                     {document.fileUrl ? (
-                      <a href={document.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex text-sm font-semibold text-[#d9b46f]">
+                      <a href={document.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex text-sm font-semibold crm-accent-text">
                         Open document
                       </a>
                     ) : null}
@@ -1037,7 +1037,7 @@ export function CorporateRequestDetailPage({
               </div>
               <form onSubmit={submitMessage} className={`rounded-xl border p-4 ${styles.surface}`}>
                 <div className="mb-3 flex items-center gap-2 font-semibold">
-                  <MessageSquare className="h-4 w-4 text-[#d9b46f]" />
+                  <MessageSquare className="h-4 w-4 crm-accent-text" />
                   Send shared message
                 </div>
                 <textarea

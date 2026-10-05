@@ -25,13 +25,13 @@ function todayLocalIso() {
 }
 
 function RequiredMark() {
-  return <span className="text-[#d9b46f]">*</span>;
+  return <span className="crm-accent-text">*</span>;
 }
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <div className="mt-2 flex items-start gap-1.5 text-xs text-rose-200">
+    <div className="mt-2 flex items-start gap-1.5 text-xs ctm-tone-rose">
       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{message}</span>
     </div>
@@ -249,10 +249,10 @@ export function CorporateTravelersPage({
                         <div className={`mt-1 text-xs ${styles.muted}`}>{traveler.department} · {traveler.email || traveler.phone || 'Contact pending'}</div>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <span className={`rounded-full px-2.5 py-1 text-[11px] ring-1 ${passportAlert ? 'border-red-400/25 bg-red-500/12 text-red-200 ring-red-400/20' : 'border-emerald-400/25 bg-emerald-500/12 text-emerald-200 ring-emerald-400/20'}`}>
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] ring-1 ${passportAlert ? 'border-red-400/25 bg-red-500/12 ctm-tone-rose ring-red-400/20' : 'border-emerald-400/25 bg-emerald-500/12 ctm-tone-emerald ring-emerald-400/20'}`}>
                           Passport {traveler.passportStatus}
                         </span>
-                        <span className={`rounded-full px-2.5 py-1 text-[11px] ring-1 ${visaAlert ? 'border-amber-400/25 bg-amber-500/12 text-amber-100 ring-amber-400/20' : styles.buttonGhost}`}>
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] ring-1 ${visaAlert ? 'border-amber-400/25 bg-amber-500/12 ctm-tone-amber ring-amber-400/20' : styles.buttonGhost}`}>
                           Visa {traveler.visaStatus}
                         </span>
                       </div>
@@ -280,7 +280,7 @@ export function CorporateTravelersPage({
               {!isCreating && selectedTraveler ? (
                 <div className="flex items-center gap-2 text-xs">
                   <span className={`rounded-full px-2.5 py-1 ${styles.buttonGhost}`}>{selectedTraveler.department}</span>
-                  <span className={`rounded-full px-2.5 py-1 ${selectedTraveler.isActive ? 'bg-emerald-500/12 text-emerald-200' : styles.buttonGhost}`}>
+                  <span className={`rounded-full px-2.5 py-1 ${selectedTraveler.isActive ? 'bg-emerald-500/12 ctm-tone-emerald' : styles.buttonGhost}`}>
                     {selectedTraveler.isActive ? 'Active' : 'Inactive'}
                   </span>
                 </div>
@@ -361,7 +361,7 @@ export function CorporateTravelersPage({
             </label>
 
             <label className="mt-4 flex items-center gap-3 text-sm">
-              <input type="checkbox" checked={form.isActive} onChange={(event) => handleChange('isActive', event.target.checked)} className="h-4 w-4 accent-[#d9b46f]" />
+              <input type="checkbox" checked={form.isActive} onChange={(event) => handleChange('isActive', event.target.checked)} className="h-4 w-4 accent-[#fe8500]" />
               <span className={styles.soft}>Keep this traveler active for quick future selection</span>
             </label>
 
@@ -374,7 +374,7 @@ export function CorporateTravelersPage({
                   </button>
                 ) : <span className={`text-sm ${styles.muted}`}>Save once, reuse from New Trip whenever this traveler travels again.</span>}
                 {!isCreating && selectedTraveler?.isActive ? (
-                  <button type="button" onClick={handleDeactivate} disabled={isDeactivating} className="inline-flex h-10 items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 text-sm font-medium text-amber-100 disabled:cursor-not-allowed disabled:opacity-50">
+                  <button type="button" onClick={handleDeactivate} disabled={isDeactivating} className="inline-flex h-10 items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 text-sm font-medium ctm-tone-amber disabled:cursor-not-allowed disabled:opacity-50">
                     <ShieldAlert className="h-4 w-4" />
                     {isDeactivating ? 'Deactivating...' : 'Deactivate'}
                   </button>

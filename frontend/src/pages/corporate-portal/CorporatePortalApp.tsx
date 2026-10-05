@@ -1,3 +1,4 @@
+import { CrmLoginLayout } from '../../components/CrmLoginLayout';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { CorporateApprovalsPage } from './CorporateApprovalsPage';
@@ -395,55 +396,55 @@ export function CorporatePortalApp() {
 
   if (!ctmSession) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#07111d] px-4 text-white">
-        <form onSubmit={submitLogin} className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1828] p-6 shadow-2xl">
-          <h1 className="text-2xl font-semibold">CTM Sign In</h1>
-          <p className="mt-2 text-sm leading-6 text-white/60">
+      <CrmLoginLayout corporate>
+        <form onSubmit={submitLogin} className="crm-login-form">
+          <p className="crm-eyebrow mb-3">DPM CTM</p><h2>Welcome back.</h2>
+          <p className="mt-2 text-sm leading-6 text-[#66747b]">
             Use your Company ID and portal account to manage requests, approvals, and traveler readiness.
           </p>
-          <label className="mt-6 block text-sm font-medium text-white/75">
+          <label className="mt-6 block text-sm font-medium text-[#20333d]">
             Company ID
             <input
               value={loginCompanyCode}
               onChange={(event) => setLoginCompanyCode(event.target.value)}
-              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm uppercase text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              className="mt-2 h-11 w-full rounded-lg border border-[#d9dcd8] bg-white px-3 text-sm uppercase text-[#20333d] outline-none placeholder:text-[#819096] focus:border-[#fe8500]"
               placeholder="DPMCOMPANY"
               autoComplete="organization"
               required
             />
           </label>
-          <label className="mt-4 block text-sm font-medium text-white/75">
+          <label className="mt-4 block text-sm font-medium text-[#20333d]">
             Username or email
             <input
               value={loginIdentifier}
               onChange={(event) => setLoginIdentifier(event.target.value)}
-              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              className="mt-2 h-11 w-full rounded-lg border border-[#d9dcd8] bg-white px-3 text-sm text-[#20333d] outline-none placeholder:text-[#819096] focus:border-[#fe8500]"
               placeholder="travel.desk@company.com"
               autoComplete="username"
               required
             />
           </label>
-          <label className="mt-4 block text-sm font-medium text-white/75">
+          <label className="mt-4 block text-sm font-medium text-[#20333d]">
             Password
             <input
               value={loginPassword}
               onChange={(event) => setLoginPassword(event.target.value)}
-              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              className="mt-2 h-11 w-full rounded-lg border border-[#d9dcd8] bg-white px-3 text-sm text-[#20333d] outline-none placeholder:text-[#819096] focus:border-[#fe8500]"
               type="password"
               autoComplete="current-password"
               required
             />
           </label>
-          {error ? <div className="mt-4 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div> : null}
+          {error ? <div className="mt-4 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-700">{error}</div> : null}
           <button
             type="submit"
             disabled={isLoggingIn}
-            className="mt-6 h-11 w-full rounded-lg bg-[#d4af37] px-4 text-sm font-semibold text-[#241f1b] transition hover:bg-[#e0bc4e] disabled:opacity-55"
+            className="mt-6 h-11 w-full rounded-lg crm-primary px-4 text-sm font-semibold text-[#241f1b] transition  disabled:opacity-55"
           >
             {isLoggingIn ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
-      </main>
+      </CrmLoginLayout>
     );
   }
 
@@ -495,7 +496,7 @@ export function CorporatePortalApp() {
       onSignOut={signOut}
     >
       {error ? (
-        <div className={`mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm ${theme === 'dark' ? 'text-red-100' : 'text-red-700'}`}>
+        <div className={`mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm ${theme === 'dark' ? 'ctm-tone-rose' : 'text-red-700'}`}>
           {error}
         </div>
       ) : null}

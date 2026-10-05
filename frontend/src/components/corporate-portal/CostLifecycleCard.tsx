@@ -18,7 +18,7 @@ export function CostLifecycleCard({ trip, theme }: { trip: CorporateTripRequest;
       </div>
       <div className={`rounded-xl border p-3 ${styles.surface}`}>
         <div className={styles.muted}>DPM quote</div>
-        <div className="mt-1 font-semibold text-[#d9b46f]">{currency(trip.quotedCost)}</div>
+        <div className="mt-1 font-semibold crm-accent-text">{currency(trip.quotedCost)}</div>
       </div>
       <div className={`rounded-xl border p-3 ${styles.surface}`}>
         <div className={styles.muted}>Final cost</div>
