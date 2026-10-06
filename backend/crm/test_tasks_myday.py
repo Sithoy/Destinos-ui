@@ -448,3 +448,125 @@ class MyDayTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["upcomingDepartures"], [])
+
+
+class AssigneeVisibilityTests(APITestCase):
+    """Tasks assigned to the requesting user stay visible even when the
+    linked lead belongs to someone else (review finding #6)."""
+
+    def setUp(self):
+        self.consultant = make_user("consultant", "crm_consultant")
+        self.other = make_user("other", "crm_consultant")
+        self.other_lead = make_lead(owner=self.other, name="Other Traveler")
+        self.assigned_task = make_task(
+            self.other_lead,
+            title="Delegated to me",
+            due_at=timezone.now() + timedelta(hours=2),
+            assigned_to=self.consultant,
+        )
+        self.other_task = make_task(
+            self.other_lead,
+            title="Not mine",
+            due_at=timezone.now() + timedelta(hours=3),
+            assigned_to=self.other,
+        )
+        self.client.force_authenticate(self.consultant)
+
+    def test_reminder_list_includes_tasks_assigned_to_me_on_other_leads(self):
+        response = self.client.get(reverse("workflow-reminder-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = {item["id"] for item in response.data}
+        self.assertIn(str(self.assigned_task.id), ids)
+        self.assertNotIn(str(self.other_task.id), ids)
+
+    def test_my_day_includes_assigned_task_on_other_lead(self):
+        response = self.client.get(reverse("my-day"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        today_ids = {item["id"] for item in response.data["todayTasks"]}
+        overdue_ids = {item["id"] for item in response.data["overdueTasks"]}
+        self.assertIn(str(self.assigned_task.id), today_ids | overdue_ids)
+        self.assertNotIn(str(self.other_task.id), today_ids | overdue_ids)
+
+
+class ReminderGenerationHardeningTests(APITestCase):
+    def setUp(self):
+        self.consultant = make_user("consultant", "crm_consultant")
+        self.other = make_user("other", "crm_consultant")
+        self.lead = make_lead(owner=self.consultant)
+        PaymentRecord.objects.create(lead=self.lead, amount_expected=100, due_date=timezone.localdate())
+
+    def generate(self, lead):
+        from .workflow_automation import generate_workflow_reminders
+
+        return generate_workflow_reminders(lead_queryset=Lead.objects.filter(id=lead.id))
+
+    def test_in_progress_and_waiting_tasks_dedupe_regeneration(self):
+        created = self.generate(self.lead)
+        reminder = WorkflowReminder.objects.get(lead=self.lead, reminder_type=WorkflowReminder.ReminderType.PAYMENT_DUE)
+        self.assertIn(reminder, created)
+
+        for open_status in (WorkflowReminder.Status.IN_PROGRESS, WorkflowReminder.Status.WAITING):
+            reminder.status = open_status
+            reminder.save(update_fields=["status"])
+
+            self.assertEqual(self.generate(self.lead), [])
+            self.assertEqual(
+                WorkflowReminder.objects.filter(lead=self.lead, reminder_type=WorkflowReminder.ReminderType.PAYMENT_DUE).count(),
+                1,
+            )
+
+    def test_completed_task_allows_fresh_reminder(self):
+        self.generate(self.lead)
+        WorkflowReminder.objects.update(status=WorkflowReminder.Status.COMPLETED, completed_at=timezone.now())
+
+        created = self.generate(self.lead)
+
+        self.assertEqual(len(created), 1)
+
+    def test_generate_scopes_lead_id_to_visible_leads(self):
+        other_lead = make_lead(owner=self.other, lifecycle_stage=Lead.LifecycleStage.QUOTE_IN_PROGRESS, status=Lead.Status.PLANNING)
+        self.client.force_authenticate(self.consultant)
+
+        response = self.client.post(reverse("workflow-reminder-generate"), {"leadId": str(other_lead.id)}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_generate_allows_visible_lead(self):
+        blocked = make_lead(owner=self.consultant, lifecycle_stage=Lead.LifecycleStage.QUOTE_IN_PROGRESS, status=Lead.Status.PLANNING)
+        self.client.force_authenticate(self.consultant)
+
+        response = self.client.post(reverse("workflow-reminder-generate"), {"leadId": str(blocked.id)}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertGreaterEqual(response.data["created"], 1)
+
+
+class TaskApiContractTests(APITestCase):
+    """API clients cannot set origin or completedAt directly (finding #7)."""
+
+    def setUp(self):
+        self.consultant = make_user("consultant", "crm_consultant")
+        self.lead = make_lead(owner=self.consultant)
+        self.client.force_authenticate(self.consultant)
+
+    def test_api_created_task_forces_manager_origin_and_ignores_completed_at(self):
+        response = self.client.post(
+            reverse("workflow-reminder-list"),
+            {
+                "leadId": str(self.lead.id),
+                "title": "Manual task",
+                "dueAt": timezone.now().isoformat(),
+                "origin": WorkflowReminder.Origin.SYSTEM,
+                "completedAt": timezone.now().isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        task = WorkflowReminder.objects.get()
+        self.assertEqual(task.origin, WorkflowReminder.Origin.MANAGER)
+        self.assertIsNone(task.completed_at)
+        self.assertEqual(response.data["origin"], WorkflowReminder.Origin.MANAGER)
+        self.assertIsNone(response.data["completedAt"])

@@ -1414,7 +1414,7 @@ export function makeClientFromLead(lead: CrmLead): CrmClientCreateInput {
     phone: lead.whatsapp,
     preferredContact: lead.preferredContact,
     serviceLevel,
-    owner: serviceLevel === 'luxury' ? 'Nadia Cossa' : serviceLevel === 'corporate' ? 'Carlos Mavie' : 'Marta Lopes',
+    owner: '',
     notes: lead.notes,
   };
 }

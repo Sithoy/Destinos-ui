@@ -1,3 +1,4 @@
+import { opsText } from '../../locales/operations';
 import type { CorporatePortalTheme, CorporateTripStatus } from '../../types/corporatePortal';
 
 export function TripStatusBadge({ status, theme }: { status: CorporateTripStatus; theme: CorporatePortalTheme }) {
@@ -14,5 +15,5 @@ export function TripStatusBadge({ status, theme }: { status: CorporateTripStatus
               ? 'border-sky-400/20 bg-sky-500/12 ctm-tone-sky'
               : 'border-sky-200 bg-sky-50 text-sky-800';
 
-  return <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${tone}`}>{status}</span>;
+  return <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${tone}`}>{opsText(status)}</span>;
 }

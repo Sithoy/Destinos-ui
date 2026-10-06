@@ -34,7 +34,7 @@ def ensure_default_ctm_context(for_user: User | None = None) -> tuple[CompanyAcc
         company=company,
         user=user,
         defaults={
-            "role": CompanyUser.Role.COMPANY_ADMIN if user.is_superuser or user.is_staff else CompanyUser.Role.TRAVEL_COORDINATOR,
+            "role": CompanyUser.Role.EMPLOYEE if user.is_superuser or user.is_staff else CompanyUser.Role.TRAVEL_COORDINATOR,
             "department": "Operations",
             "job_title": "Travel Desk",
             "is_active": True,

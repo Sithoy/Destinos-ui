@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework import filters, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.authtoken.models import Token
-from rest_framework.exceptions import APIException, PermissionDenied
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
@@ -102,7 +102,11 @@ class LeadViewSet(viewsets.ModelViewSet):
         if priority:
             queryset = queryset.filter(priority=priority)
         if assigned_to:
-            queryset = queryset.filter(owner_id=assigned_to)
+            try:
+                owner_id = int(assigned_to)
+            except (TypeError, ValueError):
+                raise ValidationError({"assigned_to": "A numeric user id is expected."})
+            queryset = queryset.filter(owner_id=owner_id)
         if unassigned in {"true", "1", "yes"}:
             queryset = queryset.filter(owner__isnull=True)
         if search:
@@ -207,12 +211,26 @@ class QuoteViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    def perform_create(self, serializer):
+        # Any transition into the sent state requires the quotes.send
+        # capability, including creating a quote already marked as sent.
+        next_status = serializer.validated_data.get("status", Quote.Status.DRAFT)
+        next_sent_at = serializer.validated_data.get("sent_at")
+        if (next_status == Quote.Status.SENT or next_sent_at) and not can_send_quotes(self.request.user):
+            raise PermissionDenied("You do not have permission to send quotes.")
+        serializer.save()
+
     def perform_update(self, serializer):
         quote = self.get_object()
         next_status = serializer.validated_data.get("status", quote.status)
         next_sent_at = serializer.validated_data.get("sent_at", quote.sent_at)
-        sending = (next_status == Quote.Status.SENT and quote.status != Quote.Status.SENT) or (next_sent_at and not quote.sent_at)
-        if sending and not can_send_quotes(self.request.user):
+        # quotes.send is required for any transition into OR out of the sent
+        # state (status change or setting/clearing sentAt).
+        transitions_sent = (
+            (next_status == Quote.Status.SENT) != (quote.status == Quote.Status.SENT)
+            or bool(next_sent_at) != bool(quote.sent_at)
+        )
+        if transitions_sent and not can_send_quotes(self.request.user):
             raise PermissionDenied("You do not have permission to send quotes.")
         serializer.save()
 
@@ -272,13 +290,28 @@ class PaymentRecordViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         if not can_create_payments(self.request.user):
             raise PermissionDenied("You do not have permission to create payment records.")
-        serializer.save()
+        if can_verify_payments(self.request.user):
+            serializer.save()
+            return
+        # Non-verifiers may only register expectations: verification fields
+        # (status, proofReceived, amountReceived) are forced to safe defaults
+        # and must later be set by a payments.verify role.
+        serializer.save(
+            status=PaymentRecord.Status.PENDING,
+            proof_received=False,
+            amount_received=0,
+        )
 
     def perform_update(self, serializer):
         record = self.get_object()
         next_status = serializer.validated_data.get("status", record.status)
         next_proof = serializer.validated_data.get("proof_received", record.proof_received)
-        verifying = (next_status == PaymentRecord.Status.PAID and record.status != PaymentRecord.Status.PAID) or (next_proof and not record.proof_received)
+        next_amount = serializer.validated_data.get("amount_received", record.amount_received)
+        verifying = (
+            (next_status == PaymentRecord.Status.PAID and record.status != PaymentRecord.Status.PAID)
+            or (next_proof and not record.proof_received)
+            or next_amount != record.amount_received
+        )
         if verifying and not can_verify_payments(self.request.user):
             raise PermissionDenied("You do not have permission to verify payments.")
         serializer.save()
@@ -340,7 +373,16 @@ class WorkflowReminderViewSet(viewsets.ModelViewSet):
     owner_lookup = "lead__owner"
 
     def get_queryset(self):
-        queryset = scope_records_for_user(super().get_queryset(), self.request.user, self.owner_lookup)
+        queryset = super().get_queryset()
+        # Tasks assigned to the requesting user are always visible, even when
+        # the linked lead belongs to someone else; other tasks follow lead
+        # record scoping (own + unassigned leads for scoped roles).
+        if not can_view_all_records(self.request.user):
+            queryset = queryset.filter(
+                Q(assigned_to=self.request.user)
+                | Q(lead__owner=self.request.user)
+                | Q(lead__owner__isnull=True)
+            )
         lead_id = self.request.query_params.get("leadId")
         status_value = self.request.query_params.get("status")
         reminder_type = self.request.query_params.get("reminderType")
@@ -361,10 +403,10 @@ class WorkflowReminderViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        # Tasks created by a person through the API default to origin=manager;
-        # automation-generated tasks are created with origin=system.
-        origin = serializer.validated_data.get("origin") or WorkflowReminder.Origin.MANAGER
-        serializer.save(created_by=self.request.user, origin=origin)
+        # Tasks created by a person through the API always get origin=manager;
+        # the origin field is read-only on the serializer so API clients
+        # cannot impersonate system/automation tasks.
+        serializer.save(created_by=self.request.user, origin=WorkflowReminder.Origin.MANAGER)
 
     def perform_update(self, serializer):
         reminder = self.get_object()
@@ -407,14 +449,23 @@ class WorkflowReminderViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"])
     def generate(self, request):
         lead_id = request.data.get("leadId") or request.query_params.get("leadId")
-        lead_queryset = Lead.objects.filter(id=lead_id) if lead_id else None
-        created = generate_workflow_reminders(lead_queryset=lead_queryset, created_by=request.user)
         if lead_id:
+            lead_queryset = scope_records_for_user(Lead.objects.filter(id=lead_id), request.user, "owner")
+            if not lead_queryset.exists():
+                raise NotFound("Lead not found.")
             reminders = WorkflowReminder.objects.select_related("lead", "communication", "created_by").filter(
                 lead_id=lead_id,
-                status=WorkflowReminder.Status.PENDING,
+                status__in=WorkflowReminder.OPEN_STATUSES,
             )
         else:
+            lead_queryset = scope_records_for_user(
+                Lead.objects.exclude(status__in=[Lead.Status.COMPLETED, Lead.Status.LOST]),
+                request.user,
+                "owner",
+            )
+            reminders = None
+        created = generate_workflow_reminders(lead_queryset=lead_queryset, created_by=request.user)
+        if reminders is None:
             reminders = created
         serializer = self.get_serializer(reminders, many=True)
         return Response({"created": len(created), "reminders": serializer.data}, status=status.HTTP_201_CREATED)
@@ -727,14 +778,17 @@ class MyDayView(APIView):
         )
 
     def _open_tasks(self, user, view_all):
-        tasks = scope_records_for_user(
-            WorkflowReminder.objects.select_related("lead", "communication", "created_by", "assigned_to"),
-            user,
-            "lead__owner",
-        ).filter(status__in=WorkflowReminder.OPEN_STATUSES).exclude(lead__status__in=self.inactive_lead_statuses)
-        if not view_all:
-            tasks = tasks.filter(Q(assigned_to=user) | Q(assigned_to__isnull=True))
-        return tasks
+        tasks = WorkflowReminder.objects.select_related("lead", "communication", "created_by", "assigned_to").filter(
+            status__in=WorkflowReminder.OPEN_STATUSES
+        ).exclude(lead__status__in=self.inactive_lead_statuses)
+        if view_all:
+            return tasks
+        # Tasks assigned to the requesting user are visible regardless of lead
+        # ownership; unassigned tasks follow lead scoping (own + unassigned).
+        return tasks.filter(
+            Q(assigned_to=user)
+            | (Q(assigned_to__isnull=True) & (Q(lead__owner=user) | Q(lead__owner__isnull=True)))
+        )
 
     def _tasks(self, user, view_all, request, **due_filters):
         tasks = self._open_tasks(user, view_all).filter(**due_filters).order_by("due_at")[: self.section_limit]

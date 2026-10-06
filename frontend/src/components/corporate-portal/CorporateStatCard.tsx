@@ -1,3 +1,4 @@
+import { opsText } from '../../locales/operations';
 import { AlertTriangle, BadgeDollarSign, CheckCheck, Users } from 'lucide-react';
 import type { CorporatePortalStat, CorporatePortalTheme } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from '../../pages/corporate-portal/portalTheme';
@@ -35,8 +36,8 @@ export function CorporateStatCard({
         <Icon className={`h-5 w-5 ${iconTone}`} />
       </div>
       <div className="text-2xl font-semibold">{stat.value}</div>
-      <div className={`mt-1 text-sm ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>{stat.label}</div>
-      <div className={`mt-0.5 text-[11px] leading-5 ${styles.muted}`}>{stat.hint}</div>
+      <div className={`mt-1 text-sm ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>{opsText(stat.label)}</div>
+      <div className={`mt-0.5 text-[11px] leading-5 ${styles.muted}`}>{opsText(stat.hint)}</div>
     </>
   );
 

@@ -83,10 +83,12 @@ def reminder_candidates_for_lead(lead: Lead, now: datetime | None = None) -> lis
 
 
 def _create_pending_reminder(candidate: ReminderCandidate, *, created_by=None) -> tuple[WorkflowReminder, bool]:
+    # Any open status (pending, in_progress, waiting) dedupes the reminder;
+    # only completed/cancelled tasks allow a fresh one to be created.
     existing = WorkflowReminder.objects.filter(
         lead=candidate.lead,
         reminder_type=candidate.reminder_type,
-        status=WorkflowReminder.Status.PENDING,
+        status__in=WorkflowReminder.OPEN_STATUSES,
         source_stage=candidate.source_stage,
         title=candidate.title,
     ).first()

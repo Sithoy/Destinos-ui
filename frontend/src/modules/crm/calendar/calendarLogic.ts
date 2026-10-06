@@ -10,5 +10,5 @@ export function calendarRequestCount(leads: CrmLead[]) {
 
 export const calendarSurfaceMeta = {
   title: 'Travel Calendar',
-  subtitle: 'Requests with travel dates, useful for upcoming movement planning',
+  subtitle: 'Travel dates, task deadlines and scheduled follow-ups',
 };

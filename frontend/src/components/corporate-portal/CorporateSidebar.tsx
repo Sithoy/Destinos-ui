@@ -1,3 +1,4 @@
+import { opsText } from '../../locales/operations';
 import { BarChart3, CalendarDays, ClipboardCheck, ClipboardList, LayoutDashboard, PlusSquare, Users } from 'lucide-react';
 import { BrandLockup } from '../ui';
 import { classicLogo, ctmPrimaryRoute } from '../../data/travel';
@@ -42,13 +43,12 @@ export function CorporateSidebar({
         />
       </div>
 
-      <label className="crm-mobile-nav md:hidden">Workspace
-        <select value={navItems.find(({ href }) => activeHref === href || (href !== ctmPrimaryRoute && activeHref.startsWith(href)))?.href ?? ctmPrimaryRoute} onChange={(event) => onNavigate(event.target.value)}>
-          {navItems.map(({ href, label }) => <option key={href} value={href}>{label}</option>)}
+      <label className="crm-mobile-nav md:hidden">{opsText("Workspace")}<select value={navItems.find(({ href }) => activeHref === href || (href !== ctmPrimaryRoute && activeHref.startsWith(href)))?.href ?? ctmPrimaryRoute} onChange={(event) => onNavigate(event.target.value)}>
+          {navItems.map(({ href, label }) => <option key={href} value={href}>{opsText(label)}</option>)}
         </select>
       </label>
-      <div className="crm-sidebar-caption">Corporate travel</div>
-      <nav aria-label="CTM navigation" className="hidden gap-2 overflow-x-auto md:flex xl:grid">
+      <div className="crm-sidebar-caption">{opsText("Corporate travel")}</div>
+      <nav aria-label={opsText("CTM navigation")} className="hidden gap-2 overflow-x-auto md:flex xl:grid">
         {navItems.map(({ id, label, Icon, href }) => {
           const active = activeHref === href || (href !== ctmPrimaryRoute && activeHref.startsWith(href));
           return (
@@ -60,15 +60,15 @@ export function CorporateSidebar({
               className="crm-nav-item flex h-12 shrink-0 items-center gap-3 px-3 text-left font-medium transition"
             >
               <Icon className="h-4 w-4" />
-              <span>{label}</span>
+              <span>{opsText(label)}</span>
             </button>
           );
         })}
       </nav>
 
       <div className="ctm-sidebar-note mt-6 mb-6 hidden rounded-xl xl:block border p-3">
-        <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-[#a5b9c1]">Your company workspace</div>
-        <div className="text-sm font-semibold">From travel request to a confirmed journey.</div>
+        <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-[#a5b9c1]">{opsText("Your company workspace")}</div>
+        <div className="text-sm font-semibold">{opsText("From travel request to a confirmed journey.")}</div>
       </div>
 
       <a

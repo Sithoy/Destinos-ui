@@ -1,3 +1,4 @@
+import { opsText } from '../../../locales/operations';
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Bell, CalendarDays, CheckSquare, Mail, Sunrise } from 'lucide-react';
 import { CRM_EVENT, fetchCrmMyDay } from '../../../data/crm';
@@ -9,6 +10,7 @@ type MyDayProps = {
   session: CrmSession | null;
   styles: CrmSurfaceStyles;
   onOpenLead: (leadId: string) => void;
+  onOpenTasks: () => void;
 };
 
 const sectionIcons: Record<MyDaySection['key'], typeof Mail> = {
@@ -20,7 +22,7 @@ const sectionIcons: Record<MyDaySection['key'], typeof Mail> = {
   todayTasks: CheckSquare,
 };
 
-export function MyDay({ session, styles, onOpenLead }: MyDayProps) {
+export function MyDay({ session, styles, onOpenLead, onOpenTasks }: MyDayProps) {
   const [data, setData] = useState<CrmMyDayResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -47,15 +49,15 @@ export function MyDay({ session, styles, onOpenLead }: MyDayProps) {
   }, [refresh]);
 
   if (!session?.token) {
-    return <div className={`rounded-xl border p-5 text-sm ${styles.panel}`}>My Day needs the CRM backend connection.</div>;
+    return <div className={`rounded-xl border p-5 text-sm ${styles.panel}`}>{opsText("My Day needs the CRM backend connection.")}</div>;
   }
 
   if (isLoading && !data) {
-    return <div className={`rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading your day...</div>;
+    return <div className={`rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>{opsText("Loading your day...")}</div>;
   }
 
   if (error && !data) {
-    return <div className="rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>;
+    return <div className="rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-700">{opsText(error)}</div>;
   }
 
   if (!data) return null;
@@ -71,21 +73,21 @@ export function MyDay({ session, styles, onOpenLead }: MyDayProps) {
             <Sunrise className="h-4 w-4" />
           </span>
           <div>
-            <div className="text-sm font-semibold">{data.scope === 'team' ? 'Team view' : 'My work'}</div>
+            <div className="text-sm font-semibold">{data.scope === 'team' ? opsText("Your team, ready for the day") : opsText("Your day, in focus")}</div>
             <div className={`text-xs ${styles.muted}`}>
-              {myDayTotalCount(data)} item(s) need attention
-              {isLoading ? ' · refreshing…' : ''}
+              {myDayTotalCount(data)} {opsText(myDayTotalCount(data) === 1 ? 'attention signal' : 'attention signals')}{isLoading ? ` · ${opsText('Refreshing…')}` : ''}
             </div>
           </div>
         </div>
-        {error ? <div className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</div> : null}
+        <button type="button" onClick={onOpenTasks} className="crm-primary px-4 py-2 text-sm">{opsText("Open task queue")}</button>
+        {error ? <div role="alert" className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-700">{opsText(error)}</div> : null}
       </div>
 
       {visibleSections.length === 0 ? (
         <div className={`rounded-xl border p-10 text-center ${styles.panel}`}>
           <CheckSquare className={`mx-auto h-10 w-10 ${styles.muted}`} />
-          <div className="mt-4 text-lg font-semibold">Nothing needs your attention right now</div>
-          <p className={`mt-2 text-sm ${styles.muted}`}>New client follow-ups, expiring holds, approvals, and tasks will appear here.</p>
+          <div className="mt-4 text-lg font-semibold">{opsText("Nothing needs your attention right now")}</div>
+          <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("New client follow-ups, expiring holds, approvals, and tasks will appear here.")}</p>
         </div>
       ) : (
         <div className="grid gap-5 xl:grid-cols-2">
@@ -99,8 +101,8 @@ export function MyDay({ session, styles, onOpenLead }: MyDayProps) {
                       <Icon className="h-4 w-4" />
                     </span>
                     <div>
-                      <h2 className="text-base font-semibold">{section.title}</h2>
-                      <p className={`mt-1 text-xs ${styles.muted}`}>{section.subtitle}</p>
+                      <h2 className="text-base font-semibold">{opsText(section.title)}</h2>
+                      <p className={`mt-1 text-xs ${styles.muted}`}>{opsText(section.subtitle)}</p>
                     </div>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-xs ${section.key === 'overdueTasks' || section.key === 'expiringSupplierHolds' ? 'bg-red-500 text-white' : styles.buttonGhost}`}>
@@ -115,8 +117,8 @@ export function MyDay({ session, styles, onOpenLead }: MyDayProps) {
                       onClick={() => onOpenLead(item.leadId)}
                       className={`rounded-lg border p-3 text-left transition ${styles.row}`}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0 truncate text-sm font-semibold">{item.title}</div>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0 text-sm font-semibold">{item.title}</div>
                         {item.owner ? <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{item.owner}</span> : null}
                       </div>
                       <div className={`mt-1 text-xs ${styles.muted}`}>{item.detail}</div>

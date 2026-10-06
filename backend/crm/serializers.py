@@ -170,6 +170,31 @@ def scope_records_for_user(queryset, user: User, owner_lookup: str = "owner"):
     return queryset.filter(Q(**{owner_lookup: user}) | Q(**{f"{owner_lookup}__isnull": True}))
 
 
+class ScopedForeignKeySerializerMixin:
+    """Scope writable FK querysets to records the request user may access.
+
+    `scoped_fk_fields` maps serializer field names to the owner lookup path
+    used by scope_records_for_user (e.g. {"quoteId": "lead__owner"}). Without
+    an authenticated request in the serializer context (seeds, management
+    commands) querysets stay unscoped. Scoped users who reference an
+    out-of-scope parent get a 400 validation error instead of silently
+    attaching children to records they cannot see.
+    """
+
+    scoped_fk_fields: dict = {}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not getattr(user, "is_authenticated", False):
+            return
+        for field_name, owner_lookup in self.scoped_fk_fields.items():
+            field = self.fields.get(field_name)
+            if field is not None and getattr(field, "queryset", None) is not None:
+                field.queryset = scope_records_for_user(field.queryset, user, owner_lookup)
+
+
 def can_manage_user_target(actor: User, target: User) -> bool:
     actor_role = get_user_role(actor)
     target_role = get_user_role(target)
@@ -298,7 +323,9 @@ class ClientSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class LeadSerializer(serializers.ModelSerializer):
+class LeadSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"clientId": "owner"}
+
     experienceSnapshot = serializers.JSONField(source='experience_snapshot', read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
@@ -329,7 +356,7 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         from copy import copy
-        from .workflow import STATUS_BY_STAGE, _brief_checks, workflow_for_lead
+        from .workflow import STATUS_BY_STAGE, _brief_checks, _check, _intake_checks, workflow_for_lead
 
         if self.instance is None:
             if attrs.get("status", Lead.Status.NEW) != Lead.Status.NEW or attrs.get("lifecycle_stage", Lead.LifecycleStage.NEW_REQUEST) != Lead.LifecycleStage.NEW_REQUEST:
@@ -352,7 +379,16 @@ class LeadSerializer(serializers.ModelSerializer):
         state = workflow_for_lead(candidate)
         early_stages = {Lead.LifecycleStage.NEW_REQUEST, Lead.LifecycleStage.PENDING_INFORMATION}
         if self.instance.lifecycle_stage in early_stages and stage == Lead.LifecycleStage.VALIDATED:
-            blockers = [item["detail"] for item in _brief_checks(candidate) if not item["ready"]]
+            # The briefing "validate" shortcut may jump straight to validated,
+            # but every gate of the skipped stages still applies: intake checks
+            # (including the owner gate) when leaving new_request, the owner
+            # gate whenever it was never satisfied, and the brief checks.
+            gate_checks = list(_brief_checks(candidate))
+            if self.instance.lifecycle_stage == Lead.LifecycleStage.NEW_REQUEST:
+                gate_checks = [*_intake_checks(candidate), *gate_checks]
+            if not candidate.owner_id:
+                gate_checks.append(_check("assigned", "Owner assigned", False, "Assign an owner before the request leaves intake."))
+            blockers = [item["detail"] for item in gate_checks if not item["ready"] and item["severity"] == "blocker"]
             if blockers:
                 raise serializers.ValidationError({"lifecycleStage": blockers})
         elif stage != state["nextStage"] or not state["canAdvance"]:
@@ -453,7 +489,9 @@ class WorkflowAdvanceSerializer(serializers.Serializer):
     targetStage = serializers.CharField(required=False, allow_blank=True)
 
 
-class WorkflowReminderSerializer(serializers.ModelSerializer):
+class WorkflowReminderSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"leadId": "owner", "communicationId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
@@ -468,8 +506,11 @@ class WorkflowReminderSerializer(serializers.ModelSerializer):
     assignedToId = serializers.PrimaryKeyRelatedField(source="assigned_to", queryset=User.objects.all(), required=False, allow_null=True)
     assignedToName = serializers.SerializerMethodField()
     createdBy = serializers.PrimaryKeyRelatedField(source="created_by", queryset=User.objects.all(), required=False, allow_null=True)
-    completedAt = serializers.DateTimeField(source="completed_at", required=False, allow_null=True)
-    origin = serializers.ChoiceField(choices=WorkflowReminder.Origin.choices, required=False)
+    # origin and completedAt are server-controlled: API-created tasks always
+    # get origin=manager, and completedAt is managed by the complete/cancel
+    # actions and the status transition logic in the viewset.
+    completedAt = serializers.DateTimeField(source="completed_at", read_only=True)
+    origin = serializers.ChoiceField(choices=WorkflowReminder.Origin.choices, read_only=True)
     completionCondition = serializers.ChoiceField(source="completion_condition", choices=WorkflowReminder.CompletionCondition.choices, required=False)
     waitingOn = serializers.ChoiceField(source="waiting_on", choices=WorkflowReminder.WaitingOn.choices, required=False, allow_null=True)
     followUpAt = serializers.DateTimeField(source="follow_up_at", required=False, allow_null=True)
@@ -534,8 +575,9 @@ class FinancialFieldsMixin:
         return data
 
 
-class QuoteLineSerializer(FinancialFieldsMixin, serializers.ModelSerializer):
+class QuoteLineSerializer(ScopedForeignKeySerializerMixin, FinancialFieldsMixin, serializers.ModelSerializer):
     financial_fields = ("unitCost", "unitSell", "totalCost", "margin")
+    scoped_fk_fields = {"quoteId": "lead__owner"}
 
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
@@ -587,7 +629,9 @@ class QuoteLineSerializer(FinancialFieldsMixin, serializers.ModelSerializer):
         return user_display_name(obj.booking_owner)
 
 
-class PaymentRecordSerializer(serializers.ModelSerializer):
+class PaymentRecordSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"leadId": "owner", "quoteId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
@@ -633,7 +677,9 @@ class PaymentRecordSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class CommunicationRecordSerializer(serializers.ModelSerializer):
+class CommunicationRecordSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"leadId": "owner", "quoteId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
@@ -684,7 +730,9 @@ class CommunicationRecordSerializer(serializers.ModelSerializer):
         return full_name or obj.sent_by.username
 
 
-class QuoteApprovalSerializer(serializers.ModelSerializer):
+class QuoteApprovalSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"quoteId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     quoteId = serializers.PrimaryKeyRelatedField(source="quote", queryset=Quote.objects.all())
@@ -708,8 +756,9 @@ class QuoteApprovalSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "createdAt", "updatedAt"]
 
 
-class QuoteSerializer(FinancialFieldsMixin, serializers.ModelSerializer):
+class QuoteSerializer(ScopedForeignKeySerializerMixin, FinancialFieldsMixin, serializers.ModelSerializer):
     financial_fields = ("subtotalCost", "margin")
+    scoped_fk_fields = {"leadId": "owner"}
 
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
@@ -750,7 +799,9 @@ class QuoteSerializer(FinancialFieldsMixin, serializers.ModelSerializer):
         read_only_fields = ["id", "createdAt", "updatedAt", "subtotalCost", "subtotalSell", "margin", "leadName", "lines", "approvals"]
 
 
-class AccommodationBlockSerializer(serializers.ModelSerializer):
+class AccommodationBlockSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"stopId": "itinerary__lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     stopId = serializers.PrimaryKeyRelatedField(source="stop", queryset=ItineraryStop.objects.all())
@@ -806,7 +857,9 @@ class AccommodationBlockSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class ExperienceBlockSerializer(serializers.ModelSerializer):
+class ExperienceBlockSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"stopId": "itinerary__lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     stopId = serializers.PrimaryKeyRelatedField(source="stop", queryset=ItineraryStop.objects.all())
@@ -829,7 +882,9 @@ class ExperienceBlockSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "createdAt", "updatedAt"]
 
 
-class ItineraryStopSerializer(serializers.ModelSerializer):
+class ItineraryStopSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"itineraryId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     itineraryId = serializers.PrimaryKeyRelatedField(source="itinerary", queryset=TripItinerary.objects.all())
@@ -890,7 +945,9 @@ class ItineraryStopSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class TransportSegmentSerializer(serializers.ModelSerializer):
+class TransportSegmentSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"itineraryId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     itineraryId = serializers.PrimaryKeyRelatedField(source="itinerary", queryset=TripItinerary.objects.all())
@@ -946,7 +1003,9 @@ class TransportSegmentSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class TripItinerarySerializer(serializers.ModelSerializer):
+class TripItinerarySerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"leadId": "owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())

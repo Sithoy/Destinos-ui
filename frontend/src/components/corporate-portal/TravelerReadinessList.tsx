@@ -1,3 +1,4 @@
+import { opsText } from '../../locales/operations';
 import type { CorporatePortalTheme, CorporateTraveler } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from '../../pages/corporate-portal/portalTheme';
 
@@ -14,10 +15,10 @@ export function TravelerReadinessList({ travelers, theme }: { travelers: Corpora
           </div>
           <div className="shrink-0 text-right text-[11px] leading-5">
             <div className={traveler.readiness.passport === 'OK' ? 'ctm-tone-emerald' : 'ctm-tone-amber'}>
-              Passport {traveler.readiness.passport}
+              {opsText("Passport")}{' '}{opsText(traveler.readiness.passport)}
             </div>
             <div className={traveler.readiness.visa === 'OK' || traveler.readiness.visa === 'N/A' ? styles.soft : 'ctm-tone-amber'}>
-              Visa {traveler.readiness.visa}
+              {opsText("Visa")}{' '}{opsText(traveler.readiness.visa)}
             </div>
           </div>
         </div>

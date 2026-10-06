@@ -1,3 +1,4 @@
+import { opsText } from '../../locales/operations';
 import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CorporateHeader } from '../../components/corporate-portal/CorporateHeader';
@@ -38,9 +39,9 @@ export function CorporatePortalLayout({
         <CorporateSidebar activeHref={pathname} onNavigate={navigate} theme={theme} />
         <section className="min-w-0">
           <CorporateHeader
-            title={title}
-            subtitle={subtitle}
-            descriptor={descriptor}
+            title={opsText(title)}
+            subtitle={opsText(subtitle)}
+            descriptor={opsText(descriptor)}
             searchValue={searchValue}
             onSearchChange={onSearchChange}
             theme={theme}
@@ -53,8 +54,7 @@ export function CorporatePortalLayout({
                 className={`inline-flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-medium ${styles.buttonPrimary}`}
               >
                 <Plus className="h-4 w-4" />
-                New Trip
-              </button>
+                {opsText("New Trip")}</button>
             }
           />
           <main className="p-4 sm:p-6">{children}</main>

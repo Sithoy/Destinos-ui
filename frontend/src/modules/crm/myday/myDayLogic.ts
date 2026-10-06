@@ -1,5 +1,6 @@
 import type { CrmMyDayResponse, CrmMyDaySectionKey, CrmWorkflowReminder } from '../../../types';
 import { formatDate, formatDateOnly } from '../shared/formatting';
+import { opsText } from '../../../locales/operations';
 
 export type MyDaySection = {
   key: CrmMyDaySectionKey;
@@ -18,7 +19,7 @@ export type MyDayItem = {
 };
 
 function ownerLabel(name: string | null | undefined) {
-  return name?.trim() || 'Unassigned';
+  return name?.trim() || opsText('Unassigned');
 }
 
 function taskItem(task: CrmWorkflowReminder, reason: string): MyDayItem {
@@ -26,23 +27,29 @@ function taskItem(task: CrmWorkflowReminder, reason: string): MyDayItem {
     id: task.id,
     leadId: String(task.leadId),
     title: task.title,
-    detail: `${reason} · due ${formatDate(task.dueAt)}`,
+    detail: `${opsText(reason)} · ${opsText('Due')} ${formatDate(task.dueAt)}`,
     owner: ownerLabel(task.assignedToName),
   };
 }
+
+const myDayChannelLabels: Record<string, string> = {
+  email: 'Email',
+  whatsapp: 'WhatsApp',
+  phone: 'Phone',
+};
 
 export function myDaySections(data: CrmMyDayResponse): MyDaySection[] {
   return [
     {
       key: 'waitingClients',
-      title: 'Clients waiting for a response',
+      title: 'Client follow-ups due',
       subtitle: 'Follow-ups past due — every waiting day costs conversion.',
       count: data.counts.waitingClients,
       items: data.waitingClients.map((item) => ({
         id: item.communicationId,
         leadId: String(item.leadId),
         title: item.leadName,
-        detail: `${item.subject || item.kind} · waiting since ${item.followUpDue ? formatDate(item.followUpDue) : 'date pending'} · ${item.channel}`,
+        detail: `${item.subject || item.kind} · ${opsText('Waiting since')} ${item.followUpDue ? formatDate(item.followUpDue) : opsText('Date pending')} · ${myDayChannelLabels[item.channel] ?? item.channel}`,
         owner: ownerLabel(item.ownerName),
       })),
     },
@@ -55,7 +62,7 @@ export function myDaySections(data: CrmMyDayResponse): MyDaySection[] {
         id: item.quoteLineId,
         leadId: String(item.leadId),
         title: `${item.leadName} — ${item.description || item.category}`,
-        detail: `${item.supplier || 'Supplier pending'} · hold expires ${formatDateOnly(item.supplierDeadline)} · ${item.quoteNumber}`,
+        detail: `${item.supplier || opsText('Supplier pending')} · ${opsText('Hold expires')} ${formatDateOnly(item.supplierDeadline)} · ${item.quoteNumber}`,
         owner: ownerLabel(item.bookingOwnerName),
       })),
     },
@@ -68,7 +75,7 @@ export function myDaySections(data: CrmMyDayResponse): MyDaySection[] {
         id: item.approvalId,
         leadId: String(item.leadId),
         title: `${item.leadName} — ${item.quoteNumber}`,
-        detail: `Approver ${item.approverName || item.approverEmail || 'pending'} · requested ${formatDateOnly(item.createdAt)}`,
+        detail: `${opsText('Approver')} ${item.approverName || item.approverEmail || opsText('Pending')} · ${opsText('Requested')} ${formatDateOnly(item.createdAt)}`,
         owner: '',
       })),
     },
@@ -81,14 +88,14 @@ export function myDaySections(data: CrmMyDayResponse): MyDaySection[] {
         id: item.itineraryId,
         leadId: String(item.leadId),
         title: `${item.leadName} — ${item.title}`,
-        detail: `Departs ${formatDateOnly(item.startDate)} · travel pack not sent`,
+        detail: `${opsText('Departs')} ${formatDateOnly(item.startDate)} · ${opsText('Travel pack not sent')}`,
         owner: ownerLabel(item.ownerName),
       })),
     },
     {
       key: 'overdueTasks',
       title: 'Overdue tasks',
-      subtitle: 'Past-due work that is blocking trips or clients.',
+      subtitle: 'Review missed deadlines and agree the next action.',
       count: data.counts.overdueTasks,
       items: data.overdueTasks.map((task) => taskItem(task, 'Overdue')),
     },

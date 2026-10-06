@@ -1,9 +1,10 @@
 from django.contrib.auth.models import Group, User
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Lead, PaymentRecord, Quote, QuoteLine
+from .models import Client, Lead, PaymentRecord, Quote, QuoteLine
 
 
 def make_user(username, *group_names):
@@ -105,6 +106,11 @@ class LeadAssignmentFilterTests(APITestCase):
         self.assertEqual([item["id"] for item in response.data], [str(self.assigned.id)])
         self.assertEqual(response.data[0]["ownerId"], self.consultant.id)
         self.assertEqual(response.data[0]["ownerName"], "consultant")
+
+    def test_assigned_to_must_be_numeric(self):
+        response = self.client.get(reverse("lead-list"), {"assigned_to": "not-a-user-id"})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_unassigned_filter(self):
         response = self.client.get(reverse("lead-list"), {"unassigned": "true"})
@@ -304,3 +310,241 @@ class AuthMeCapabilityTests(APITestCase):
         self.assertIn("consultant", response.data["roles"])
         self.assertIn("quotes.send", response.data["capabilities"])
         self.assertIn("leads.view_own", response.data["capabilities"])
+
+
+class PaymentWriteProtectionTests(APITestCase):
+    def setUp(self):
+        self.consultant = make_user("consultant", "crm_consultant")
+        self.finance = make_user("finance", "crm_finance")
+        self.lead = make_lead(owner=self.consultant)
+
+    def test_non_verifier_create_forces_safe_defaults(self):
+        self.client.force_authenticate(self.consultant)
+        response = self.client.post(
+            reverse("payment-record-list"),
+            {
+                "leadId": str(self.lead.id),
+                "amountExpected": "100.00",
+                "amountReceived": "100.00",
+                "status": PaymentRecord.Status.PAID,
+                "proofReceived": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        record = PaymentRecord.objects.get()
+        self.assertEqual(record.status, PaymentRecord.Status.PENDING)
+        self.assertEqual(record.amount_received, 0)
+        self.assertFalse(record.proof_received)
+
+    def test_verifier_create_honors_verification_fields(self):
+        self.client.force_authenticate(self.finance)
+        response = self.client.post(
+            reverse("payment-record-list"),
+            {
+                "leadId": str(self.lead.id),
+                "amountExpected": "100.00",
+                "amountReceived": "100.00",
+                "status": PaymentRecord.Status.PAID,
+                "proofReceived": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        record = PaymentRecord.objects.get()
+        self.assertEqual(record.status, PaymentRecord.Status.PAID)
+        self.assertEqual(record.amount_received, 100)
+        self.assertTrue(record.proof_received)
+
+    def test_non_verifier_cannot_change_amount_received(self):
+        record = PaymentRecord.objects.create(lead=self.lead, amount_expected=100)
+        self.client.force_authenticate(self.consultant)
+        response = self.client.patch(
+            reverse("payment-record-detail", args=[record.id]),
+            {"amountReceived": "100.00"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        record.refresh_from_db()
+        self.assertEqual(record.amount_received, 0)
+
+    def test_verifier_can_change_amount_received(self):
+        record = PaymentRecord.objects.create(lead=self.lead, amount_expected=100)
+        self.client.force_authenticate(self.finance)
+        response = self.client.patch(
+            reverse("payment-record-detail", args=[record.id]),
+            {"amountReceived": "100.00"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        record.refresh_from_db()
+        self.assertEqual(record.amount_received, 100)
+
+
+class LeadStageGateTests(APITestCase):
+    def setUp(self):
+        self.consultant = make_user("consultant", "crm_consultant")
+        self.client.force_authenticate(self.consultant)
+
+    def validate_via_patch(self, lead):
+        return self.client.patch(
+            reverse("lead-detail", args=[lead.id]),
+            {"status": Lead.Status.CONTACTED, "lifecycleStage": Lead.LifecycleStage.VALIDATED},
+            format="json",
+        )
+
+    def test_patch_to_validated_requires_owner_from_new_request(self):
+        lead = make_lead(owner=None)
+
+        response = self.validate_via_patch(lead)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(any("owner" in str(detail).lower() for detail in response.data["lifecycleStage"]))
+        lead.refresh_from_db()
+        self.assertEqual(lead.lifecycle_stage, Lead.LifecycleStage.NEW_REQUEST)
+
+    def test_patch_to_validated_requires_owner_from_pending_information(self):
+        lead = make_lead(
+            owner=None,
+            lifecycle_stage=Lead.LifecycleStage.PENDING_INFORMATION,
+            status=Lead.Status.CONTACTED,
+        )
+
+        response = self.validate_via_patch(lead)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        lead.refresh_from_db()
+        self.assertEqual(lead.lifecycle_stage, Lead.LifecycleStage.PENDING_INFORMATION)
+
+    def test_patch_to_validated_allowed_with_owner_and_complete_brief(self):
+        lead = make_lead(owner=self.consultant)
+
+        response = self.validate_via_patch(lead)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        lead.refresh_from_db()
+        self.assertEqual(lead.lifecycle_stage, Lead.LifecycleStage.VALIDATED)
+
+
+class NestedWriteScopingTests(APITestCase):
+    def setUp(self):
+        self.consultant = make_user("consultant", "crm_consultant")
+        self.other = make_user("other", "crm_consultant")
+        self.own_lead = make_lead(owner=self.consultant)
+        self.other_lead = make_lead(owner=self.other)
+        self.own_quote = Quote.objects.create(lead=self.own_lead, quote_number="DPM-Q-OWN", version=1)
+        self.other_quote = Quote.objects.create(lead=self.other_lead, quote_number="DPM-Q-OTHER", version=1)
+        self.client.force_authenticate(self.consultant)
+
+    def test_quote_line_rejects_out_of_scope_quote(self):
+        response = self.client.post(
+            reverse("quote-line-list"),
+            {"quoteId": str(self.other_quote.id), "category": QuoteLine.Category.HOTEL, "description": "Hotel"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(QuoteLine.objects.count(), 0)
+
+    def test_quote_line_accepts_in_scope_quote(self):
+        response = self.client.post(
+            reverse("quote-line-list"),
+            {"quoteId": str(self.own_quote.id), "category": QuoteLine.Category.HOTEL, "description": "Hotel"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_payment_record_rejects_repointing_to_out_of_scope_lead(self):
+        record = PaymentRecord.objects.create(lead=self.own_lead, amount_expected=100)
+
+        response = self.client.patch(
+            reverse("payment-record-detail", args=[record.id]),
+            {"leadId": str(self.other_lead.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        record.refresh_from_db()
+        self.assertEqual(record.lead_id, self.own_lead.id)
+
+    def test_lead_rejects_out_of_scope_client(self):
+        other_client = Client.objects.create(name="Other Corp", owner=self.other)
+
+        response = self.client.patch(
+            reverse("lead-detail", args=[self.own_lead.id]),
+            {"clientId": str(other_client.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.own_lead.refresh_from_db()
+        self.assertIsNone(self.own_lead.client_id)
+
+
+class QuoteSendTransitionTests(APITestCase):
+    def setUp(self):
+        self.consultant = make_user("consultant", "crm_consultant")
+        self.operations = make_user("operations", "crm_operations")
+        self.finance = make_user("finance", "crm_finance")
+        self.lead = make_lead(owner=self.consultant)
+
+    def test_operations_cannot_create_sent_quote(self):
+        self.client.force_authenticate(self.operations)
+        response = self.client.post(
+            reverse("quote-list"),
+            {"leadId": str(self.lead.id), "quoteNumber": "DPM-Q-OPS", "status": Quote.Status.SENT},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Quote.objects.exists())
+
+    def test_consultant_can_create_sent_quote(self):
+        self.client.force_authenticate(self.consultant)
+        response = self.client.post(
+            reverse("quote-list"),
+            {"leadId": str(self.lead.id), "quoteNumber": "DPM-Q-SENT", "status": Quote.Status.SENT},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_finance_cannot_unsend_quote(self):
+        quote = Quote.objects.create(
+            lead=self.lead,
+            quote_number="DPM-Q-UNSEND",
+            version=1,
+            status=Quote.Status.SENT,
+            sent_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.finance)
+        response = self.client.patch(reverse("quote-detail", args=[quote.id]), {"sentAt": None}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        quote.refresh_from_db()
+        self.assertIsNotNone(quote.sent_at)
+
+    def test_consultant_can_unsend_quote(self):
+        quote = Quote.objects.create(
+            lead=self.lead,
+            quote_number="DPM-Q-UNSEND-OK",
+            version=1,
+            status=Quote.Status.SENT,
+            sent_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.consultant)
+        response = self.client.patch(
+            reverse("quote-detail", args=[quote.id]),
+            {"sentAt": None, "status": Quote.Status.DRAFT},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        quote.refresh_from_db()
+        self.assertIsNone(quote.sent_at)
+        self.assertEqual(quote.status, Quote.Status.DRAFT)

@@ -28,7 +28,7 @@ export type ItineraryStopPurpose = 'leisure' | 'business' | 'transit' | 'event' 
 export type AccommodationType = 'hotel' | 'resort' | 'lodge' | 'villa' | 'apartment' | 'camp' | 'cruise' | 'other';
 export type ItineraryBookingStatus = 'draft' | 'quoted' | 'held' | 'confirmed' | 'cancelled';
 export type TransportMode = 'flight' | 'train' | 'car' | 'ferry' | 'transfer' | 'other';
-export type CrmRole = 'admin' | 'manager' | 'agent' | 'client' | 'viewer' | 'none';
+export type CrmRole = 'admin' | 'manager' | 'team_manager' | 'consultant' | 'operations' | 'finance' | 'auditor' | 'agent' | 'client' | 'viewer' | 'none';
 
 export type CrmCapability =
   | 'leads.view_all'

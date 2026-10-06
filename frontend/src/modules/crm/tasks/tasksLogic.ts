@@ -37,7 +37,7 @@ export function workflowReminderGenerationAvailability(
   }
 
   if (pendingReminders.length > 0) {
-    return { available: false, reason: 'Pending reminders already exist for this request.' };
+    return { available: false, reason: 'Open tasks already exist for this request.' };
   }
 
   const now = new Date();
@@ -74,13 +74,13 @@ export function workflowReminderGenerationAvailability(
   return { available: false, reason: 'No reminder rule is active for this stage.' };
 }
 
-export function taskQueueCount(leads: CrmLead[], workflowReminders: CrmWorkflowReminder[]) {
-  return workflowReminders.length || leads.filter((lead) => fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high').length;
+export function taskQueueCount(_leads: CrmLead[], workflowReminders: CrmWorkflowReminder[]) {
+  return workflowReminders.filter(isOpenTask).length;
 }
 
 export const tasksSurfaceMeta = {
-  title: 'Priority Tasks',
-  subtitle: 'Backend workflow reminders and high-attention requests that need action from the team',
+  title: 'Tasks',
+  subtitle: 'Assigned work, follow-ups and deadlines across your journeys',
 };
 
 export const reminderStatusLabels: Record<CrmReminderStatus, string> = {

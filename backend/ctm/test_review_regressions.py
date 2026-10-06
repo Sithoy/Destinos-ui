@@ -225,9 +225,9 @@ class StaffMembershipScopeTests(APITestCase):
     def setUp(self):
         self.company = CompanyAccount.objects.create(name="Tenant A", account_code="TENANTA")
         self.staff = User.objects.create_user(username="ops-user", password="pass", is_staff=True)
+        self.client.force_authenticate(self.staff)
 
     def test_staff_company_code_does_not_create_membership(self):
-        self.client.force_authenticate(self.staff)
         response = self.client.get(reverse("ctm-trip-request-list"), HTTP_X_CTM_COMPANY_CODE="TENANTA")
         self.assertEqual(response.status_code, 200)
         self.assertFalse(CompanyUser.objects.filter(user=self.staff, company=self.company).exists())
@@ -236,13 +236,127 @@ class StaffMembershipScopeTests(APITestCase):
         requester_user = User.objects.create_user(username="requester", password="pass")
         requester = CompanyUser.objects.create(company=self.company, user=requester_user, role="employee", access_roles=["employee"])
         trip = TripRequest.objects.create(company=self.company, requested_by=requester, origin="Maputo", destination="Lisbon", departure_date=timezone.localdate() + timedelta(days=30))
-        self.client.force_authenticate(self.staff)
         response = self.client.get(reverse("ctm-trip-request-detail", args=[trip.reference_code]), HTTP_X_CTM_COMPANY_CODE="TENANTA")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["id"], trip.reference_code)
         self.assertFalse(CompanyUser.objects.filter(user=self.staff).exists())
 
     def test_staff_unknown_company_code_fails_closed(self):
-        self.client.force_authenticate(self.staff)
         response = self.client.get(reverse("ctm-trip-request-list"), HTTP_X_CTM_COMPANY_CODE="NOTREAL")
         self.assertEqual(response.status_code, 403)
+
+    def test_staff_with_company_code_can_list_travelers_without_membership(self):
+        Traveler.objects.create(company=self.company, full_name="Company Traveler", is_active=True)
+        response = self.client.get(reverse("ctm-traveler-list"), HTTP_X_CTM_COMPANY_CODE="TENANTA")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["name"] for item in response.data], ["Company Traveler"])
+        self.assertFalse(CompanyUser.objects.filter(user=self.staff).exists())
+
+    def test_staff_with_company_code_can_list_itineraries_without_membership(self):
+        requester_user = User.objects.create_user(username="requester", password="pass")
+        requester = CompanyUser.objects.create(company=self.company, user=requester_user, role="employee", access_roles=["employee"])
+        TripRequest.objects.create(company=self.company, requested_by=requester, origin="Maputo", destination="Lisbon", departure_date=timezone.localdate() + timedelta(days=30), status="booked")
+        response = self.client.get(reverse("ctm-itinerary-list"), HTTP_X_CTM_COMPANY_CODE="TENANTA")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertFalse(CompanyUser.objects.filter(user=self.staff).exists())
+
+    def test_staff_with_company_code_can_read_billing_summary_without_membership(self):
+        requester_user = User.objects.create_user(username="requester", password="pass")
+        requester = CompanyUser.objects.create(company=self.company, user=requester_user, role="employee", access_roles=["employee"])
+        trip = TripRequest.objects.create(company=self.company, requested_by=requester, origin="Maputo", destination="Lisbon", departure_date=timezone.localdate() + timedelta(days=30))
+        TripInvoice.objects.create(trip_request=trip, amount=Decimal("100"), currency="USD", status="sent")
+        response = self.client.get("/api/ctm/reports/billing/summary/", HTTP_X_CTM_COMPANY_CODE="TENANTA")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["companyId"], str(self.company.pk))
+        self.assertEqual(response.data["invoiceCount"], 1)
+        self.assertFalse(CompanyUser.objects.filter(user=self.staff).exists())
+
+
+class BootstrapDefaultContextTests(APITestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user(username="ops-user", password="pass", is_staff=True)
+
+    def test_bootstrap_membership_for_staff_is_not_admin(self):
+        from .bootstrap import ensure_default_ctm_context
+        _, membership = ensure_default_ctm_context(for_user=self.staff)
+        self.assertEqual(membership.role, CompanyUser.Role.EMPLOYEE)
+        self.assertNotIn(CompanyUser.Role.COMPANY_ADMIN, membership.access_roles)
+
+    def test_bootstrapped_staff_cannot_approve_via_admin_override(self):
+        from .bootstrap import ensure_default_ctm_context
+        company, _ = ensure_default_ctm_context(for_user=self.staff)
+        approver_user = User.objects.create_user(username="mozal-manager", password="pass")
+        approver = CompanyUser.objects.create(company=company, user=approver_user, role="manager", access_roles=["manager"])
+        requester_user = User.objects.create_user(username="mozal-requester", password="pass")
+        requester = CompanyUser.objects.create(company=company, user=requester_user, role="employee", access_roles=["employee"])
+        trip = TripRequest.objects.create(company=company, requested_by=requester, origin="Maputo", destination="Lisbon", departure_date=timezone.localdate() + timedelta(days=30))
+        approval = TripApproval.objects.create(trip_request=trip, approval_type=TripApproval.ApprovalType.TRAVEL_NEED, approver=approver, status="pending")
+
+        self.client.force_authenticate(self.staff)
+        response = self.client.post(reverse("ctm-trip-request-approve", args=[trip.reference_code]), {"stage": "Travel need"}, format="json")
+
+        self.assertEqual(response.status_code, 403)
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, "pending")
+
+    def test_bootstrapped_staff_keeps_portal_context(self):
+        self.client.force_authenticate(self.staff)
+        response = self.client.get(reverse("ctm-auth-me"))
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["company"]["name"], "Mozal Operations")
+        self.assertEqual(response.data["user"]["role"], "employee")
+
+
+class ApproverBackfillMigrationTests(APITestCase):
+    def setUp(self):
+        self.company = CompanyAccount.objects.create(name="Tenant A", account_code="TENANTA")
+        self.manager_user = User.objects.create_user(username="ops-manager", password="pass")
+        self.manager = CompanyUser.objects.create(company=self.company, user=self.manager_user, role="manager", access_roles=["manager"], department="Operations")
+        self.finance_user = User.objects.create_user(username="finance", password="pass")
+        self.finance = CompanyUser.objects.create(company=self.company, user=self.finance_user, role="finance_approver", access_roles=["finance_approver"], department="Finance")
+        self.requester_user = User.objects.create_user(username="requester", password="pass")
+        self.requester = CompanyUser.objects.create(company=self.company, user=self.requester_user, role="employee", access_roles=["employee"])
+        self.trip = TripRequest.objects.create(company=self.company, requested_by=self.requester, origin="Maputo", destination="Lisbon", departure_date=timezone.localdate() + timedelta(days=30), department="Operations")
+
+    def run_backfill(self):
+        import importlib
+        from django.apps import apps
+        migration = importlib.import_module("ctm.migrations.0008_backfill_tripapproval_approver")
+        migration.backfill_trip_approval_approvers(apps, None)
+
+    def test_backfill_assigns_department_manager_for_travel_need(self):
+        approval = TripApproval.objects.create(trip_request=self.trip, approval_type=TripApproval.ApprovalType.TRAVEL_NEED, approver=None, status="pending")
+        self.run_backfill()
+        approval.refresh_from_db()
+        self.assertEqual(approval.approver, self.manager)
+
+    def test_backfill_prefers_finance_approver_for_final_cost(self):
+        approval = TripApproval.objects.create(trip_request=self.trip, approval_type=TripApproval.ApprovalType.FINAL_COST, approver=None, status="pending")
+        self.run_backfill()
+        approval.refresh_from_db()
+        self.assertEqual(approval.approver, self.finance)
+
+    def test_backfill_falls_back_to_manager_for_final_cost(self):
+        approval = TripApproval.objects.create(trip_request=self.trip, approval_type=TripApproval.ApprovalType.FINAL_COST, approver=None, status="pending")
+        self.finance.is_active = False
+        self.finance.save()
+        self.run_backfill()
+        approval.refresh_from_db()
+        self.assertEqual(approval.approver, self.manager)
+
+    def test_backfill_leaves_unresolvable_approvals_null(self):
+        self.manager.is_active = False
+        self.manager.save()
+        self.finance.is_active = False
+        self.finance.save()
+        approval = TripApproval.objects.create(trip_request=self.trip, approval_type=TripApproval.ApprovalType.TRAVEL_NEED, approver=None, status="pending")
+        self.run_backfill()
+        approval.refresh_from_db()
+        self.assertIsNone(approval.approver)
+
+    def test_backfill_ignores_decided_approvals(self):
+        approval = TripApproval.objects.create(trip_request=self.trip, approval_type=TripApproval.ApprovalType.TRAVEL_NEED, approver=None, status="approved")
+        self.run_backfill()
+        approval.refresh_from_db()
+        self.assertIsNone(approval.approver)

@@ -59,5 +59,5 @@ export function exportCsv(leads: CrmLead[]) {
 
 export const reportsSurfaceMeta = {
   title: 'Reports',
-  subtitle: 'Filtered CRM data ready for export and review',
+  subtitle: 'Commercial performance and operational attention',
 };

@@ -1,5 +1,7 @@
+import { opsLocale, opsText } from '../../../locales/operations';
+
 export function formatDate(value: string) {
-  return new Intl.DateTimeFormat('en-GB', {
+  return new Intl.DateTimeFormat(opsLocale(), {
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
@@ -28,8 +30,8 @@ export function initials(name: string) {
 }
 
 export function formatDateOnly(value?: string | null) {
-  if (!value) return 'Date pending';
-  return new Intl.DateTimeFormat('en-GB', {
+  if (!value) return opsText('Date pending');
+  return new Intl.DateTimeFormat(opsLocale(), {
     day: '2-digit',
     month: 'short',
     year: 'numeric',

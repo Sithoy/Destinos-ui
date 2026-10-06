@@ -1,3 +1,4 @@
+import { opsText } from '../../locales/operations';
 import { AlertTriangle, CheckCircle2, Clock3, MessageSquare, ReceiptText } from 'lucide-react';
 import type { CorporatePortalTheme, CorporateTimelineEvent } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from '../../pages/corporate-portal/portalTheme';
@@ -42,18 +43,17 @@ export function TimelinePanel({
     <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-base font-semibold">{title}</h3>
-          <p className={`mt-1 text-xs leading-5 ${styles.muted}`}>Shared operational history between company and DPM.</p>
+          <h3 className="text-base font-semibold">{opsText(title)}</h3>
+          <p className={`mt-1 text-xs leading-5 ${styles.muted}`}>{opsText("Shared operational history between company and DPM.")}</p>
         </div>
         <span className={`w-fit rounded-full border px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
-          {events.length} event{events.length === 1 ? '' : 's'}
+          {events.length} {opsText(events.length === 1 ? 'event' : 'events')}
         </span>
       </div>
       <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1">
         {visibleEvents.length === 0 ? (
           <div className={`rounded-xl border px-4 py-5 text-sm ${styles.surface} ${styles.muted}`}>
-            No shared timeline events yet.
-          </div>
+            {opsText("No shared timeline events yet.")}</div>
         ) : visibleEvents.map((event) => (
           <div key={event.id} className="flex gap-3">
             <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-black/15">
@@ -66,7 +66,7 @@ export function TimelinePanel({
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] ${sourceTone(event.source, theme)}`}>
-                  {event.source ?? 'System'}
+                  {event.source ?? opsText("System")}
                 </span>
                 <div className={`text-xs leading-5 ${styles.muted}`}>{event.meta}</div>
               </div>
