@@ -45,6 +45,7 @@ from .serializers import (
     briefing_approval_gate,
     can_access_ctm,
     can_approve_ctm_stage,
+    can_decide_trip_approval,
     can_manage_company_users,
     can_manage_company_collaboration,
     can_manage_trip_operations,
@@ -136,10 +137,11 @@ def sync_trip_approval_state(trip: TripRequest):
     trip.save(update_fields=["status", "approval_stage", "internal_notes", "updated_at"])
 
 
-def get_active_company_membership(request) -> CompanyUser | None:
-    if not get_request_company_code(request):
+def get_request_company(request) -> CompanyAccount | None:
+    company_code = get_request_company_code(request)
+    if not company_code:
         return None
-    return get_ctm_membership_for_request(request)
+    return CompanyAccount.objects.filter(account_code__iexact=company_code, status=CompanyAccount.Status.ACTIVE).first()
 
 
 class HasCtmAccess(permissions.BasePermission):
@@ -147,6 +149,8 @@ class HasCtmAccess(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated or not request.user.is_active:
             return False
         if get_request_company_code(request):
+            if can_manage_trip_operations(request.user):
+                return get_request_company(request) is not None
             return get_ctm_membership_for_request(request) is not None
         return bool(request.user and request.user.is_authenticated and (can_access_ctm(request.user) or can_manage_trip_operations(request.user)))
 
@@ -194,12 +198,22 @@ class CorporatePortalContextView(APIView):
 class BillingReportBaseView(APIView):
     permission_classes = [HasCtmAccess]
 
-    def get_membership(self, request):
-        return get_ctm_membership_for_request(request)
+    def get_company(self, request) -> CompanyAccount | None:
+        company = get_request_company(request)
+        if company is not None:
+            return company
+        membership = get_ctm_membership_for_request(request)
+        return membership.company if membership else None
 
     def get_invoice_queryset(self, request):
-        membership = self.get_membership(request)
-        queryset = ctm_invoice_queryset().filter(trip_request__company=membership.company) if membership else TripInvoice.objects.none()
+        company = get_request_company(request)
+        if company is not None:
+            queryset = ctm_invoice_queryset().filter(trip_request__company=company)
+        elif can_manage_trip_operations(request.user):
+            queryset = ctm_invoice_queryset()
+        else:
+            company = self.get_company(request)
+            queryset = ctm_invoice_queryset().filter(trip_request__company=company) if company else TripInvoice.objects.none()
 
         status_filter = request.query_params.get("status")
         department = request.query_params.get("department")
@@ -226,8 +240,14 @@ class BillingReportBaseView(APIView):
         return queryset
 
     def get_payment_queryset(self, request):
-        membership = self.get_membership(request)
-        queryset = ctm_payment_queryset().filter(invoice__trip_request__company=membership.company) if membership else TripPayment.objects.none()
+        company = get_request_company(request)
+        if company is not None:
+            queryset = ctm_payment_queryset().filter(invoice__trip_request__company=company)
+        elif can_manage_trip_operations(request.user):
+            queryset = ctm_payment_queryset()
+        else:
+            company = self.get_company(request)
+            queryset = ctm_payment_queryset().filter(invoice__trip_request__company=company) if company else TripPayment.objects.none()
 
         status_filter = request.query_params.get("status")
         method = request.query_params.get("payment_method")
@@ -258,11 +278,11 @@ class BillingReportBaseView(APIView):
 
 class BillingSummaryReportView(BillingReportBaseView):
     def get(self, request):
-        membership = self.get_membership(request)
+        company = self.get_company(request)
         invoices = list(self.get_invoice_queryset(request))
         payments = list(self.get_payment_queryset(request).filter(status__in=[TripPayment.Status.RECEIVED, TripPayment.Status.RECONCILED]))
 
-        currency = membership.company.default_currency if membership else "USD"
+        currency = company.default_currency if company else "USD"
         issued_invoices = [invoice for invoice in invoices if invoice.status not in {TripInvoice.Status.DRAFT, TripInvoice.Status.VOID}]
         issued_ids = {invoice.pk for invoice in issued_invoices}
         payments = [payment for payment in payments if payment.invoice_id in issued_ids and payment.currency == payment.invoice.currency]
@@ -274,8 +294,8 @@ class BillingSummaryReportView(BillingReportBaseView):
         default_totals = next(item for item in totals if item["currency"] == currency)
 
         payload = {
-            "companyId": membership.company.pk if membership else None,
-            "companyName": membership.company.name if membership else "",
+            "companyId": company.pk if company else None,
+            "companyName": company.name if company else "",
             "invoiceCount": len(invoices),
             "sentCount": sum(1 for invoice in invoices if invoice.status == TripInvoice.Status.SENT),
             "overdueCount": sum(1 for invoice in invoices if invoice.status == TripInvoice.Status.OVERDUE),
@@ -305,9 +325,9 @@ class CtmTripScopedView(APIView):
 
     def get_trip(self, request, reference_code: str) -> TripRequest:
         queryset = ctm_trip_queryset()
-        membership = get_active_company_membership(request)
-        if membership is not None:
-            queryset = queryset.filter(company=membership.company)
+        company = get_request_company(request)
+        if company is not None:
+            queryset = queryset.filter(company=company)
         elif not can_manage_trip_operations(request.user):
             membership = get_ctm_membership_for_request(request)
             queryset = queryset.filter(company=membership.company) if membership else TripRequest.objects.none()
@@ -699,9 +719,9 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         return CorporateTripRequestSerializer
 
     def get_queryset(self):
-        membership = get_active_company_membership(self.request)
-        if membership is not None:
-            queryset = ctm_trip_queryset().filter(company=membership.company)
+        company = get_request_company(self.request)
+        if company is not None:
+            queryset = ctm_trip_queryset().filter(company=company)
         elif can_manage_trip_operations(self.request.user):
             queryset = ctm_trip_queryset()
         else:
@@ -794,6 +814,8 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         approval = trip.approvals.filter(approval_type=approval_type, status=TripApproval.Status.PENDING).first()
         if approval is None:
             return Response({"detail": "No pending approval was found for this stage."}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_decide_trip_approval(membership, approval):
+            return Response({"detail": "This approval is assigned to a different approver."}, status=status.HTTP_403_FORBIDDEN)
         if approval_type == TripApproval.ApprovalType.BRIEFING:
             gate = briefing_approval_gate(trip)
             if not gate["ready"]:
@@ -831,6 +853,8 @@ class TripRequestViewSet(viewsets.ModelViewSet):
         approval = trip.approvals.filter(approval_type=approval_type, status=TripApproval.Status.PENDING).first()
         if approval is None:
             return Response({"detail": "No pending approval was found for this stage."}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_decide_trip_approval(membership, approval):
+            return Response({"detail": "This approval is assigned to a different approver."}, status=status.HTTP_403_FORBIDDEN)
 
         if approval_type == TripApproval.ApprovalType.BRIEFING:
             approval.status = TripApproval.Status.RETURNED
@@ -875,8 +899,14 @@ class TravelerViewSet(viewsets.ModelViewSet):
         return CorporateTravelerDirectorySerializer
 
     def get_queryset(self):
-        membership = get_ctm_membership_for_request(self.request)
-        queryset = ctm_traveler_queryset().filter(company=membership.company) if membership else Traveler.objects.none()
+        company = get_request_company(self.request)
+        if company is not None:
+            queryset = ctm_traveler_queryset().filter(company=company)
+        elif can_manage_trip_operations(self.request.user):
+            queryset = ctm_traveler_queryset()
+        else:
+            membership = get_ctm_membership_for_request(self.request)
+            queryset = ctm_traveler_queryset().filter(company=membership.company) if membership else Traveler.objects.none()
         search = self.request.query_params.get("search")
         department = self.request.query_params.get("department")
         passport_status = self.request.query_params.get("passport_status")
@@ -1097,8 +1127,14 @@ class ItineraryViewSet(viewsets.ReadOnlyModelViewSet):
     lookup_field = "reference_code"
 
     def get_queryset(self):
-        membership = get_ctm_membership_for_request(self.request)
-        queryset = ctm_trip_queryset().filter(company=membership.company, status__in=[TripRequest.Status.BOOKED, TripRequest.Status.COMPLETED]) if membership else TripRequest.objects.none()
+        company = get_request_company(self.request)
+        if company is not None:
+            queryset = ctm_trip_queryset().filter(company=company, status__in=[TripRequest.Status.BOOKED, TripRequest.Status.COMPLETED])
+        elif can_manage_trip_operations(self.request.user):
+            queryset = ctm_trip_queryset().filter(status__in=[TripRequest.Status.BOOKED, TripRequest.Status.COMPLETED])
+        else:
+            membership = get_ctm_membership_for_request(self.request)
+            queryset = ctm_trip_queryset().filter(company=membership.company, status__in=[TripRequest.Status.BOOKED, TripRequest.Status.COMPLETED]) if membership else TripRequest.objects.none()
         search = self.request.query_params.get("search")
         department = self.request.query_params.get("department")
         status_filter = self.request.query_params.get("status")

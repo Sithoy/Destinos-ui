@@ -1,3 +1,6 @@
+import { opsText, opsLocale } from '../../locales/operations';
+import { useTranslation } from 'react-i18next';
+import { CrmLoginLayout } from '../../components/CrmLoginLayout';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { CorporateApprovalsPage } from './CorporateApprovalsPage';
@@ -50,7 +53,7 @@ function getPortalSubtitle(pathname: string) {
   if (pathname.startsWith('/approvals')) return 'Keep travel-need and final-cost approvals in one review lane for company decision-makers.';
   if (pathname.startsWith('/itineraries')) return 'Confirmed and active travel will live here once booking output is connected.';
   if (pathname.startsWith('/travelers')) return 'Reusable traveler records will sit here with passport, visa, and readiness visibility.';
-  if (pathname.startsWith('/reports')) return 'Spend, department movement, and approval bottlenecks will roll into this reporting layer.';
+  if (pathname.startsWith('/reports')) return 'Review issued invoices, collections and balances by period and currency.';
   return 'A centralized workspace for group travel, approvals, documents, quotes, and service coordination with DPM.';
 }
 
@@ -72,8 +75,8 @@ function buildCtmRoute(pathname = '/') {
 
 function buildPortalStats(requests: CorporateTripRequest[], billingSummary?: CorporateBillingSummary | null): CorporatePortalStat[] {
   const totals = billingSummary?.totalsByCurrency ?? (billingSummary ? [billingSummary] : []);
-  const controlledSpend = totals.length ? totals.map((item) => `${item.currency} ${item.totalInvoiced.toLocaleString('en-US')}`).join(' / ') : '—';
-  const spendHint = totals.length ? totals.map((item) => `${item.currency} ${item.outstandingBalance.toLocaleString('en-US')} outstanding`).join(' / ') : 'No billing totals available';
+  const controlledSpend = totals.length ? totals.map((item) => `${item.currency} ${item.totalInvoiced.toLocaleString(opsLocale())}`).join(' / ') : '—';
+  const spendHint = totals.length ? totals.map((item) => `${item.currency} ${item.outstandingBalance.toLocaleString(opsLocale())} · ${opsText('Outstanding')}`).join(' / ') : 'No billing totals available';
   return [
     { id: 'spend', label: 'Controlled spend', value: controlledSpend, hint: spendHint, tone: 'gold' },
     { id: 'travelers', label: 'Travelers managed', value: String(new Set(requests.flatMap((trip) => trip.travelers.map((traveler) => traveler.id))).size), hint: 'Unique travelers across current requests', tone: 'sky' },
@@ -96,6 +99,7 @@ function buildActivityTimeline(requests: CorporateTripRequest[]): CorporateTimel
 }
 
 export function CorporatePortalApp() {
+  useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
@@ -175,7 +179,7 @@ export function CorporatePortalApp() {
       if (contextResult.status === 'fulfilled') setCompany(contextResult.value.company);
       if (requestsResult.status === 'fulfilled') setRequests(requestsResult.value);
       if (travelersResult.status === 'fulfilled') setTravelers(travelersResult.value);
-      if (billingSummaryResult.status === 'fulfilled') setBillingSummary(billingSummaryResult.value);
+      setBillingSummary(billingSummaryResult.status === 'fulfilled' && billingInvoicesResult.status === 'fulfilled' && billingPaymentsResult.status === 'fulfilled' ? billingSummaryResult.value : null);
       if (billingInvoicesResult.status === 'fulfilled') setBillingInvoices(billingInvoicesResult.value);
       if (billingPaymentsResult.status === 'fulfilled') setBillingPayments(billingPaymentsResult.value);
       const firstFailure = [contextResult, requestsResult, travelersResult, billingSummaryResult, billingInvoicesResult, billingPaymentsResult]
@@ -224,7 +228,7 @@ export function CorporatePortalApp() {
 
   const selectedRequestId = portalPathname.startsWith('/requests/') ? portalPathname.replace('/requests/', '') : null;
   const selectedTrip = selectedRequestId ? requests.find((trip) => trip.id === selectedRequestId) ?? null : filteredRequests[0] ?? requests[0] ?? null;
-  const portalStats = useMemo(() => buildPortalStats(requests, billingSummary), [requests, billingSummary]);
+  const portalStats = buildPortalStats(requests, billingSummary);
   const portalTimeline = useMemo(() => buildActivityTimeline(requests), [requests]);
 
   const openRequest = (tripId: string) => navigate(buildCtmRoute(`/requests/${tripId}`));
@@ -384,7 +388,7 @@ export function CorporatePortalApp() {
     return (
       <main className="grid min-h-screen place-items-center bg-[#07111d] px-4 text-white">
         <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0d1828] p-6 shadow-2xl">
-          <h1 className="text-2xl font-semibold">CTM backend required</h1>
+          <h1 className="text-2xl font-semibold">{opsText("CTM backend required")}</h1>
           <p className="mt-2 text-sm leading-6 text-white/60">
             Corporate Travel Management now runs from the Django backend. Set `VITE_CRM_API_URL` to the backend API before using the CTM workspace.
           </p>
@@ -395,55 +399,51 @@ export function CorporatePortalApp() {
 
   if (!ctmSession) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#07111d] px-4 text-white">
-        <form onSubmit={submitLogin} className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1828] p-6 shadow-2xl">
-          <h1 className="text-2xl font-semibold">CTM Sign In</h1>
-          <p className="mt-2 text-sm leading-6 text-white/60">
-            Use your Company ID and portal account to manage requests, approvals, and traveler readiness.
-          </p>
-          <label className="mt-6 block text-sm font-medium text-white/75">
-            Company ID
-            <input
+      <CrmLoginLayout corporate>
+        <form onSubmit={submitLogin} className="crm-login-form">
+          <p className="crm-eyebrow mb-3">DPM CTM</p><h2>{opsText("Welcome back.")}</h2>
+          <p className="mt-2 text-sm leading-6 text-[#66747b]">
+            {opsText("Use your Company ID and portal account to manage requests, approvals, and traveler readiness.")}</p>
+          <label className="mt-6 block text-sm font-medium text-[#20333d]">
+            {opsText("Company ID")}<input
               value={loginCompanyCode}
               onChange={(event) => setLoginCompanyCode(event.target.value)}
-              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm uppercase text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              className="mt-2 h-11 w-full rounded-lg border border-[#d9dcd8] bg-white px-3 text-sm uppercase text-[#20333d] outline-none placeholder:text-[#819096] focus:border-[#fe8500]"
               placeholder="DPMCOMPANY"
               autoComplete="organization"
               required
             />
           </label>
-          <label className="mt-4 block text-sm font-medium text-white/75">
-            Username or email
-            <input
+          <label className="mt-4 block text-sm font-medium text-[#20333d]">
+            {opsText("Username or email")}<input
               value={loginIdentifier}
               onChange={(event) => setLoginIdentifier(event.target.value)}
-              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              className="mt-2 h-11 w-full rounded-lg border border-[#d9dcd8] bg-white px-3 text-sm text-[#20333d] outline-none placeholder:text-[#819096] focus:border-[#fe8500]"
               placeholder="travel.desk@company.com"
               autoComplete="username"
               required
             />
           </label>
-          <label className="mt-4 block text-sm font-medium text-white/75">
-            Password
-            <input
+          <label className="mt-4 block text-sm font-medium text-[#20333d]">
+            {opsText("Password")}<input
               value={loginPassword}
               onChange={(event) => setLoginPassword(event.target.value)}
-              className="mt-2 h-11 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]"
+              className="mt-2 h-11 w-full rounded-lg border border-[#d9dcd8] bg-white px-3 text-sm text-[#20333d] outline-none placeholder:text-[#819096] focus:border-[#fe8500]"
               type="password"
               autoComplete="current-password"
               required
             />
           </label>
-          {error ? <div className="mt-4 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div> : null}
+          {error ? <div className="mt-4 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-700">{opsText(error)}</div> : null}
           <button
             type="submit"
             disabled={isLoggingIn}
-            className="mt-6 h-11 w-full rounded-lg bg-[#d4af37] px-4 text-sm font-semibold text-[#241f1b] transition hover:bg-[#e0bc4e] disabled:opacity-55"
+            className="mt-6 h-11 w-full rounded-lg crm-primary px-4 text-sm font-semibold text-[#241f1b] transition  disabled:opacity-55"
           >
-            {isLoggingIn ? 'Signing in...' : 'Sign in'}
+            {isLoggingIn ? opsText("Signing in...") : opsText("Sign in")}
           </button>
         </form>
-      </main>
+      </CrmLoginLayout>
     );
   }
 
@@ -451,8 +451,7 @@ export function CorporatePortalApp() {
     return (
       <main className="grid min-h-screen place-items-center bg-[#07111d] px-4 text-white">
         <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0d1828] p-6 text-sm text-white/70 shadow-2xl">
-          Loading CTM workspace...
-        </div>
+          {opsText("Loading CTM workspace...")}</div>
       </main>
     );
   }
@@ -479,7 +478,7 @@ export function CorporatePortalApp() {
           : portalPathname.startsWith('/travelers')
             ? <CorporateTravelersPage travelers={travelers} search={search} theme={theme} onCreateTraveler={createTraveler} onUpdateTraveler={saveTraveler} onDeactivateTraveler={deactivateTraveler} onOpenRequest={openRequest} />
           : portalPathname.startsWith('/reports')
-              ? <CorporateReportsPage summary={billingSummary} invoices={billingInvoices} payments={billingPayments} theme={theme} onOpenRequest={openRequest} />
+              ? <CorporateReportsPage summary={billingSummary} invoices={billingInvoices} payments={billingPayments} theme={theme} onOpenRequest={openRequest} query={search} />
           : <CorporateDashboardPage requests={requests} stats={portalStats} activityTimeline={portalTimeline} onOpenRequest={openRequest} onOpenApprovals={openApprovals} onOpenNewTrip={openNewTrip} onStatClick={handleDashboardStatClick} theme={theme} />;
 
   return (
@@ -495,8 +494,8 @@ export function CorporatePortalApp() {
       onSignOut={signOut}
     >
       {error ? (
-        <div className={`mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm ${theme === 'dark' ? 'text-red-100' : 'text-red-700'}`}>
-          {error}
+        <div className={`mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm ${theme === 'dark' ? 'ctm-tone-rose' : 'text-red-700'}`}>
+          {opsText(error)}
         </div>
       ) : null}
       {screen}

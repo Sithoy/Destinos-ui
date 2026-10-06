@@ -20,7 +20,16 @@ class Client(models.Model):
     phone = models.CharField(max_length=80, blank=True)
     preferred_contact = models.CharField(max_length=80, blank=True)
     service_level = models.CharField(max_length=20, blank=True)
-    owner = models.CharField(max_length=120, blank=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="owned_clients",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    # Legacy free-text owner label, kept for backward-compatible display and
+    # as the source of the data-migration backfill into `owner`.
+    owner_label = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -115,6 +124,13 @@ class Lead(models.Model):
         blank=True,
     )
     client = models.ForeignKey(Client, related_name="leads", on_delete=models.SET_NULL, null=True, blank=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="owned_leads",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -211,7 +227,15 @@ class QuoteLine(models.Model):
     status = models.CharField(max_length=30, choices=Status.choices, default=Status.RESEARCH)
     confirmation_reference = models.CharField(max_length=120, blank=True)
     supplier_deadline = models.DateField(null=True, blank=True)
-    booking_owner = models.CharField(max_length=120, blank=True)
+    booking_owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="owned_quote_lines",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    # Legacy free-text booking owner label (source of the FK backfill).
+    booking_owner_label = models.CharField(max_length=120, blank=True)
     booking_notes = models.TextField(blank=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
@@ -347,8 +371,29 @@ class WorkflowReminder(models.Model):
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
-        DONE = "done", "Done"
+        IN_PROGRESS = "in_progress", "In Progress"
+        WAITING = "waiting", "Waiting"
+        COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
+
+    class Origin(models.TextChoices):
+        SYSTEM = "system", "System"
+        MANAGER = "manager", "Manager"
+        AUTOMATION = "automation", "Automation"
+
+    class CompletionCondition(models.TextChoices):
+        NONE = "none", "None"
+        PAYMENT_VERIFIED = "payment_verified", "Payment Verified"
+        SUPPLIER_CONFIRMED = "supplier_confirmed", "Supplier Confirmed"
+        CLIENT_RESPONDED = "client_responded", "Client Responded"
+
+    class WaitingOn(models.TextChoices):
+        CLIENT = "client", "Client"
+        SUPPLIER = "supplier", "Supplier"
+        INTERNAL = "internal", "Internal"
+
+    # Statuses that still represent open work (used by My Day and automation).
+    OPEN_STATUSES = (Status.PENDING, Status.IN_PROGRESS, Status.WAITING)
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -358,11 +403,24 @@ class WorkflowReminder(models.Model):
     communication = models.ForeignKey(CommunicationRecord, related_name="workflow_reminders", on_delete=models.SET_NULL, null=True, blank=True)
     reminder_type = models.CharField(max_length=30, choices=ReminderType.choices)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    origin = models.CharField(max_length=20, choices=Origin.choices, default=Origin.SYSTEM)
+    completion_condition = models.CharField(max_length=30, choices=CompletionCondition.choices, default=CompletionCondition.NONE)
+    waiting_on = models.CharField(max_length=20, choices=WaitingOn.choices, null=True, blank=True)
+    follow_up_at = models.DateTimeField(null=True, blank=True)
     source_stage = models.CharField(max_length=40, blank=True)
     title = models.CharField(max_length=180)
     message = models.TextField(blank=True)
     due_at = models.DateTimeField()
-    assigned_to = models.CharField(max_length=120, blank=True)
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="assigned_crm_reminders",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    # Legacy free-text assignee label (source of the FK backfill); still used
+    # as a queue hint for desk-level reminders with no resolvable assignee.
+    assigned_to_label = models.CharField(max_length=120, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="crm_workflow_reminders", on_delete=models.SET_NULL, null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 

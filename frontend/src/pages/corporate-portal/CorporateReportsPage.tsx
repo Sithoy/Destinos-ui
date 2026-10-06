@@ -1,154 +1,43 @@
+import { useState } from 'react';
+import { opsLocale, opsText } from '../../locales/operations';
 import type { CorporateBillingSummary, CorporatePortalTheme, CorporateTripInvoice, CorporateTripPayment } from '../../types/corporatePortal';
+import { ReportControls, ReportMetric } from '../../modules/reports/ReportControls';
+import { useReportCopy } from '../../modules/reports/useReportCopy';
+import { periodRange, validRange, type ReportPeriod } from '../../modules/reports/reportMath';
+import { billingRows, billingTotals } from '../../modules/reports/billingMath';
 import { corporatePortalThemeStyles } from './portalTheme';
 
-function formatMoney(value: number, currency: string) {
-  return `${currency} ${value.toLocaleString('en-US')}`;
-}
-
-function formatPaymentStatus(status: CorporateTripPayment['status']) {
-  return status.replace(/_/g, ' ');
-}
-
-function formatInvoiceStatus(status: CorporateTripInvoice['status']) {
-  return status.replace(/_/g, ' ');
-}
-
-function statusTone(status: CorporateTripInvoice['status'] | CorporateTripPayment['status']) {
-  if (status === 'paid' || status === 'received' || status === 'reconciled') return 'text-emerald-300 bg-emerald-500/10';
-  if (status === 'overdue' || status === 'failed') return 'text-rose-300 bg-rose-500/10';
-  if (status === 'partially_paid') return 'text-amber-300 bg-amber-500/10';
-  return 'text-sky-300 bg-sky-500/10';
-}
-
-export function CorporateReportsPage({
-  summary,
-  invoices,
-  payments,
-  theme,
-  onOpenRequest,
-}: {
-  summary: CorporateBillingSummary | null;
-  invoices: CorporateTripInvoice[];
-  payments: CorporateTripPayment[];
-  theme: CorporatePortalTheme;
-  onOpenRequest: (tripId: string) => void;
+export function CorporateReportsPage({ summary, invoices, payments, theme, onOpenRequest, query = '' }: {
+  summary: CorporateBillingSummary | null; invoices: CorporateTripInvoice[]; payments: CorporateTripPayment[]; theme: CorporatePortalTheme; onOpenRequest: (tripId: string) => void; query?: string;
 }) {
+  const c = useReportCopy();
   const styles = corporatePortalThemeStyles[theme];
-  const totals = summary?.totalsByCurrency ?? (summary ? [summary] : []);
-  const amounts = (key: 'totalInvoiced' | 'totalCollected' | 'outstandingBalance') => totals.length ? totals.map((item) => formatMoney(item[key], item.currency)).join(' / ') : '—';
-  const recentInvoices = invoices.slice(0, 6);
-  const recentPayments = payments.slice(0, 6);
-
-  return (
-    <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-      <div className="grid gap-4">
-        <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
-          <div className="mb-3">
-            <h2 className="text-xl font-semibold">Billing summary</h2>
-            <p className={`mt-1 text-sm ${styles.soft}`}>Issued invoices and collected payments, shown separately in each currency. Draft and void invoices are excluded.</p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className={`rounded-xl border p-4 ${styles.surface}`}>
-              <div className={`text-xs ${styles.muted}`}>Total invoiced</div>
-              <div className="mt-1 text-lg font-semibold">{amounts('totalInvoiced')}</div>
-            </div>
-            <div className={`rounded-xl border p-4 ${styles.surface}`}>
-              <div className={`text-xs ${styles.muted}`}>Collected</div>
-              <div className="mt-1 text-lg font-semibold text-emerald-300">{amounts('totalCollected')}</div>
-            </div>
-            <div className={`rounded-xl border p-4 ${styles.surface}`}>
-              <div className={`text-xs ${styles.muted}`}>Outstanding</div>
-              <div className="mt-1 text-lg font-semibold text-amber-300">{amounts('outstandingBalance')}</div>
-            </div>
-            <div className={`rounded-xl border p-4 ${styles.surface}`}>
-              <div className={`text-xs ${styles.muted}`}>Invoice count</div>
-              <div className="mt-1 text-lg font-semibold">{summary?.invoiceCount ?? invoices.length}</div>
-            </div>
-          </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-4">
-            <div className={`rounded-xl border px-4 py-3 text-sm ${styles.surface}`}>
-              <div className={styles.muted}>Sent</div>
-              <div className="mt-1 font-semibold">{summary?.sentCount ?? 0}</div>
-            </div>
-            <div className={`rounded-xl border px-4 py-3 text-sm ${styles.surface}`}>
-              <div className={styles.muted}>Overdue</div>
-              <div className="mt-1 font-semibold">{summary?.overdueCount ?? 0}</div>
-            </div>
-            <div className={`rounded-xl border px-4 py-3 text-sm ${styles.surface}`}>
-              <div className={styles.muted}>Partially paid</div>
-              <div className="mt-1 font-semibold">{summary?.partiallyPaidCount ?? 0}</div>
-            </div>
-            <div className={`rounded-xl border px-4 py-3 text-sm ${styles.surface}`}>
-              <div className={styles.muted}>Paid</div>
-              <div className="mt-1 font-semibold">{summary?.paidCount ?? 0}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
-          <div className="mb-3">
-            <h3 className="text-base font-semibold">Recent invoices</h3>
-            <p className={`mt-1 text-xs ${styles.muted}`}>Select an invoice to view its travel request.</p>
-          </div>
-          <div className="space-y-3">
-            {recentInvoices.length === 0 ? (
-              <div className={`rounded-xl border px-4 py-4 text-sm ${styles.surface} ${styles.muted}`}>No invoices have been issued yet.</div>
-            ) : (
-              recentInvoices.map((invoice) => (
-                <button
-                  key={invoice.id}
-                  type="button"
-                  onClick={() => onOpenRequest(invoice.tripRequestId)}
-                  className={`grid w-full gap-3 rounded-xl border px-4 py-3 text-left md:grid-cols-[1.1fr_0.7fr_0.8fr] ${styles.surface}`}
-                >
-                  <div>
-                    <div className="text-sm font-semibold">{invoice.invoiceNumber}</div>
-                    <div className={`mt-1 text-xs ${styles.muted}`}>{invoice.tripRequestId}</div>
-                  </div>
-                  <div>
-                    <div className={`text-xs ${styles.muted}`}>Amount</div>
-                    <div className="mt-1 text-sm font-medium">{formatMoney(invoice.amount, invoice.currency)}</div>
-                  </div>
-                  <div className="flex items-center md:justify-end">
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] capitalize ${statusTone(invoice.status)}`}>
-                      {formatInvoiceStatus(invoice.status)}
-                    </span>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
+  const [period, setPeriod] = useState<ReportPeriod>('month');
+  const [custom, setCustom] = useState({ from: '', to: '' });
+  const [currency, setCurrency] = useState('all');
+  const [metric, setMetric] = useState<'invoiced' | 'collected' | 'outstanding' | 'overdue'>('invoiced');
+  const [limit, setLimit] = useState(20);
+  const range = periodRange(period, custom);
+  const rows = billingRows(invoices.filter(i => `${i.invoiceNumber} ${i.tripRequestId}`.toLowerCase().includes(query.trim().toLowerCase())), payments, range, currency);
+  const totals = billingTotals(rows);
+  const visible = rows.filter(r => metric === 'invoiced' || (metric === 'overdue' ? r.overdue : r[metric] > 0));
+  const currencies = [...new Set(invoices.map(i => i.currency))].sort();
+  const excluded = invoices.filter(i => !['draft', 'void'].includes(i.status) && (!i.issuedAt || !Number.isFinite(new Date(i.issuedAt).getTime()))).length;
+  const mismatches = rows.reduce((n, r) => n + r.mismatches, 0);
+  const money = (value: number, unit: string) => `${unit} ${value.toLocaleString(opsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const labels = { invoiced: c('Invoiced in period', 'Faturado no período'), collected: c('Collected to date', 'Recebido até hoje'), outstanding: c('Outstanding now', 'Saldo em aberto'), overdue: c('Overdue now', 'Saldo em atraso') };
+  return <section className="space-y-5">
+    <div><h2 className="text-2xl font-semibold">{c('Spend & billing', 'Despesas e faturação')}</h2><p className={`mt-2 text-sm ${styles.muted}`}>{c('Select invoices by issue date. Collections and balances show the current position for those invoices, separately in each currency.', 'Selecione faturas pela data de emissão. Recebimentos e saldos mostram a posição atual dessas faturas, separadamente por moeda.')}</p></div>
+    <ReportControls period={period} custom={custom} onPeriod={setPeriod} onCustom={setCustom}><label className="grid gap-1 text-xs">{c('Currency', 'Moeda')}<select value={currency} onChange={e => setCurrency(e.target.value)} className="crm-select rounded-lg border p-2"><option value="all">{c('All currencies', 'Todas as moedas')}</option>{currencies.map(unit => <option key={unit}>{unit}</option>)}</select></label></ReportControls>
+    {!summary ? <p role="status">{c('Billing data is unavailable. Refresh to try again.', 'Dados de faturação indisponíveis. Atualize para tentar novamente.')}</p> : !validRange(range) ? <p role="alert">{c('Choose a valid date range.', 'Selecione um período válido.')}</p> : <>
+      {(excluded > 0 || mismatches > 0) && <p role="status" className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm">{c('Data to review', 'Dados a rever')}: {excluded} {c('invoices without a valid issue date excluded', 'faturas sem data de emissão válida excluídas')}; {mismatches} {c('payments with a different currency excluded from collections', 'pagamentos noutra moeda excluídos dos recebimentos')}.</p>}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{(Object.keys(labels) as (keyof typeof labels)[]).map(key => <ReportMetric key={key} label={labels[key]} value={totals.length ? totals.map(t => money(t[key], t.currency)).join(' · ') : '—'} note={key === 'invoiced' ? c('Draft and void invoices excluded', 'Exclui rascunhos e faturas anuladas') : key === 'collected' ? c('Received and reconciled payments on selected invoices, across all dates', 'Pagamentos recebidos e reconciliados das faturas selecionadas, em todas as datas') : key === 'overdue' ? c('Unpaid balance past the due date', 'Saldo por pagar após a data de vencimento') : c('Overpayments do not offset other invoices', 'Pagamentos em excesso não compensam outras faturas')} active={metric === key} onClick={() => { setMetric(key); setLimit(20); }} />)}</div>
+      {totals.some(t => t.credit > 0) && <p className="text-sm">{c('Overpayments to review', 'Pagamentos em excesso a rever')}: {totals.filter(t => t.credit > 0).map(t => money(t.credit, t.currency)).join(' · ')}</p>}
+      <div className={`rounded-xl border p-5 ${styles.panel}`}><h3 className="font-semibold">{labels[metric]} · {visible.length} {c('invoices', 'faturas')}</h3><p className={`mt-1 text-xs ${styles.muted}`}>{c('Select an invoice to open the travel request and review its billing records.', 'Selecione uma fatura para abrir o pedido de viagem e consultar os registos de faturação.')}</p>
+        <div className="mt-4 divide-y">{visible.slice(0, limit).map(row => <button key={row.invoice.id} onClick={() => onOpenRequest(row.invoice.tripRequestId)} className="grid w-full gap-3 py-4 text-left sm:grid-cols-3"><span><strong className="block text-sm">{row.invoice.invoiceNumber}</strong><span className={`text-xs ${styles.muted}`}>{row.invoice.tripRequestId} · {opsText(row.invoice.status.replace(/_/g, ' '))}</span></span><span className="text-xs">{c('Issued', 'Emitida')}: {row.invoice.issuedAt?.slice(0, 10)}<br />{c('Due', 'Vencimento')}: {row.invoice.dueDate || '—'}</span><span className="text-sm sm:text-right">{money(metric === 'invoiced' ? row.invoice.amount : metric === 'collected' ? row.collected : row.outstanding, row.invoice.currency)} →</span></button>)}</div>
+        {!visible.length && <p className={`py-6 text-sm ${styles.muted}`}>{c('No invoices match this selection.', 'Nenhuma fatura corresponde a esta seleção.')}</p>}
+        {visible.length > limit && <button onClick={() => setLimit(limit + 20)} className="mt-3 rounded-lg border px-4 py-2">{c('Show more', 'Mostrar mais')}</button>}
       </div>
-
-      <aside className="grid gap-4">
-        <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
-          <div className="mb-3">
-            <h3 className="text-base font-semibold">Recent payments</h3>
-            <p className={`mt-1 text-xs ${styles.muted}`}>Banking and settlement activity across active invoices.</p>
-          </div>
-          <div className="space-y-3">
-            {recentPayments.length === 0 ? (
-              <div className={`rounded-xl border px-4 py-4 text-sm ${styles.surface} ${styles.muted}`}>No payment records yet.</div>
-            ) : (
-              recentPayments.map((payment) => (
-                <div key={payment.id} className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold">{payment.reference || payment.invoiceId}</div>
-                      <div className={`mt-1 text-xs ${styles.muted}`}>{payment.paymentMethod.replace(/_/g, ' ')} · {payment.recordedBy}</div>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] capitalize ${statusTone(payment.status)}`}>
-                      {formatPaymentStatus(payment.status)}
-                    </span>
-                  </div>
-                  <div className="mt-3 text-sm font-medium">{formatMoney(payment.amount, payment.currency)}</div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </aside>
-    </section>
-  );
+    </>}
+  </section>;
 }

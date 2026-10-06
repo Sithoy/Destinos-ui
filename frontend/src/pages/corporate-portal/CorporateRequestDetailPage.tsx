@@ -1,3 +1,4 @@
+import { opsText, opsLocale, opsDate } from '../../locales/operations';
 import { AlertCircle, AlertTriangle, Building2, CheckCircle2, CircleDot, ClipboardList, Clock3, FileText, MessageSquare, PlaneTakeoff, Plus, Receipt, Send, ShieldCheck, UploadCloud, XCircle } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { CostLifecycleCard } from '../../components/corporate-portal/CostLifecycleCard';
@@ -42,25 +43,25 @@ function labelize(value: string) {
 
 function statusTone(status: string, theme: CorporatePortalTheme) {
   if (['verified', 'issued', 'done', 'confirmed', 'ticketed', 'completed', 'approved', 'paid'].includes(status)) {
-    return 'bg-emerald-500/12 text-emerald-200';
+    return 'bg-emerald-500/12 ctm-tone-emerald';
   }
   if (['missing', 'blocked', 'cancelled', 'rejected', 'overdue'].includes(status)) {
-    return 'bg-rose-500/12 text-rose-200';
+    return 'bg-rose-500/12 ctm-tone-rose';
   }
   if (['requested', 'in_progress', 'sent', 'partially_paid'].includes(status)) {
-    return 'bg-amber-500/12 text-amber-100';
+    return 'bg-amber-500/12 ctm-tone-amber';
   }
-  return theme === 'dark' ? 'bg-sky-500/12 text-sky-200' : 'bg-sky-50 text-sky-800';
+  return theme === 'dark' ? 'bg-sky-500/12 ctm-tone-sky' : 'bg-sky-50 text-sky-800';
 }
 
 function RequiredMark() {
-  return <span className="text-[#d9b46f]">*</span>;
+  return <span className="crm-accent-text">*</span>;
 }
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <div className="mt-2 flex items-start gap-1.5 text-xs text-rose-200">
+    <div className="mt-2 flex items-start gap-1.5 text-xs ctm-tone-rose">
       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{message}</span>
     </div>
@@ -69,7 +70,7 @@ function FieldError({ message }: { message?: string }) {
 
 function formatMoney(amount: number | null | undefined, currency = 'USD') {
   if (amount === null || amount === undefined) return 'Pending';
-  return `${currency} ${amount.toLocaleString('en-US')}`;
+  return `${currency} ${amount.toLocaleString(opsLocale())}`;
 }
 
 function formatDraftDate(value?: string | null) {
@@ -83,17 +84,17 @@ function formatDraftDateTime(value?: string | null) {
 }
 
 function stageClass(state: ProcessingStageState, theme: CorporatePortalTheme) {
-  if (state === 'done') return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200';
-  if (state === 'active') return 'border-sky-400/35 bg-sky-500/10 text-sky-200';
-  if (state === 'blocked') return 'border-rose-400/35 bg-rose-500/10 text-rose-100';
+  if (state === 'done') return 'border-emerald-400/30 bg-emerald-500/10 ctm-tone-emerald';
+  if (state === 'active') return 'border-sky-400/35 bg-sky-500/10 ctm-tone-sky';
+  if (state === 'blocked') return 'border-rose-400/35 bg-rose-500/10 ctm-tone-rose';
   return theme === 'dark' ? 'border-white/10 bg-white/[0.03] text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500';
 }
 
 function stageDotClass(state: ProcessingStageState, selected: boolean, theme: CorporatePortalTheme) {
-  const selectedRing = selected ? 'ring-2 ring-[#d9b46f]/70 ring-offset-2 ring-offset-transparent' : '';
-  if (state === 'done') return `border-emerald-400/45 bg-emerald-500/15 text-emerald-200 ${selectedRing}`;
-  if (state === 'active') return `border-sky-400/45 bg-sky-500/15 text-sky-200 ${selectedRing}`;
-  if (state === 'blocked') return `border-rose-400/45 bg-rose-500/15 text-rose-100 ${selectedRing}`;
+  const selectedRing = selected ? 'ring-2 ring-[#fe8500]/70 ring-offset-2 ring-offset-transparent' : '';
+  if (state === 'done') return `border-emerald-400/45 bg-emerald-500/15 ctm-tone-emerald ${selectedRing}`;
+  if (state === 'active') return `border-sky-400/45 bg-sky-500/15 ctm-tone-sky ${selectedRing}`;
+  if (state === 'blocked') return `border-rose-400/45 bg-rose-500/15 ctm-tone-rose ${selectedRing}`;
   return `${theme === 'dark' ? 'border-white/10 bg-white/[0.03] text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'} ${selectedRing}`;
 }
 
@@ -217,7 +218,7 @@ function formatTimelineDate(value: string | null | undefined) {
   if (!value) return 'Latest';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  return date.toLocaleDateString(opsLocale(), { day: '2-digit', month: 'short' });
 }
 
 function inferTimelineSource(title: string, meta: string): TimelineSource {
@@ -395,8 +396,8 @@ export function CorporateRequestDetailPage({
   if (!trip) {
     return (
       <section className={`rounded-xl border p-6 text-center shadow-2xl ${styles.panel}`}>
-        <h2 className="text-xl font-semibold">Request not found</h2>
-        <p className={`mt-2 text-sm ${styles.muted}`}>This request is unavailable in your company workspace. Open an existing request from the Requests tab.</p>
+        <h2 className="text-xl font-semibold">{opsText("Request not found")}</h2>
+        <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("This request is unavailable in your company workspace. Open an existing request from the Requests tab.")}</p>
       </section>
     );
   }
@@ -513,12 +514,12 @@ export function CorporateRequestDetailPage({
     <div className={`rounded-xl border px-4 py-3 ${styles.panelSoft}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold">Shared request workflow</div>
-          <div className={`mt-1 text-xs ${styles.muted}`}>Current: {trip.workflow?.currentStageLabel ?? activeWorkflowStage.label}</div>
+          <div className="text-sm font-semibold">{opsText("Shared request workflow")}</div>
+          <div className={`mt-1 text-xs ${styles.muted}`}>{opsText("Current:")}{' '}{trip.workflow?.currentStageLabel ?? opsText(activeWorkflowStage.label)}</div>
         </div>
         <div className="text-right">
           <div className="text-lg font-semibold">{canonicalProgress}%</div>
-          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Progress</div>
+          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Progress")}</div>
         </div>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
@@ -542,7 +543,7 @@ export function CorporateRequestDetailPage({
               <span className={`grid h-9 w-9 place-items-center rounded-full border transition group-hover:scale-105 ${stageDotClass(stage.state, selected, theme)}`}>
                 <Icon className="h-4 w-4" />
               </span>
-              <span className={`max-w-full truncate text-[10px] font-medium ${selected ? 'text-[#d9b46f]' : styles.muted}`}>{stage.label}</span>
+              <span className={`max-w-full truncate text-[10px] font-medium ${selected ? 'crm-accent-text' : styles.muted}`}>{opsText(stage.label)}</span>
             </button>
           );
         })}
@@ -557,15 +558,15 @@ export function CorporateRequestDetailPage({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="mb-2 flex items-center gap-2">
-                <span className="text-sm font-medium text-[#d9b46f]">{trip.id}</span>
+                <span className="text-sm font-medium crm-accent-text">{trip.id}</span>
                 <TripStatusBadge status={trip.status} theme={theme} />
               </div>
               <h2 className="text-xl font-semibold">{trip.route}</h2>
               <p className={`mt-1.5 max-w-2xl text-sm leading-6 ${styles.soft}`}>{trip.purpose}</p>
             </div>
             <div className={`rounded-xl border px-4 py-3 text-sm ${styles.surface}`}>
-              <div className="font-medium">{trip.travelers.length} traveler{trip.travelers.length === 1 ? '' : 's'}</div>
-              <div className={`mt-1 ${styles.muted}`}>{trip.travelDate}</div>
+              <div className="font-medium">{trip.travelers.length} {opsText("traveler")}{' '}{trip.travelers.length === 1 ? '' : 's'}</div>
+              <div className={`mt-1 ${styles.muted}`}>{opsDate(trip.travelDate)}</div>
             </div>
           </div>
 
@@ -573,16 +574,14 @@ export function CorporateRequestDetailPage({
             <div className={`rounded-xl border p-3.5 ${styles.surface}`}>
               <div className={`flex items-center gap-2 ${styles.muted}`}>
                 <Building2 className="h-4 w-4" />
-                Department
-              </div>
+                {opsText("Department")}</div>
               <div className="mt-2 font-semibold">{trip.department}</div>
-              <div className={`mt-1 text-xs ${styles.muted}`}>Requested by {trip.requestedBy}</div>
+              <div className={`mt-1 text-xs ${styles.muted}`}>{opsText("Requested by")}{' '}{trip.requestedBy}</div>
             </div>
             <div className={`rounded-xl border p-3.5 ${styles.surface}`}>
               <div className={`flex items-center gap-2 ${styles.muted}`}>
                 <PlaneTakeoff className="h-4 w-4" />
-                Services
-              </div>
+                {opsText("Services")}</div>
               <div className="mt-2.5">
                 <ServiceChipList services={trip.services} theme={theme} />
               </div>
@@ -590,8 +589,7 @@ export function CorporateRequestDetailPage({
             <div className={`rounded-xl border p-3.5 md:col-span-2 xl:col-span-1 ${styles.surface}`}>
               <div className={`flex items-center gap-2 ${styles.muted}`}>
                 <CheckCircle2 className="h-4 w-4" />
-                Operational summary
-              </div>
+                {opsText("Operational summary")}</div>
               <div className={`mt-2 text-sm leading-6 ${styles.soft}`}>{trip.internalSummary}</div>
             </div>
           </div>
@@ -600,14 +598,13 @@ export function CorporateRequestDetailPage({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="flex items-center gap-2 text-base font-semibold">
-                  <CircleDot className="h-4 w-4 text-[#d9b46f]" />
-                  Corporate workflow visibility
-                </div>
-                <p className={`mt-1 text-sm ${styles.muted}`}>Same lifecycle used by CRM and CTM, calculated from the linked CTM request.</p>
+                  <CircleDot className="h-4 w-4 crm-accent-text" />
+                  {opsText("Corporate workflow visibility")}</div>
+                <p className={`mt-1 text-sm ${styles.muted}`}>{opsText("Same lifecycle used by CRM and CTM, calculated from the linked CTM request.")}</p>
               </div>
               <div className={`rounded-lg border px-3 py-2 text-sm ${stageClass(activeWorkflowStage.state, theme)}`}>
-                <div className="text-xs uppercase tracking-[0.12em] opacity-75">Current stage</div>
-                <div className="mt-1 font-semibold">{trip.workflow?.currentStageLabel ?? activeWorkflowStage.label}</div>
+                <div className="text-xs uppercase tracking-[0.12em] opacity-75">{opsText("Current stage")}</div>
+                <div className="mt-1 font-semibold">{trip.workflow?.currentStageLabel ?? opsText(activeWorkflowStage.label)}</div>
               </div>
             </div>
 
@@ -619,19 +616,17 @@ export function CorporateRequestDetailPage({
               <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                 <div className={`flex items-center gap-2 text-xs uppercase tracking-[0.12em] ${styles.muted}`}>
                   <Clock3 className="h-3.5 w-3.5" />
-                  Selected detail
-                </div>
+                  {opsText("Selected detail")}</div>
                 <div className="mt-2 flex items-center gap-2">
                   <span className={`rounded-full px-2.5 py-1 text-[11px] ${stageClass(selectedWorkflowStage.state, theme)}`}>{stageToneLabel(selectedWorkflowStage.state)}</span>
-                  <span className="text-sm font-semibold">{selectedWorkflowStage.label}</span>
+                  <span className="text-sm font-semibold">{opsText(selectedWorkflowStage.label)}</span>
                 </div>
                 <div className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedWorkflowStage.detail}</div>
               </div>
               <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                 <div className={`flex items-center gap-2 text-xs uppercase tracking-[0.12em] ${styles.muted}`}>
                   <AlertTriangle className="h-3.5 w-3.5" />
-                  Primary next action
-                </div>
+                  {opsText("Primary next action")}</div>
                 <div className="mt-2 text-sm leading-6">{nextClientAction}</div>
               </div>
             </div>
@@ -640,10 +635,9 @@ export function CorporateRequestDetailPage({
           <div className={`mt-4 rounded-xl border p-4 ${styles.surface}`}>
             <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div>
-                <div className="text-base font-semibold">Client actions</div>
+                <div className="text-base font-semibold">{opsText("Client actions")}</div>
                 <p className={`mt-1 text-sm leading-6 ${styles.muted}`}>
-                  Approve decisions, upload missing information, or message DPM from the same request record.
-                </p>
+                  {opsText("Approve decisions, upload missing information, or message DPM from the same request record.")}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -652,16 +646,14 @@ export function CorporateRequestDetailPage({
                   className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm ${styles.buttonGhost}`}
                 >
                   <UploadCloud className="h-4 w-4" />
-                  Documents
-                </button>
+                  {opsText("Documents")}</button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('messages')}
                   className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm ${styles.buttonGhost}`}
                 >
                   <MessageSquare className="h-4 w-4" />
-                  Message DPM
-                </button>
+                  {opsText("Message DPM")}</button>
               </div>
             </div>
 
@@ -670,10 +662,10 @@ export function CorporateRequestDetailPage({
                 <div key={`${approval.stage}-${approval.approver}-action`} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold">{approval.stage} approval</div>
-                      <div className={`mt-1 text-xs ${styles.muted}`}>Responsible: {approval.approver}</div>
+                      <div className="text-sm font-semibold">{approval.stage} {opsText("approval")}</div>
+                      <div className={`mt-1 text-xs ${styles.muted}`}>{opsText("Responsible:")}{' '}{approval.approver}</div>
                     </div>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] ${statusTone('in_progress', theme)}`}>Pending</span>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] ${statusTone('in_progress', theme)}`}>{opsText("Pending")}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
@@ -683,8 +675,7 @@ export function CorporateRequestDetailPage({
                       className="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55"
                     >
                       <CheckCircle2 className="h-4 w-4" />
-                      Approve
-                    </button>
+                      {opsText("Approve")}</button>
                     <button
                       type="button"
                       disabled={isSavingApproval}
@@ -692,27 +683,27 @@ export function CorporateRequestDetailPage({
                       className="inline-flex h-9 items-center gap-2 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55"
                     >
                       <XCircle className="h-4 w-4" />
-                      {approval.stage === 'Briefing' ? 'Request changes' : 'Reject'}
+                      {approval.stage === 'Briefing' ? 'Request changes' : opsText("Reject")}
                     </button>
                   </div>
                 </div>
               )) : lockedApprovals.length === 0 ? (
                 <div className={`rounded-lg border px-3 py-3 text-sm lg:col-span-2 ${styles.panelSoft}`}>
-                  <div className="font-semibold">No pending approvals</div>
-                  <div className={`mt-1 ${styles.muted}`}>Approval actions will appear here when travel need or final cost review is required.</div>
+                  <div className="font-semibold">{opsText("No pending approvals")}</div>
+                  <div className={`mt-1 ${styles.muted}`}>{opsText("Approval actions will appear here when travel need or final cost review is required.")}</div>
                 </div>
               ) : null}
               {lockedApprovals.map((approval) => (
                 <div key={`${approval.stage}-${approval.approver}-locked`} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold">{approval.stage} approval</div>
-                      <div className={`mt-1 text-xs ${styles.muted}`}>Responsible: {approval.approver}</div>
+                      <div className="text-sm font-semibold">{approval.stage} {opsText("approval")}</div>
+                      <div className={`mt-1 text-xs ${styles.muted}`}>{opsText("Responsible:")}{' '}{approval.approver}</div>
                     </div>
-                    <span className={theme === 'dark' ? 'rounded-full bg-white/8 px-2.5 py-1 text-[11px] text-slate-300' : 'rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600'}>Locked</span>
+                    <span className={theme === 'dark' ? 'rounded-full bg-white/8 px-2.5 py-1 text-[11px] text-slate-300' : 'rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600'}>{opsText("Locked")}</span>
                   </div>
                   <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${styles.surface}`}>
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 ctm-tone-amber" />
                     <span className={styles.muted}>{approval.blocker || 'Complete the previous workflow gate before this approval opens.'}</span>
                   </div>
                 </div>
@@ -724,14 +715,14 @@ export function CorporateRequestDetailPage({
         <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
           <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-semibold">Traveler readiness</h3>
-              <div className={`text-xs ${styles.muted}`}>Documents and visa preparation</div>
+              <h3 className="text-base font-semibold">{opsText("Traveler readiness")}</h3>
+              <div className={`text-xs ${styles.muted}`}>{opsText("Documents and visa preparation")}</div>
             </div>
             <TravelerReadinessList travelers={trip.travelers} theme={theme} />
           </div>
 
           <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
-            <div className="mb-3 text-base font-semibold">Approvals</div>
+            <div className="mb-3 text-base font-semibold">{opsText("Approvals")}</div>
             <div className="space-y-2.5">
               {trip.approvals.map((approval) => (
                 <div key={`${approval.stage}-${approval.approver}`} className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
@@ -744,15 +735,15 @@ export function CorporateRequestDetailPage({
                             ? 'bg-white/8 text-slate-300'
                             : 'bg-slate-100 text-slate-600'
                           : approval.status === 'Approved'
-                          ? 'bg-emerald-500/12 text-emerald-200'
+                          ? 'bg-emerald-500/12 ctm-tone-emerald'
                           : approval.status === 'Rejected'
-                            ? 'bg-rose-500/12 text-rose-200'
+                            ? 'bg-rose-500/12 ctm-tone-rose'
                             : theme === 'dark'
-                              ? 'bg-sky-500/12 text-sky-200'
+                              ? 'bg-sky-500/12 ctm-tone-sky'
                               : 'bg-sky-50 text-sky-800'
                       }`}
                     >
-                      {approval.status === 'Pending' && approval.canApprove === false ? 'Locked' : approval.status}
+                      {approval.status === 'Pending' && approval.canApprove === false ? opsText("Locked") : approval.status}
                     </span>
                   </div>
                   <div className={`mt-1 text-xs ${styles.muted}`}>{approval.approver}</div>
@@ -768,8 +759,8 @@ export function CorporateRequestDetailPage({
         <div className={`rounded-xl border shadow-2xl ${styles.panel}`}>
           <div className="flex flex-col gap-3 border-b border-inherit px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h3 className="text-base font-semibold">Request workbench</h3>
-              <p className={`mt-1 text-sm ${styles.muted}`}>Exchange documents, messages, and operational tasks for this trip.</p>
+              <h3 className="text-base font-semibold">{opsText("Request workbench")}</h3>
+              <p className={`mt-1 text-sm ${styles.muted}`}>{opsText("Exchange documents, messages, and operational tasks for this trip.")}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {tabItems.map(({ id, label, count, Icon }) => (
@@ -781,11 +772,11 @@ export function CorporateRequestDetailPage({
                     setWorkbenchError('');
                   }}
                   className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
-                    activeTab === id ? 'border-[#d9b46f]/35 bg-[#d9b46f]/10 text-[#d9b46f]' : styles.buttonGhost
+                    activeTab === id ? 'border-[#fe8500]/35 bg-[#fe8500]/10 crm-accent-text' : styles.buttonGhost
                   }`}
                 >
                   <Icon className="h-4 w-4" />
-                  {label}
+                  {opsText(label)}
                   <span className="rounded-full bg-black/15 px-2 py-0.5 text-xs">{count}</span>
                 </button>
               ))}
@@ -793,7 +784,7 @@ export function CorporateRequestDetailPage({
           </div>
 
           {workbenchError ? (
-            <div className="mx-4 mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <div className="mx-4 mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm ctm-tone-rose">
               {workbenchError}
             </div>
           ) : null}
@@ -806,14 +797,14 @@ export function CorporateRequestDetailPage({
                     <div className={`rounded-xl border p-4 ${styles.surface}`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <div className="text-[11px] uppercase tracking-[0.18em] text-[#d9b46f]">DPM itinerary draft</div>
+                          <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">{opsText("DPM itinerary draft")}</div>
                           <h3 className="mt-2 text-lg font-semibold">{itineraryDraft.title}</h3>
                           <p className={`mt-1 text-sm ${styles.muted}`}>
                             {formatDraftDate(itineraryDraft.startDate)} - {formatDraftDate(itineraryDraft.endDate)}
                           </p>
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs capitalize ${statusTone(itineraryDraft.status, theme)}`}>
-                          {labelize(itineraryDraft.status)}
+                          {opsText(labelize(itineraryDraft.status))}
                         </span>
                       </div>
                       {itineraryDraft.notes ? <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{itineraryDraft.notes}</p> : null}
@@ -821,22 +812,22 @@ export function CorporateRequestDetailPage({
 
                     <div className={`overflow-hidden rounded-xl border ${styles.surface}`}>
                       <div className={`grid grid-cols-[52px_minmax(150px,1fr)_110px_minmax(180px,1.1fr)] gap-3 border-b border-inherit px-4 py-3 text-xs uppercase tracking-[0.14em] ${styles.muted}`}>
-                        <div>Stop</div>
-                        <div>City</div>
-                        <div>Nights</div>
-                        <div>Stay</div>
+                        <div>{opsText("Stop")}</div>
+                        <div>{opsText("City")}</div>
+                        <div>{opsText("Nights")}</div>
+                        <div>{opsText("Stay")}</div>
                       </div>
                       {itineraryDraft.stops.length > 0 ? itineraryDraft.stops.map((stop) => {
                         const firstStay = stop.accommodations[0];
                         return (
                           <div key={stop.id} className="grid grid-cols-[52px_minmax(150px,1fr)_110px_minmax(180px,1.1fr)] gap-3 border-b border-inherit px-4 py-3 text-sm last:border-b-0">
-                            <div className="font-semibold text-[#d9b46f]">{stop.sequenceNumber}</div>
+                            <div className="font-semibold crm-accent-text">{stop.sequenceNumber}</div>
                             <div>
                               <div className="font-semibold">{stop.city}{stop.country ? `, ${stop.country}` : ''}</div>
                               <div className={`mt-1 text-xs ${styles.muted}`}>{formatDraftDate(stop.arrivalDate)} - {formatDraftDate(stop.departureDate)}</div>
                               {stop.notes ? <div className={`mt-2 line-clamp-2 text-xs ${styles.soft}`}>{stop.notes}</div> : null}
                             </div>
-                            <div>{stop.nights || 'Pending'}</div>
+                            <div>{stop.nights || opsText("Pending")}</div>
                             <div>
                               <div className="font-medium">{firstStay?.name || 'Accommodation pending'}</div>
                               <div className={`mt-1 text-xs ${styles.muted}`}>
@@ -844,14 +835,14 @@ export function CorporateRequestDetailPage({
                               </div>
                               {firstStay ? (
                                 <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] capitalize ${statusTone(firstStay.bookingStatus, theme)}`}>
-                                  {labelize(firstStay.bookingStatus)}
+                                  {opsText(labelize(firstStay.bookingStatus))}
                                 </span>
                               ) : null}
                             </div>
                           </div>
                         );
                       }) : (
-                        <div className={`px-4 py-6 text-sm ${styles.muted}`}>DPM has not added city stops yet.</div>
+                        <div className={`px-4 py-6 text-sm ${styles.muted}`}>{opsText("DPM has not added city stops yet.")}</div>
                       )}
                     </div>
                   </div>
@@ -859,33 +850,32 @@ export function CorporateRequestDetailPage({
                   <div className="grid content-start gap-4">
                     <div className={`rounded-xl border p-4 ${styles.surface}`}>
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-semibold">Movement plan</div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{itineraryDraft.transports.length} segments</span>
+                        <div className="font-semibold">{opsText("Movement plan")}</div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{itineraryDraft.transports.length} {opsText("segments")}</span>
                       </div>
                       <div className="mt-4 grid gap-3">
                         {itineraryDraft.transports.length > 0 ? itineraryDraft.transports.map((segment) => (
                           <div key={segment.id} className={`rounded-lg border p-3 ${styles.panelSoft}`}>
                             <div className="flex items-start justify-between gap-3">
                               <div>
-                                <div className="font-medium capitalize">{segment.mode} - {segment.fromCity} to {segment.toCity}</div>
+                                <div className="font-medium capitalize">{segment.mode} - {segment.fromCity} {opsText("to")}{' '}{segment.toCity}</div>
                                 <div className={`mt-1 text-xs ${styles.muted}`}>{formatDraftDateTime(segment.departureAt)} - {formatDraftDateTime(segment.arrivalAt)}</div>
                               </div>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] capitalize ${statusTone(segment.bookingStatus, theme)}`}>{labelize(segment.bookingStatus)}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] capitalize ${statusTone(segment.bookingStatus, theme)}`}>{opsText(labelize(segment.bookingStatus))}</span>
                             </div>
-                            <div className={`mt-2 text-xs ${styles.muted}`}>{segment.supplier || 'Supplier pending'}{segment.reference ? ` - ${segment.reference}` : ''}</div>
+                            <div className={`mt-2 text-xs ${styles.muted}`}>{segment.supplier || opsText("Supplier pending")}{segment.reference ? ` - ${segment.reference}` : ''}</div>
                           </div>
                         )) : (
-                          <div className={`rounded-lg border p-3 text-sm ${styles.panelSoft} ${styles.muted}`}>Flights, transfers, or other movement details are still being designed.</div>
+                          <div className={`rounded-lg border p-3 text-sm ${styles.panelSoft} ${styles.muted}`}>{opsText("Flights, transfers, or other movement details are still being designed.")}</div>
                         )}
                       </div>
                     </div>
 
                     <div className={`rounded-xl border p-4 ${styles.surface}`}>
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-semibold">Meetings / activities</div>
+                        <div className="font-semibold">{opsText("Meetings / activities")}</div>
                         <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
-                          {itineraryDraft.stops.reduce((total, stop) => total + stop.experiences.length, 0)} planned
-                        </span>
+                          {itineraryDraft.stops.reduce((total, stop) => total + stop.experiences.length, 0)} {opsText("planned")}</span>
                       </div>
                       <div className="mt-4 grid gap-3">
                         {itineraryDraft.stops.flatMap((stop) => stop.experiences.map((experience) => ({ ...experience, city: stop.city }))).length > 0 ? (
@@ -896,13 +886,13 @@ export function CorporateRequestDetailPage({
                                   <div className="font-medium">{experience.title}</div>
                                   <div className={`mt-1 text-xs ${styles.muted}`}>{experience.city} - {experience.category || 'Activity'}</div>
                                 </div>
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] capitalize ${statusTone(experience.status, theme)}`}>{labelize(experience.status)}</span>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] capitalize ${statusTone(experience.status, theme)}`}>{opsText(labelize(experience.status))}</span>
                               </div>
                               {experience.notes ? <div className={`mt-2 text-xs ${styles.soft}`}>{experience.notes}</div> : null}
                             </div>
                           ))
                         ) : (
-                          <div className={`rounded-lg border p-3 text-sm ${styles.panelSoft} ${styles.muted}`}>Meetings and activities will appear here if they affect the itinerary scope.</div>
+                          <div className={`rounded-lg border p-3 text-sm ${styles.panelSoft} ${styles.muted}`}>{opsText("Meetings and activities will appear here if they affect the itinerary scope.")}</div>
                         )}
                       </div>
                     </div>
@@ -911,12 +901,11 @@ export function CorporateRequestDetailPage({
               ) : (
                 <div className={`rounded-xl border p-5 text-sm xl:col-span-2 ${styles.surface}`}>
                   <div className="flex items-start gap-3">
-                    <PlaneTakeoff className="mt-0.5 h-5 w-5 text-[#d9b46f]" />
+                    <PlaneTakeoff className="mt-0.5 h-5 w-5 crm-accent-text" />
                     <div>
-                      <div className="font-semibold">Itinerary draft not published yet</div>
+                      <div className="font-semibold">{opsText("Itinerary draft not published yet")}</div>
                       <p className={`mt-2 leading-6 ${styles.muted}`}>
-                        DPM will show the route, stays, movements, and meetings here once the Trip Design workspace has enough information.
-                      </p>
+                        {opsText("DPM will show the route, stays, movements, and meetings here once the Trip Design workspace has enough information.")}</p>
                     </div>
                   </div>
                 </div>
@@ -928,87 +917,84 @@ export function CorporateRequestDetailPage({
             <div className="grid gap-4 p-4 xl:grid-cols-[0.95fr_1.05fr]">
               <form onSubmit={submitDocument} className={`rounded-xl border p-4 ${styles.surface}`}>
                 <div className="mb-3 flex items-center gap-2 font-semibold">
-                  <Plus className="h-4 w-4 text-[#d9b46f]" />
-                  Add document record
-                </div>
+                  <Plus className="h-4 w-4 crm-accent-text" />
+                  {opsText("Add document record")}</div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="text-sm">
-                    <div className={`mb-2 ${styles.muted}`}>Title <RequiredMark /></div>
+                    <div className={`mb-2 ${styles.muted}`}>{opsText("Title")}<RequiredMark /></div>
                     <input
                       value={documentTitle}
                       onBlur={() => markWorkbenchTouched('documentTitle')}
                       onChange={(event) => setDocumentTitle(event.target.value)}
                       className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input} ${workbenchErrorClass('documentTitle', documentTitleError)}`}
-                      placeholder="Passport scan, visa letter..."
+                      placeholder={opsText("Passport scan, visa letter...")}
                     />
                     <FieldError message={visibleWorkbenchError('documentTitle', documentTitleError)} />
                   </label>
                   <label className="text-sm">
-                    <div className={`mb-2 ${styles.muted}`}>Traveler</div>
+                    <div className={`mb-2 ${styles.muted}`}>{opsText("Traveler")}</div>
                     <select value={documentTravelerId} onChange={(event) => setDocumentTravelerId(event.target.value)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`}>
-                      <option value="" className="bg-[#07111f]">Request level</option>
+                      <option value="" className="bg-[#07111f]">{opsText("Request level")}</option>
                       {trip.travelers.map((traveler) => (
                         <option key={traveler.id} value={traveler.id} className="bg-[#07111f]">{traveler.name}</option>
                       ))}
                     </select>
                   </label>
                   <label className="text-sm">
-                    <div className={`mb-2 ${styles.muted}`}>Type</div>
+                    <div className={`mb-2 ${styles.muted}`}>{opsText("Type")}</div>
                     <select value={documentType} onChange={(event) => setDocumentType(event.target.value as CorporateDocumentType)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`}>
                       {documentTypes.map((item) => (
-                        <option key={item.value} value={item.value} className="bg-[#07111f]">{item.label}</option>
+                        <option key={item.value} value={item.value} className="bg-[#07111f]">{opsText(item.label)}</option>
                       ))}
                     </select>
                   </label>
                   <label className="text-sm">
-                    <div className={`mb-2 ${styles.muted}`}>Status</div>
+                    <div className={`mb-2 ${styles.muted}`}>{opsText("Status")}</div>
                     <select value={documentStatus} onChange={(event) => setDocumentStatus(event.target.value as CorporateDocumentStatus)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`}>
                       {documentStatuses.map((item) => (
-                        <option key={item.value} value={item.value} className="bg-[#07111f]">{item.label}</option>
+                        <option key={item.value} value={item.value} className="bg-[#07111f]">{opsText(item.label)}</option>
                       ))}
                     </select>
                   </label>
                 </div>
                 <label className="mt-3 block text-sm">
-                  <div className={`mb-2 ${styles.muted}`}>File URL</div>
-                  <input value={documentFileUrl} onChange={(event) => setDocumentFileUrl(event.target.value)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`} placeholder="Optional shared document link" />
+                  <div className={`mb-2 ${styles.muted}`}>{opsText("File URL")}</div>
+                  <input value={documentFileUrl} onChange={(event) => setDocumentFileUrl(event.target.value)} className={`h-10 w-full rounded-lg border px-3 outline-none ${styles.input}`} placeholder={opsText("Optional shared document link")} />
                 </label>
                 <label className="mt-3 block text-sm">
-                  <div className={`mb-2 ${styles.muted}`}>Notes</div>
-                  <textarea value={documentNotes} onChange={(event) => setDocumentNotes(event.target.value)} rows={3} className={`w-full rounded-lg border px-3 py-3 outline-none ${styles.input}`} placeholder="What is needed, received, or verified?" />
+                  <div className={`mb-2 ${styles.muted}`}>{opsText("Notes")}</div>
+                  <textarea value={documentNotes} onChange={(event) => setDocumentNotes(event.target.value)} rows={3} className={`w-full rounded-lg border px-3 py-3 outline-none ${styles.input}`} placeholder={opsText("What is needed, received, or verified?")} />
                 </label>
                 <button type="submit" disabled={isSavingDocument || Boolean(documentTitleError)} className={`mt-4 inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold ${styles.buttonPrimary} disabled:cursor-not-allowed disabled:opacity-55`}>
                   <FileText className="h-4 w-4" />
-                  {isSavingDocument ? 'Saving...' : 'Save document'}
+                  {isSavingDocument ? opsText("Saving...") : 'Save document'}
                 </button>
                 {documentTitleError ? (
-                  <div className={`mt-3 text-xs ${styles.muted}`}>Add the required title before saving this document record.</div>
+                  <div className={`mt-3 text-xs ${styles.muted}`}>{opsText("Add the required title before saving this document record.")}</div>
                 ) : null}
               </form>
 
               <div className="grid gap-3">
                 {documents.length === 0 ? (
                   <div className={`rounded-xl border p-5 text-sm ${styles.surface} ${styles.muted}`}>
-                    No document records yet. Add missing passports, visa letters, approvals, or issued itineraries here.
-                  </div>
+                    {opsText("No document records yet. Add missing passports, visa letters, approvals, or issued itineraries here.")}</div>
                 ) : documents.map((document) => (
                   <div key={document.id} className={`rounded-xl border p-4 ${styles.surface}`}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="font-semibold">{document.title}</div>
                         <div className={`mt-1 text-xs capitalize ${styles.muted}`}>
-                          {labelize(document.documentType)}{document.traveler ? ` - ${document.traveler.name}` : ' - request level'}
+                          {opsText(labelize(document.documentType))}{document.traveler ? ` - ${document.traveler.name}` : ' - request level'}
                         </div>
                       </div>
                       <span className={`rounded-full px-2.5 py-1 text-[11px] capitalize ${statusTone(document.status, theme)}`}>
-                        {labelize(document.status)}
+                        {opsText(labelize(document.status))}
                       </span>
                     </div>
                     {document.notes ? <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{document.notes}</p> : null}
                     {document.fileUrl ? (
-                      <a href={document.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex text-sm font-semibold text-[#d9b46f]">
-                        Open document
-                      </a>
+                      <a href={document.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex text-sm font-semibold crm-accent-text">
+                        {opsText("Open document")}</a>
                     ) : null}
                   </div>
                 ))}
@@ -1021,14 +1007,13 @@ export function CorporateRequestDetailPage({
               <div className="grid max-h-[520px] gap-3 overflow-y-auto pr-1">
                 {messages.length === 0 ? (
                   <div className={`rounded-xl border p-5 text-sm ${styles.surface} ${styles.muted}`}>
-                    No messages yet. Use this thread for shared client-DPM coordination on this request.
-                  </div>
+                    {opsText("No messages yet. Use this thread for shared client-DPM coordination on this request.")}</div>
                 ) : messages.map((message) => (
                   <div key={message.id} className={`rounded-xl border p-4 ${message.senderType === 'dpm' ? styles.panelSoft : styles.surface}`}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="text-sm font-semibold">{message.sender}</div>
                       <div className={`text-xs ${styles.muted}`}>
-                        {labelize(message.senderType)} - {new Date(message.createdAt).toLocaleString()}
+                        {opsText(labelize(message.senderType))} - {new Date(message.createdAt).toLocaleString()}
                       </div>
                     </div>
                     <p className={`mt-2 whitespace-pre-line text-sm leading-6 ${styles.soft}`}>{message.body}</p>
@@ -1037,16 +1022,15 @@ export function CorporateRequestDetailPage({
               </div>
               <form onSubmit={submitMessage} className={`rounded-xl border p-4 ${styles.surface}`}>
                 <div className="mb-3 flex items-center gap-2 font-semibold">
-                  <MessageSquare className="h-4 w-4 text-[#d9b46f]" />
-                  Send shared message
-                </div>
+                  <MessageSquare className="h-4 w-4 crm-accent-text" />
+                  {opsText("Send shared message")}</div>
                 <textarea
                   value={messageBody}
                   onBlur={() => markWorkbenchTouched('messageBody')}
                   onChange={(event) => setMessageBody(event.target.value)}
                   rows={8}
                   className={`w-full rounded-lg border px-3 py-3 outline-none ${styles.input} ${workbenchErrorClass('messageBody', messageBodyError)}`}
-                  placeholder="Ask DPM a question, confirm details, or share coordination notes."
+                  placeholder={opsText("Ask DPM a question, confirm details, or share coordination notes.")}
                 />
                 <FieldError message={visibleWorkbenchError('messageBody', messageBodyError)} />
                 <button type="submit" disabled={isSendingMessage || Boolean(messageBodyError)} className={`mt-4 inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold ${styles.buttonPrimary} disabled:cursor-not-allowed disabled:opacity-55`}>
@@ -1054,7 +1038,7 @@ export function CorporateRequestDetailPage({
                   {isSendingMessage ? 'Sending...' : 'Send message'}
                 </button>
                 {messageBodyError ? (
-                  <div className={`mt-3 text-xs ${styles.muted}`}>Write a message before sending it to the shared thread.</div>
+                  <div className={`mt-3 text-xs ${styles.muted}`}>{opsText("Write a message before sending it to the shared thread.")}</div>
                 ) : null}
               </form>
             </div>
@@ -1064,17 +1048,16 @@ export function CorporateRequestDetailPage({
             <div className="grid gap-3 p-4 md:grid-cols-2">
               {tasks.length === 0 ? (
                 <div className={`rounded-xl border p-5 text-sm md:col-span-2 ${styles.surface} ${styles.muted}`}>
-                  No shared tasks yet. DPM can use tasks to expose follow-ups such as passport upload, approval confirmation, or payment action.
-                </div>
+                  {opsText("No shared tasks yet. DPM can use tasks to expose follow-ups such as passport upload, approval confirmation, or payment action.")}</div>
               ) : tasks.map((task) => (
                 <div key={task.id} className={`rounded-xl border p-4 ${styles.surface}`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="font-semibold">{task.title}</div>
-                      <div className={`mt-1 text-xs ${styles.muted}`}>{task.owner || 'Unassigned'}{task.dueDate ? ` - due ${task.dueDate}` : ''}</div>
+                      <div className={`mt-1 text-xs ${styles.muted}`}>{task.owner || opsText("Unassigned")}{task.dueDate ? ` - due ${task.dueDate}` : ''}</div>
                     </div>
                     <span className={`rounded-full px-2.5 py-1 text-[11px] capitalize ${statusTone(task.status, theme)}`}>
-                      {labelize(task.status)}
+                      {opsText(labelize(task.status))}
                     </span>
                   </div>
                   {task.description ? <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>{task.description}</p> : null}
@@ -1084,49 +1067,49 @@ export function CorporateRequestDetailPage({
           ) : null}
         </div>
 
-        <TimelinePanel title="Unified service timeline" events={unifiedTimeline} theme={theme} />
+        <TimelinePanel title={opsText("Unified service timeline")} events={unifiedTimeline} theme={theme} />
       </div>
 
       <aside className="grid gap-4">
         <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
-          <div className="mb-3 text-base font-semibold">Cost lifecycle</div>
+          <div className="mb-3 text-base font-semibold">{opsText("Cost lifecycle")}</div>
           <CostLifecycleCard trip={trip} theme={theme} />
           <div className="mt-3 grid gap-2">
             <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-              <div className={`text-xs ${styles.muted}`}>Quote</div>
+              <div className={`text-xs ${styles.muted}`}>{opsText("Quote")}</div>
               {trip.quote ? (
                 <>
                   <div className="mt-1 text-sm font-semibold">{formatMoney(trip.quote.amount, trip.quote.currency)}</div>
-                  <div className={`mt-1 text-xs capitalize ${styles.muted}`}>{labelize(trip.quote.status)}{trip.quote.validUntil ? ` - valid until ${trip.quote.validUntil}` : ''}</div>
+                  <div className={`mt-1 text-xs capitalize ${styles.muted}`}>{opsText(labelize(trip.quote.status))}{trip.quote.validUntil ? ` - valid until ${trip.quote.validUntil}` : ''}</div>
                 </>
               ) : (
-                <div className={`mt-1 text-sm ${styles.muted}`}>No quote issued yet</div>
+                <div className={`mt-1 text-sm ${styles.muted}`}>{opsText("No quote issued yet")}</div>
               )}
             </div>
             <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-              <div className={`text-xs ${styles.muted}`}>Booking</div>
+              <div className={`text-xs ${styles.muted}`}>{opsText("Booking")}</div>
               {trip.booking ? (
                 <>
                   <div className="mt-1 text-sm font-semibold">{trip.booking.bookingReference || 'Reference pending'}</div>
-                  <div className={`mt-1 text-xs capitalize ${styles.muted}`}>{labelize(trip.booking.status)}{trip.booking.totalCost ? ` - ${formatMoney(trip.booking.totalCost, trip.booking.currency)}` : ''}</div>
+                  <div className={`mt-1 text-xs capitalize ${styles.muted}`}>{opsText(labelize(trip.booking.status))}{trip.booking.totalCost ? ` - ${formatMoney(trip.booking.totalCost, trip.booking.currency)}` : ''}</div>
                 </>
               ) : (
-                <div className={`mt-1 text-sm ${styles.muted}`}>No booking confirmed yet</div>
+                <div className={`mt-1 text-sm ${styles.muted}`}>{opsText("No booking confirmed yet")}</div>
               )}
             </div>
           </div>
           {trip.invoice ? (
             <div className="mt-3 grid gap-2">
               <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-                <div className={`text-xs ${styles.muted}`}>Invoice</div>
+                <div className={`text-xs ${styles.muted}`}>{opsText("Invoice")}</div>
                 <div className="mt-1 text-sm font-semibold">{trip.invoice.invoiceNumber}</div>
                 <div className={`mt-1 text-xs ${styles.muted}`}>
                   {trip.invoice.status.replace(/_/g, ' ')} - {formatMoney(trip.invoice.amount, trip.invoice.currency)}
                 </div>
               </div>
               <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-                <div className={`text-xs ${styles.muted}`}>Payments</div>
-                <div className="mt-1 text-sm font-semibold">{trip.payments.length} recorded</div>
+                <div className={`text-xs ${styles.muted}`}>{opsText("Payments")}</div>
+                <div className="mt-1 text-sm font-semibold">{trip.payments.length} {opsText("recorded")}</div>
                 <div className={`mt-1 text-xs ${styles.muted}`}>
                   {trip.payments.length > 0
                     ? `${trip.payments.filter((payment) => payment.status === 'received' || payment.status === 'reconciled').length} cleared against invoice`
@@ -1138,18 +1121,18 @@ export function CorporateRequestDetailPage({
         </div>
 
         <div className={`rounded-xl border p-4 shadow-2xl ${styles.panel}`}>
-          <div className="mb-3 text-base font-semibold">Request signals</div>
+          <div className="mb-3 text-base font-semibold">{opsText("Request signals")}</div>
           <div className="grid gap-2">
             <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-              <div className={`text-xs ${styles.muted}`}>Origin</div>
+              <div className={`text-xs ${styles.muted}`}>{opsText("Origin")}</div>
               <div className="mt-1 text-sm font-medium">{trip.origin}</div>
             </div>
             <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-              <div className={`text-xs ${styles.muted}`}>Destination</div>
+              <div className={`text-xs ${styles.muted}`}>{opsText("Destination")}</div>
               <div className="mt-1 text-sm font-medium">{trip.destination}</div>
             </div>
             <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-              <div className={`text-xs ${styles.muted}`}>Services selected</div>
+              <div className={`text-xs ${styles.muted}`}>{opsText("Services selected")}</div>
               <div className="mt-1 text-sm font-medium">{trip.services.length}</div>
             </div>
           </div>

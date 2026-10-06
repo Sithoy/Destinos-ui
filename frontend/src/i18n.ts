@@ -44,4 +44,12 @@ if (typeof document !== 'undefined') {
   document.documentElement.lang = i18n.language;
 }
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'dpm-language' && (event.newValue === 'en' || event.newValue === 'pt') && event.newValue !== i18n.resolvedLanguage) {
+      void i18n.changeLanguage(event.newValue);
+    }
+  });
+}
+
 export default i18n;

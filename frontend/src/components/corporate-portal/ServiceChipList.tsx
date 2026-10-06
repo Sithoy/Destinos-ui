@@ -1,3 +1,4 @@
+import { opsText } from '../../locales/operations';
 import type { CorporatePortalTheme, CorporateServiceType } from '../../types/corporatePortal';
 
 export function ServiceChipList({ services, theme }: { services: CorporateServiceType[]; theme: CorporatePortalTheme }) {
@@ -10,7 +11,7 @@ export function ServiceChipList({ services, theme }: { services: CorporateServic
     <div className="flex flex-wrap gap-1.5">
       {services.map((service) => (
         <span key={service} className={`rounded-full border px-2.5 py-1 text-[11px] ${chipClass}`}>
-          {service}
+          {opsText(service)}
         </span>
       ))}
     </div>

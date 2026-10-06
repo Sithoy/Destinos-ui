@@ -86,58 +86,6 @@ def is_company_admin_membership(membership: CompanyUser) -> bool:
     return CompanyUser.Role.COMPANY_ADMIN in company_user_role_set(membership)
 
 
-def get_admin_source_membership(user: User) -> CompanyUser | None:
-    memberships = (
-        CompanyUser.objects.select_related("company", "user")
-        .filter(user=user, is_active=True, company__status=CompanyAccount.Status.ACTIVE)
-        .order_by("created_at")
-    )
-    for membership in memberships:
-        if is_company_admin_membership(membership):
-            return membership
-    return memberships.first()
-
-
-def can_administer_any_company(user: User) -> bool:
-    return bool(user.is_active and (user.is_staff or user.is_superuser))
-
-
-def scoped_login_username_for_company(company: CompanyAccount, preferred_username: str) -> str:
-    base = (preferred_username or "admin").strip()[:140]
-    candidate = base
-    suffix = 2
-    while CompanyUser.objects.filter(company=company, login_username__iexact=candidate).exists():
-        candidate = f"{base[: max(1, 150 - len(str(suffix)))]}{suffix}"
-        suffix += 1
-    return candidate
-
-
-def ensure_admin_membership(user: User, company: CompanyAccount) -> CompanyUser:
-    membership = CompanyUser.objects.select_related("company", "user").filter(user=user, company=company).first()
-    if membership:
-        if not membership.is_active:
-            membership.is_active = True
-        if CompanyUser.Role.COMPANY_ADMIN not in (membership.access_roles or []):
-            membership.access_roles = [CompanyUser.Role.COMPANY_ADMIN, *(membership.access_roles or [])]
-        membership.role = CompanyUser.Role.COMPANY_ADMIN
-        membership.save()
-        return membership
-
-    source = get_admin_source_membership(user)
-    preferred_username = source.login_username if source else user.username
-    return CompanyUser.objects.create(
-        company=company,
-        user=user,
-        login_username=scoped_login_username_for_company(company, preferred_username),
-        role=CompanyUser.Role.COMPANY_ADMIN,
-        access_roles=[CompanyUser.Role.COMPANY_ADMIN],
-        department=source.department if source else "",
-        job_title=source.job_title if source else "Company admin",
-        phone=source.phone if source else "",
-        is_active=True,
-    )
-
-
 def get_ctm_membership(user: User, company_code: str = "") -> CompanyUser | None:
     company_code = normalize_company_code(company_code)
     if company_code:
@@ -145,12 +93,7 @@ def get_ctm_membership(user: User, company_code: str = "") -> CompanyUser | None
             company = CompanyAccount.objects.get(account_code__iexact=company_code, status=CompanyAccount.Status.ACTIVE)
         except CompanyAccount.DoesNotExist:
             return None
-        membership = CompanyUser.objects.select_related("company", "user").filter(user=user, company=company, is_active=True).first()
-        if membership:
-            return membership
-        if can_administer_any_company(user):
-            return ensure_admin_membership(user, company)
-        return None
+        return CompanyUser.objects.select_related("company", "user").filter(user=user, company=company, is_active=True).first()
 
     membership = (
         CompanyUser.objects.select_related("company", "user")
@@ -197,6 +140,42 @@ def can_approve_ctm_stage(membership: CompanyUser, stage: str) -> bool:
         CompanyUser.Role.FINANCE_APPROVER,
         CompanyUser.Role.COMPANY_ADMIN,
     })
+
+
+def can_decide_trip_approval(membership: CompanyUser, approval: TripApproval) -> bool:
+    if approval.approver_id is None:
+        return True
+    if approval.approver_id == membership.pk:
+        return True
+    return membership.company_id == approval.trip_request.company_id and is_company_admin_membership(membership)
+
+
+def resolve_approval_owner(company: CompanyAccount, approval_type: str, department: str = "") -> CompanyUser | None:
+    members = (
+        CompanyUser.objects.select_related("user")
+        .filter(company=company, is_active=True)
+        .order_by("created_at")
+    )
+    if approval_type == TripApproval.ApprovalType.FINAL_COST:
+        candidates = [member for member in members if CompanyUser.Role.FINANCE_APPROVER in company_user_role_set(member)]
+        if not candidates:
+            candidates = [
+                member
+                for member in members
+                if company_user_role_set(member) & {CompanyUser.Role.MANAGER, CompanyUser.Role.COMPANY_ADMIN}
+            ]
+    else:
+        candidates = [
+            member
+            for member in members
+            if company_user_role_set(member) & {CompanyUser.Role.MANAGER, CompanyUser.Role.COMPANY_ADMIN}
+        ]
+        department = department.strip().lower()
+        if department:
+            department_matches = [member for member in candidates if member.department.strip().lower() == department]
+            if department_matches:
+                candidates = department_matches
+    return candidates[0] if candidates else None
 
 
 def can_manage_travelers(membership: CompanyUser) -> bool:
@@ -983,6 +962,7 @@ class CorporateCompanyUserOpsWriteSerializer(CorporateCompanyUserWriteSerializer
 class CorporateApprovalSerializer(serializers.Serializer):
     stage = serializers.SerializerMethodField()
     approver = serializers.SerializerMethodField()
+    approverIdentity = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     canApprove = serializers.SerializerMethodField()
     blocker = serializers.SerializerMethodField()
@@ -997,6 +977,16 @@ class CorporateApprovalSerializer(serializers.Serializer):
         if obj.decision_notes.startswith("Approval owner: "):
             return obj.decision_notes.replace("Approval owner: ", "")
         return "Approval owner"
+
+    def get_approverIdentity(self, obj: TripApproval):
+        if not obj.approver:
+            return None
+        full_name = f"{obj.approver.user.first_name} {obj.approver.user.last_name}".strip()
+        return {
+            "id": str(obj.approver.pk),
+            "name": full_name or obj.approver.job_title or obj.approver.user.username,
+            "email": obj.approver.user.email,
+        }
 
     def get_status(self, obj: TripApproval) -> str:
         return obj.status.title()
@@ -1878,12 +1868,14 @@ class CorporateTripCreateSerializer(serializers.Serializer):
         TripApproval.objects.create(
             trip_request=trip,
             approval_type=TripApproval.ApprovalType.TRAVEL_NEED,
+            approver=resolve_approval_owner(company, TripApproval.ApprovalType.TRAVEL_NEED, department=validated_data["department"]),
             status=TripApproval.Status.PENDING,
             decision_notes=f"Approval owner: {travel_need_approver}",
         )
         TripApproval.objects.create(
             trip_request=trip,
             approval_type=TripApproval.ApprovalType.FINAL_COST,
+            approver=resolve_approval_owner(company, TripApproval.ApprovalType.FINAL_COST),
             status=TripApproval.Status.PENDING,
             decision_notes=f"Approval owner: {final_cost_approver}",
         )

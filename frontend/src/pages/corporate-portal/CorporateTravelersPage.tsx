@@ -1,3 +1,4 @@
+import { opsText, opsLocale } from '../../locales/operations';
 import { AlertCircle, CalendarDays, PlusSquare, Save, ShieldAlert, UserRoundCheck, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { corporateDepartments } from '../../data/corporatePortal';
@@ -25,13 +26,13 @@ function todayLocalIso() {
 }
 
 function RequiredMark() {
-  return <span className="text-[#d9b46f]">*</span>;
+  return <span className="crm-accent-text">*</span>;
 }
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <div className="mt-2 flex items-start gap-1.5 text-xs text-rose-200">
+    <div className="mt-2 flex items-start gap-1.5 text-xs ctm-tone-rose">
       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{message}</span>
     </div>
@@ -42,7 +43,7 @@ function formatReadableDate(value?: string | null) {
   if (!value) return 'No expiry date selected';
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  return date.toLocaleDateString(opsLocale(), { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 export function CorporateTravelersPage({
@@ -180,19 +181,19 @@ export function CorporateTravelersPage({
     <section className="grid gap-4">
       <div className="grid gap-4 xl:grid-cols-3">
         <div className={`rounded-xl border p-4 ${styles.panel}`}>
-          <div className={`text-sm ${styles.muted}`}>Traveler records</div>
+          <div className={`text-sm ${styles.muted}`}>{opsText("Traveler records")}</div>
           <div className="mt-2 text-3xl font-semibold">{travelers.length}</div>
-          <div className={`mt-2 text-sm ${styles.muted}`}>Reusable company profiles by department.</div>
+          <div className={`mt-2 text-sm ${styles.muted}`}>{opsText("Reusable company profiles by department.")}</div>
         </div>
         <div className={`rounded-xl border p-4 ${styles.panel}`}>
-          <div className={`text-sm ${styles.muted}`}>Passport attention</div>
+          <div className={`text-sm ${styles.muted}`}>{opsText("Passport attention")}</div>
           <div className="mt-2 text-3xl font-semibold">{stats.passportAttention}</div>
-          <div className={`mt-2 text-sm ${styles.muted}`}>Missing or expired before upcoming travel.</div>
+          <div className={`mt-2 text-sm ${styles.muted}`}>{opsText("Missing or expired before upcoming travel.")}</div>
         </div>
         <div className={`rounded-xl border p-4 ${styles.panel}`}>
-          <div className={`text-sm ${styles.muted}`}>Visa attention</div>
+          <div className={`text-sm ${styles.muted}`}>{opsText("Visa attention")}</div>
           <div className="mt-2 text-3xl font-semibold">{stats.visaAttention}</div>
-          <div className={`mt-2 text-sm ${styles.muted}`}>{stats.upcomingTrips} travelers already tied to upcoming movement.</div>
+          <div className={`mt-2 text-sm ${styles.muted}`}>{stats.upcomingTrips} {opsText("travelers already tied to upcoming movement.")}</div>
         </div>
       </div>
 
@@ -200,8 +201,8 @@ export function CorporateTravelersPage({
         <div className={`rounded-xl border ${styles.panel}`}>
           <div className="flex items-center justify-between gap-3 border-b border-inherit px-5 py-4">
             <div>
-              <h2 className="text-lg font-semibold">Travelers directory</h2>
-              <p className={`mt-1 text-sm ${styles.muted}`}>Department ownership, readiness, and next-trip visibility in one queue.</p>
+              <h2 className="text-lg font-semibold">{opsText("Travelers directory")}</h2>
+              <p className={`mt-1 text-sm ${styles.muted}`}>{opsText("Department ownership, readiness, and next-trip visibility in one queue.")}</p>
             </div>
             <button
               type="button"
@@ -212,16 +213,15 @@ export function CorporateTravelersPage({
               className={`inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium ${styles.buttonPrimary}`}
             >
               <PlusSquare className="h-4 w-4" />
-              New traveler
-            </button>
+              {opsText("New traveler")}</button>
           </div>
 
           <div className="divide-y divide-white/10">
             {filteredTravelers.length === 0 ? (
               <div className="p-10 text-center">
                 <Users className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                <div className="mt-4 text-lg font-semibold">No travelers match this view</div>
-                <p className={`mt-2 text-sm ${styles.muted}`}>Try another search or create the first company traveler profile.</p>
+                <div className="mt-4 text-lg font-semibold">{opsText("No travelers match this view")}</div>
+                <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("Try another search or create the first company traveler profile.")}</p>
               </div>
             ) : (
               filteredTravelers.map((traveler) => {
@@ -243,22 +243,22 @@ export function CorporateTravelersPage({
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-semibold">{traveler.name}</span>
                           {!traveler.isActive ? (
-                            <span className={`rounded-full px-2 py-0.5 text-[11px] ${styles.buttonGhost}`}>Inactive</span>
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] ${styles.buttonGhost}`}>{opsText("Inactive")}</span>
                           ) : null}
                         </div>
                         <div className={`mt-1 text-xs ${styles.muted}`}>{traveler.department} · {traveler.email || traveler.phone || 'Contact pending'}</div>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <span className={`rounded-full px-2.5 py-1 text-[11px] ring-1 ${passportAlert ? 'border-red-400/25 bg-red-500/12 text-red-200 ring-red-400/20' : 'border-emerald-400/25 bg-emerald-500/12 text-emerald-200 ring-emerald-400/20'}`}>
-                          Passport {traveler.passportStatus}
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] ring-1 ${passportAlert ? 'border-red-400/25 bg-red-500/12 ctm-tone-rose ring-red-400/20' : 'border-emerald-400/25 bg-emerald-500/12 ctm-tone-emerald ring-emerald-400/20'}`}>
+                          {opsText("Passport")}{' '}{traveler.passportStatus}
                         </span>
-                        <span className={`rounded-full px-2.5 py-1 text-[11px] ring-1 ${visaAlert ? 'border-amber-400/25 bg-amber-500/12 text-amber-100 ring-amber-400/20' : styles.buttonGhost}`}>
-                          Visa {traveler.visaStatus}
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] ring-1 ${visaAlert ? 'border-amber-400/25 bg-amber-500/12 ctm-tone-amber ring-amber-400/20' : styles.buttonGhost}`}>
+                          {opsText("Visa")}{' '}{traveler.visaStatus}
                         </span>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-4 text-xs">
-                      <span className={styles.muted}>{traveler.tripCount} linked trips</span>
+                      <span className={styles.muted}>{traveler.tripCount} {opsText("linked trips")}</span>
                       <span className={styles.muted}>
                         {traveler.nextTripId ? `Next: ${traveler.nextTripLabel ?? traveler.nextTripId} ${traveler.nextTripDate ? `· ${traveler.nextTripDate}` : ''}` : 'No upcoming trip linked'}
                       </span>
@@ -274,14 +274,14 @@ export function CorporateTravelersPage({
           <div className={`rounded-xl border p-5 ${styles.panel}`}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold">{isCreating ? 'Create traveler profile' : 'Traveler profile'}</h2>
-                <p className={`mt-1 text-sm ${styles.muted}`}>Keep one reliable company record and reuse it during request creation.</p>
+                <h2 className="text-lg font-semibold">{isCreating ? 'Create traveler profile' : opsText("Traveler profile")}</h2>
+                <p className={`mt-1 text-sm ${styles.muted}`}>{opsText("Keep one reliable company record and reuse it during request creation.")}</p>
               </div>
               {!isCreating && selectedTraveler ? (
                 <div className="flex items-center gap-2 text-xs">
                   <span className={`rounded-full px-2.5 py-1 ${styles.buttonGhost}`}>{selectedTraveler.department}</span>
-                  <span className={`rounded-full px-2.5 py-1 ${selectedTraveler.isActive ? 'bg-emerald-500/12 text-emerald-200' : styles.buttonGhost}`}>
-                    {selectedTraveler.isActive ? 'Active' : 'Inactive'}
+                  <span className={`rounded-full px-2.5 py-1 ${selectedTraveler.isActive ? 'bg-emerald-500/12 ctm-tone-emerald' : styles.buttonGhost}`}>
+                    {selectedTraveler.isActive ? opsText("Active") : opsText("Inactive")}
                   </span>
                 </div>
               ) : null}
@@ -289,12 +289,12 @@ export function CorporateTravelersPage({
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Full name <RequiredMark /></div>
+                <div className={`mb-2 ${styles.muted}`}>{opsText("Full name")}<RequiredMark /></div>
                 <input value={form.name} onBlur={() => markTouched('name')} onChange={(event) => handleChange('name', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} ${errorClass('name')}`} />
                 <FieldError message={visibleError('name')} />
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Department <RequiredMark /></div>
+                <div className={`mb-2 ${styles.muted}`}>{opsText("Department")}<RequiredMark /></div>
                 <select value={form.department} onBlur={() => markTouched('department')} onChange={(event) => handleChange('department', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} ${errorClass('department')}`}>
                   {corporateDepartments.map((item) => (
                     <option key={item} value={item} className="bg-[#07111f]">
@@ -305,64 +305,64 @@ export function CorporateTravelersPage({
                 <FieldError message={visibleError('department')} />
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Email <span className="text-xs opacity-70">(email or phone required)</span></div>
+                <div className={`mb-2 ${styles.muted}`}>Email <span className="text-xs opacity-70">{opsText("(email or phone required)")}</span></div>
                 <input value={form.email} onBlur={() => { markTouched('email'); markTouched('contact'); }} onChange={(event) => handleChange('email', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} ${errorClass('email') || errorClass('contact')}`} />
                 <FieldError message={visibleError('email') || visibleError('contact')} />
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Phone <span className="text-xs opacity-70">(email or phone required)</span></div>
+                <div className={`mb-2 ${styles.muted}`}>{opsText("Phone")}<span className="text-xs opacity-70">{opsText("(email or phone required)")}</span></div>
                 <input value={form.phone} onBlur={() => markTouched('contact')} onChange={(event) => handleChange('phone', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} ${errorClass('contact')}`} />
                 {!form.email.trim() ? <FieldError message={visibleError('contact')} /> : null}
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Nationality</div>
+                <div className={`mb-2 ${styles.muted}`}>{opsText("Nationality")}</div>
                 <input value={form.nationality} onChange={(event) => handleChange('nationality', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input}`} />
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Passport number {form.passportStatus === 'OK' ? <RequiredMark /> : null}</div>
+                <div className={`mb-2 ${styles.muted}`}>{opsText("Passport number")}{' '}{form.passportStatus === 'OK' ? <RequiredMark /> : null}</div>
                 <input value={form.passportNumber ?? ''} onBlur={() => markTouched('passportNumber')} onChange={(event) => handleChange('passportNumber', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} ${errorClass('passportNumber')}`} />
                 <FieldError message={visibleError('passportNumber')} />
               </label>
               <label className="text-sm">
                 <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className={styles.muted}>Passport expiry {form.passportStatus === 'OK' ? <RequiredMark /> : null}</span>
+                  <span className={styles.muted}>{opsText("Passport expiry")}{' '}{form.passportStatus === 'OK' ? <RequiredMark /> : null}</span>
                   <span className={`inline-flex items-center gap-1 text-xs ${styles.muted}`}>
                     <CalendarDays className="h-3.5 w-3.5" />
                     {formatReadableDate(form.passportExpiry)}
                   </span>
                 </div>
                 <input type="date" min={form.passportStatus === 'OK' ? minPassportDate : undefined} value={form.passportExpiry ?? ''} onBlur={() => markTouched('passportExpiry')} onChange={(event) => handleChange('passportExpiry', event.target.value)} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input} [color-scheme:dark] ${errorClass('passportExpiry')}`} />
-                <div className={`mt-2 text-xs ${styles.muted}`}>Use the calendar picker or type YYYY-MM-DD. If passport is OK, expiry must be today or later.</div>
+                <div className={`mt-2 text-xs ${styles.muted}`}>{opsText("Use the calendar picker or type YYYY-MM-DD. If passport is OK, expiry must be today or later.")}</div>
                 <FieldError message={visibleError('passportExpiry')} />
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Passport readiness</div>
+                <div className={`mb-2 ${styles.muted}`}>{opsText("Passport readiness")}</div>
                 <select value={form.passportStatus} onChange={(event) => handleChange('passportStatus', event.target.value as CorporateTravelerProfileInput['passportStatus'])} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input}`}>
                   <option value="OK" className="bg-[#07111f]">OK</option>
-                  <option value="Missing" className="bg-[#07111f]">Missing</option>
-                  <option value="Expired" className="bg-[#07111f]">Expired</option>
+                  <option value="Missing" className="bg-[#07111f]">{opsText("Missing")}</option>
+                  <option value="Expired" className="bg-[#07111f]">{opsText("Expired")}</option>
                 </select>
               </label>
               <label className="text-sm">
-                <div className={`mb-2 ${styles.muted}`}>Visa readiness</div>
+                <div className={`mb-2 ${styles.muted}`}>{opsText("Visa readiness")}</div>
                 <select value={form.visaStatus} onChange={(event) => handleChange('visaStatus', event.target.value as CorporateTravelerProfileInput['visaStatus'])} className={`h-11 w-full rounded-lg border px-3 outline-none ${styles.input}`}>
-                  <option value="Unknown" className="bg-[#07111f]">Not yet checked</option>
+                  <option value="Unknown" className="bg-[#07111f]">{opsText("Not yet checked")}</option>
                   <option value="N/A" className="bg-[#07111f]">N/A</option>
                   <option value="OK" className="bg-[#07111f]">OK</option>
-                  <option value="Required" className="bg-[#07111f]">Required</option>
-                  <option value="Pending" className="bg-[#07111f]">Pending</option>
+                  <option value="Required" className="bg-[#07111f]">{opsText("Required")}</option>
+                  <option value="Pending" className="bg-[#07111f]">{opsText("Pending")}</option>
                 </select>
               </label>
             </div>
 
             <label className="mt-4 block text-sm">
-              <div className={`mb-2 ${styles.muted}`}>Notes</div>
-              <textarea rows={4} value={form.notes ?? ''} onChange={(event) => handleChange('notes', event.target.value)} className={`w-full rounded-lg border px-3 py-3 outline-none ${styles.input}`} placeholder="Traveler preferences, document caveats, or coordination notes." />
+              <div className={`mb-2 ${styles.muted}`}>{opsText("Notes")}</div>
+              <textarea rows={4} value={form.notes ?? ''} onChange={(event) => handleChange('notes', event.target.value)} className={`w-full rounded-lg border px-3 py-3 outline-none ${styles.input}`} placeholder={opsText("Traveler preferences, document caveats, or coordination notes.")} />
             </label>
 
             <label className="mt-4 flex items-center gap-3 text-sm">
-              <input type="checkbox" checked={form.isActive} onChange={(event) => handleChange('isActive', event.target.checked)} className="h-4 w-4 accent-[#d9b46f]" />
-              <span className={styles.soft}>Keep this traveler active for quick future selection</span>
+              <input type="checkbox" checked={form.isActive} onChange={(event) => handleChange('isActive', event.target.checked)} className="h-4 w-4 accent-[#fe8500]" />
+              <span className={styles.soft}>{opsText("Keep this traveler active for quick future selection")}</span>
             </label>
 
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
@@ -370,11 +370,10 @@ export function CorporateTravelersPage({
                 {!isCreating && selectedTraveler?.nextTripId ? (
                   <button type="button" onClick={() => onOpenRequest(selectedTraveler.nextTripId!)} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${styles.buttonGhost}`}>
                     <UserRoundCheck className="h-4 w-4" />
-                    Open next linked request
-                  </button>
-                ) : <span className={`text-sm ${styles.muted}`}>Save once, reuse from New Trip whenever this traveler travels again.</span>}
+                    {opsText("Open next linked request")}</button>
+                ) : <span className={`text-sm ${styles.muted}`}>{opsText("Save once, reuse from New Trip whenever this traveler travels again.")}</span>}
                 {!isCreating && selectedTraveler?.isActive ? (
-                  <button type="button" onClick={handleDeactivate} disabled={isDeactivating} className="inline-flex h-10 items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 text-sm font-medium text-amber-100 disabled:cursor-not-allowed disabled:opacity-50">
+                  <button type="button" onClick={handleDeactivate} disabled={isDeactivating} className="inline-flex h-10 items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 text-sm font-medium ctm-tone-amber disabled:cursor-not-allowed disabled:opacity-50">
                     <ShieldAlert className="h-4 w-4" />
                     {isDeactivating ? 'Deactivating...' : 'Deactivate'}
                   </button>
@@ -382,27 +381,27 @@ export function CorporateTravelersPage({
               </div>
               <button type="button" onClick={handleSave} disabled={isSaving || !canSave} className={`inline-flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-medium ${styles.buttonPrimary} disabled:cursor-not-allowed disabled:opacity-50`}>
                 <Save className="h-4 w-4" />
-                {isSaving ? 'Saving...' : isCreating ? 'Create traveler' : 'Save changes'}
+                {isSaving ? opsText("Saving...") : isCreating ? 'Create traveler' : 'Save changes'}
               </button>
             </div>
             {!canSave ? (
-              <div className={`mt-3 text-xs ${styles.muted}`}>Complete required fields marked with <RequiredMark /> before saving.</div>
+              <div className={`mt-3 text-xs ${styles.muted}`}>{opsText("Complete required fields marked with")}<RequiredMark /> {opsText("before saving.")}</div>
             ) : null}
           </div>
 
           <div className={`rounded-xl border p-5 ${styles.panel}`}>
             <div className="flex items-center gap-3">
               <ShieldAlert className={`h-5 w-5 ${styles.muted}`} />
-              <div className="font-semibold">Readiness focus</div>
+              <div className="font-semibold">{opsText("Readiness focus")}</div>
             </div>
             <div className="mt-4 grid gap-3 text-sm">
               <div className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
-                <div className="font-medium">Passport and visa coverage</div>
-                <p className={`mt-2 leading-6 ${styles.muted}`}>Use this directory to clean traveler records before requests hit final approval and booking.</p>
+                <div className="font-medium">{opsText("Passport and visa coverage")}</div>
+                <p className={`mt-2 leading-6 ${styles.muted}`}>{opsText("Use this directory to clean traveler records before requests hit final approval and booking.")}</p>
               </div>
               <div className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
-                <div className="font-medium">Department ownership</div>
-                <p className={`mt-2 leading-6 ${styles.muted}`}>Keeping department ownership on the profile helps route approvals and spot repeat travel patterns faster.</p>
+                <div className="font-medium">{opsText("Department ownership")}</div>
+                <p className={`mt-2 leading-6 ${styles.muted}`}>{opsText("Keeping department ownership on the profile helps route approvals and spot repeat travel patterns faster.")}</p>
               </div>
             </div>
           </div>

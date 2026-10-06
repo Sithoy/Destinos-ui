@@ -1,3 +1,4 @@
+import { opsText } from '../../locales/operations';
 import { BarChart3, CalendarDays, ClipboardCheck, ClipboardList, LayoutDashboard, PlusSquare, Users } from 'lucide-react';
 import { BrandLockup } from '../ui';
 import { classicLogo, ctmPrimaryRoute } from '../../data/travel';
@@ -27,7 +28,7 @@ export function CorporateSidebar({
 
   return (
     <aside className={`flex min-w-0 flex-col border-b px-4 py-3 xl:min-h-screen xl:border-r xl:py-5 ${styles.sidebar}`}>
-      <div className="mb-3 max-w-[208px] xl:mb-7">
+      <div className="ctm-brand mb-3 max-w-[208px] xl:mb-7">
         <BrandLockup
           src={classicLogo}
           alt="Destinos pelo Mundo"
@@ -35,14 +36,19 @@ export function CorporateSidebar({
           compact
           align="left"
           gapClass="gap-2.5"
-          logoSize="h-10"
-          logoArtScale="scale-[1.06]"
+          logoSize="h-[52px]"
+          logoArtScale="scale-[1.55]"
           logoArtOffset="translate-x-0"
-          wordmarkWidthClass="w-[10.75rem] max-w-[calc(100vw-9rem)]"
+          wordmarkWidthClass="w-[8.5rem]"
         />
       </div>
 
-      <nav aria-label="CTM navigation" className="flex gap-2 overflow-x-auto xl:grid">
+      <label className="crm-mobile-nav md:hidden">{opsText("Workspace")}<select value={navItems.find(({ href }) => activeHref === href || (href !== ctmPrimaryRoute && activeHref.startsWith(href)))?.href ?? ctmPrimaryRoute} onChange={(event) => onNavigate(event.target.value)}>
+          {navItems.map(({ href, label }) => <option key={href} value={href}>{opsText(label)}</option>)}
+        </select>
+      </label>
+      <div className="crm-sidebar-caption">{opsText("Corporate travel")}</div>
+      <nav aria-label={opsText("CTM navigation")} className="hidden gap-2 overflow-x-auto md:flex xl:grid">
         {navItems.map(({ id, label, Icon, href }) => {
           const active = activeHref === href || (href !== ctmPrimaryRoute && activeHref.startsWith(href));
           return (
@@ -50,20 +56,19 @@ export function CorporateSidebar({
               key={id}
               type="button"
               onClick={() => onNavigate(href)}
-              className={`flex h-12 shrink-0 items-center gap-3 rounded-lg px-3 text-left text-sm font-medium transition ${
-                active ? 'bg-[#12305a] text-white' : styles.buttonGhost
-              }`}
+              aria-current={active ? 'page' : undefined}
+              className="crm-nav-item flex h-12 shrink-0 items-center gap-3 px-3 text-left font-medium transition"
             >
               <Icon className="h-4 w-4" />
-              <span>{label}</span>
+              <span>{opsText(label)}</span>
             </button>
           );
         })}
       </nav>
 
-      <div className={`mt-6 hidden rounded-xl xl:block border p-3 ${styles.surface}`}>
-        <div className={`mb-1 text-xs uppercase tracking-[0.22em] ${styles.muted}`}>Workflow focus</div>
-        <div className="text-sm font-semibold">Need approval - quote - final approval - DPM booking</div>
+      <div className="ctm-sidebar-note mt-6 mb-6 hidden rounded-xl xl:block border p-3">
+        <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-[#a5b9c1]">{opsText("Your company workspace")}</div>
+        <div className="text-sm font-semibold">{opsText("From travel request to a confirmed journey.")}</div>
       </div>
 
       <a

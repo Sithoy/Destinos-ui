@@ -1,3 +1,4 @@
+import { opsText, opsLocale } from '../../locales/operations';
 import { AlertCircle, CalendarDays, Minus, PlusSquare } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { corporateCostBands, corporateDepartments, corporateServiceCatalog } from '../../data/corporatePortal';
@@ -20,22 +21,22 @@ function addDaysIso(days: number) {
 }
 
 function formatReadableDate(value: string) {
-  if (!value) return 'No date selected';
+  if (!value) return opsText('No date selected');
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  return date.toLocaleDateString(opsLocale(), { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function RequiredMark() {
-  return <span className="text-[#d9b46f]">*</span>;
+  return <span className="crm-accent-text">*</span>;
 }
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <div className="mt-2 flex items-start gap-1.5 text-xs text-rose-200">
+    <div className="mt-2 flex items-start gap-1.5 text-xs ctm-tone-rose">
       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      <span>{message}</span>
+      <span>{opsText(message)}</span>
     </div>
   );
 }
@@ -164,48 +165,46 @@ export function CorporateNewTripPage({
     <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[1.18fr_0.82fr]">
       <div className={`rounded-xl border p-5 shadow-2xl ${styles.panel}`}>
         <div className="mb-5">
-          <h2 className="text-2xl font-semibold">Create a new corporate travel request</h2>
+          <h2 className="text-2xl font-semibold">{opsText("Create a new corporate travel request")}</h2>
           <p className={`mt-2 max-w-2xl text-sm leading-6 ${styles.muted}`}>
-            Capture the request once, attach the travelers, and send it into the approval workflow with a clean DPM brief.
-          </p>
+            {opsText("Capture the request once, attach the travelers, and send it into the approval workflow with a clean DPM brief.")}</p>
         </div>
 
         <div className="space-y-6">
           <div>
             <div className={`mb-3 border-b pb-2 text-xs font-semibold uppercase tracking-[0.14em] ${sectionRule}`}>
-              Request details
-            </div>
+              {opsText("Request details")}</div>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="text-sm">
-                <div className={`mb-1.5 ${styles.muted}`}>Department</div>
+                <div className={`mb-1.5 ${styles.muted}`}>{opsText("Department")}</div>
                 <select value={department} onChange={(event) => setDepartment(event.target.value)} className={fieldBase}>
                   {corporateDepartments.map((item) => (
                     <option key={item} value={item} className={optionClass}>
-                      {item}
+                      {opsText(item)}
                     </option>
                   ))}
                 </select>
               </label>
 
               <label className="text-sm">
-                <div className={`mb-1.5 ${styles.muted}`}>Budget band</div>
+                <div className={`mb-1.5 ${styles.muted}`}>{opsText("Budget band")}</div>
                 <select value={budgetBand} onChange={(event) => setBudgetBand(event.target.value as 'lt1k' | '1k_5k' | 'gt5k')} className={fieldBase}>
                   {corporateCostBands.map((item) => (
                     <option key={item.key} value={item.key} className={optionClass}>
-                      {item.label}
+                      {opsText(item.label)}
                     </option>
                   ))}
                 </select>
               </label>
 
               <label className="text-sm">
-                <div className={`mb-1.5 ${styles.muted}`}>Origin <RequiredMark /></div>
+                <div className={`mb-1.5 ${styles.muted}`}>{opsText("Origin")}<RequiredMark /></div>
                 <input value={origin} onBlur={() => markTouched('origin')} onChange={(event) => setOrigin(event.target.value)} className={`${fieldBase} ${errorClass('origin')}`} />
                 <FieldError message={visibleError('origin')} />
               </label>
 
               <label className="text-sm">
-                <div className={`mb-1.5 ${styles.muted}`}>Destination <RequiredMark /></div>
+                <div className={`mb-1.5 ${styles.muted}`}>{opsText("Destination")}<RequiredMark /></div>
                 <input value={destination} onBlur={() => markTouched('destination')} onChange={(event) => setDestination(event.target.value)} className={`${fieldBase} ${errorClass('destination')}`} placeholder="Johannesburg, Dubai, Cape Town..." />
                 <FieldError message={visibleError('destination')} />
               </label>
@@ -215,7 +214,7 @@ export function CorporateNewTripPage({
               <div>
                 <label className="text-sm">
                   <div className={`mb-1.5 flex items-center justify-between gap-3 ${styles.muted}`}>
-                    <span>Departure date <RequiredMark /></span>
+                    <span>{opsText("Departure date")}<RequiredMark /></span>
                     <span className="inline-flex items-center gap-1 text-xs">
                       <CalendarDays className="h-3.5 w-3.5" />
                       {formatReadableDate(departureDate)}
@@ -225,13 +224,13 @@ export function CorporateNewTripPage({
                 </label>
                 <FieldError message={visibleError('departureDate')} />
                 <label className="mt-4 block text-sm">
-                  <div className={`mb-1.5 ${styles.muted}`}>Return date (optional)</div>
+                  <div className={`mb-1.5 ${styles.muted}`}>{opsText("Return date (optional)")}</div>
                   <input type="date" min={departureDate || minTravelDate} value={returnDate} onBlur={() => markTouched('returnDate')} onChange={(event) => setReturnDate(event.target.value)} className={`${fieldBase} ${errorClass('returnDate')}`} />
                 </label>
                 <FieldError message={visibleError('returnDate')} />
               </div>
               <div>
-                <div className={`mb-1.5 text-sm ${styles.muted}`}>Quick date</div>
+                <div className={`mb-1.5 text-sm ${styles.muted}`}>{opsText("Quick date")}</div>
                 <div className="flex flex-wrap gap-2">
                   {quickDates.map((item) => (
                     <button
@@ -241,36 +240,35 @@ export function CorporateNewTripPage({
                         setDepartureDate(item.value);
                         markTouched('departureDate');
                       }}
-                      className={`h-11 rounded-lg border px-3 text-sm transition ${departureDate === item.value ? 'border-[#d9b46f]/45 bg-[#d9b46f]/10 text-[#d9b46f]' : styles.buttonGhost}`}
+                      className={`h-11 rounded-lg border px-3 text-sm transition ${departureDate === item.value ? 'border-[#fe8500]/45 bg-[#fe8500]/10 crm-accent-text' : styles.buttonGhost}`}
                     >
-                      {item.label}
+                      {opsText(item.label)}
                     </button>
                   ))}
                 </div>
-                <div className={`mt-2 text-xs ${styles.muted}`}>Earliest allowed: {formatReadableDate(minTravelDate)}.</div>
+                <div className={`mt-2 text-xs ${styles.muted}`}>{opsText("Earliest allowed:")}{' '}{formatReadableDate(minTravelDate)}.</div>
               </div>
             </div>
           </div>
 
           <div>
             <div className={`mb-3 border-b pb-2 text-xs font-semibold uppercase tracking-[0.14em] ${sectionRule}`}>
-              Purpose and services
-            </div>
+              {opsText("Purpose and services")}</div>
             <label className="block text-sm">
-              <div className={`mb-1.5 ${styles.muted}`}>Business purpose <RequiredMark /></div>
+              <div className={`mb-1.5 ${styles.muted}`}>{opsText("Business purpose")}<RequiredMark /></div>
               <textarea
                 value={purpose}
                 onBlur={() => markTouched('purpose')}
                 onChange={(event) => setPurpose(event.target.value)}
                 rows={4}
                 className={`${textareaBase} resize-none ${errorClass('purpose')}`}
-                placeholder="Describe the business need, meeting, training, negotiation, or project objective."
+                placeholder={opsText("Describe the business need, meeting, training, negotiation, or project objective.")}
               />
               <FieldError message={visibleError('purpose')} />
             </label>
 
             <div className="mt-4">
-              <div className="mb-2 text-sm font-medium">Services needed <RequiredMark /></div>
+              <div className="mb-2 text-sm font-medium">{opsText("Services needed")}<RequiredMark /></div>
               <div className="flex flex-wrap gap-2">
                 {corporateServiceCatalog.map((service) => {
                   const checked = services.includes(service);
@@ -280,10 +278,10 @@ export function CorporateNewTripPage({
                       type="button"
                       onClick={() => toggleService(service)}
                       className={`inline-flex h-10 items-center rounded-lg border px-3 text-sm transition ${
-                        checked ? 'border-[#d9b46f]/45 bg-[#d9b46f]/10 text-[#d9b46f]' : styles.buttonGhost
+                        checked ? 'border-[#fe8500]/45 bg-[#fe8500]/10 crm-accent-text' : styles.buttonGhost
                       }`}
                     >
-                      {service}
+                      {opsText(service)}
                     </button>
                   );
                 })}
@@ -295,18 +293,17 @@ export function CorporateNewTripPage({
           <div>
             <div className={`mb-3 flex flex-wrap items-center justify-between gap-3 border-b pb-2 ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}>
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#d9b46f]">Travelers</div>
-                <div className={`mt-1 text-xs ${styles.muted}`}>Reuse saved profiles or add traveler details manually.</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] crm-accent-text">{opsText("Travelers")}</div>
+                <div className={`mt-1 text-xs ${styles.muted}`}>{opsText("Reuse saved profiles or add traveler details manually.")}</div>
               </div>
               <button type="button" onClick={addTraveler} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold ${styles.buttonGhost}`}>
                 <PlusSquare className="h-4 w-4" />
-                Add traveler
-              </button>
+                {opsText("Add traveler")}</button>
             </div>
 
             {availableTravelerProfiles.length > 0 ? (
               <div className="mb-4">
-                <div className={`mb-2 text-xs ${styles.muted}`}>Saved profiles</div>
+                <div className={`mb-2 text-xs ${styles.muted}`}>{opsText("Saved profiles")}</div>
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {availableTravelerProfiles.slice(0, 8).map((profile) => (
                     <button
@@ -328,8 +325,8 @@ export function CorporateNewTripPage({
                 <div key={`traveler-${index}`} className={`rounded-lg border px-3 py-3 ${styles.surface}`}>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div className="text-sm font-medium">
-                      Traveler {index + 1}
-                      {traveler.profileId ? <span className={`ml-2 text-xs font-normal ${styles.muted}`}>Saved profile</span> : null}
+                      {opsText("Traveler")}{' '}{index + 1}
+                      {traveler.profileId ? <span className={`ml-2 text-xs font-normal ${styles.muted}`}>{opsText("Saved profile")}</span> : null}
                     </div>
                     <button
                       type="button"
@@ -337,8 +334,7 @@ export function CorporateNewTripPage({
                       className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs ${styles.buttonGhost}`}
                     >
                       <Minus className="h-3.5 w-3.5" />
-                      Remove
-                    </button>
+                      {opsText("Remove")}</button>
                   </div>
                   <div className="grid gap-3 md:grid-cols-[1fr_1fr_0.85fr]">
                     <div>
@@ -347,7 +343,7 @@ export function CorporateNewTripPage({
                         onBlur={() => markTouched(`traveler-${index}-name`)}
                         onChange={(event) => updateTraveler(index, 'name', event.target.value)}
                         className={`${fieldBase} ${errorClass(`traveler-${index}-name`)}`}
-                        placeholder="Full name *"
+                        placeholder={opsText("Full name *")}
                       />
                       <FieldError message={visibleError(`traveler-${index}-name`)} />
                     </div>
@@ -357,7 +353,7 @@ export function CorporateNewTripPage({
                         onBlur={() => markTouched(`traveler-${index}-email`)}
                         onChange={(event) => updateTraveler(index, 'email', event.target.value)}
                         className={`${fieldBase} ${errorClass(`traveler-${index}-email`)}`}
-                        placeholder="Email *"
+                        placeholder={opsText("Email *")}
                       />
                       <FieldError message={visibleError(`traveler-${index}-email`)} />
                     </div>
@@ -368,7 +364,7 @@ export function CorporateNewTripPage({
                     >
                       {corporateDepartments.map((item) => (
                         <option key={item} value={item} className={optionClass}>
-                          {item}
+                          {opsText(item)}
                         </option>
                       ))}
                     </select>
@@ -380,46 +376,45 @@ export function CorporateNewTripPage({
         </div>
 
         {showErrors && !canSubmit ? (
-          <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-            Fill destination, departure date, purpose, at least one service, and complete every traveler row before submitting.
-          </div>
+          <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm ctm-tone-rose">
+            {opsText("Fill destination, departure date, purpose, at least one service, and complete every traveler row before submitting.")}</div>
         ) : null}
       </div>
 
       <aside className="grid gap-4">
         <div className={`rounded-xl border p-5 shadow-2xl ${styles.panel}`}>
-          <div className="text-lg font-semibold">Approval path</div>
+          <div className="text-lg font-semibold">{opsText("Approval path")}</div>
           <div className="mt-4 space-y-3">
             {corporateCostBands.map((item) => (
               <div
                 key={item.key}
                 className={`rounded-2xl border px-4 py-3 ${
-                  item.key === budgetBand ? 'border-[#d9b46f]/35 bg-[#d9b46f]/10' : theme === 'dark' ? 'border-white/10 bg-black/20' : 'border-slate-200 bg-slate-50'
+                  item.key === budgetBand ? 'border-[#fe8500]/35 bg-[#fe8500]/10' : theme === 'dark' ? 'border-white/10 bg-black/20' : 'border-slate-200 bg-slate-50'
                 }`}
               >
-                <div className="font-medium">{item.label}</div>
-                <div className={`mt-1 text-sm ${styles.muted}`}>{item.approval}</div>
+                <div className="font-medium">{opsText(item.label)}</div>
+                <div className={`mt-1 text-sm ${styles.muted}`}>{opsText(item.approval)}</div>
               </div>
             ))}
           </div>
         </div>
 
         <div className={`rounded-xl border p-5 shadow-2xl ${styles.panel}`}>
-          <div className="text-lg font-semibold">Submission summary</div>
+          <div className="text-lg font-semibold">{opsText("Submission summary")}</div>
           <div className="mt-4 space-y-3 text-sm">
             <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-              <div className={styles.muted}>Route</div>
+              <div className={styles.muted}>{opsText("Route")}</div>
               <div className="mt-1 font-medium">
-                {`${origin || 'Origin'} - ${destination || 'Destination'}`}
+                {`${origin || opsText('Origin')} - ${destination || opsText('Destination')}`}
               </div>
             </div>
             <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-              <div className={styles.muted}>Travelers</div>
+              <div className={styles.muted}>{opsText("Travelers")}</div>
               <div className="mt-1 font-medium">{travelers.length}</div>
             </div>
             <div className={`rounded-xl border px-4 py-3 ${styles.surface}`}>
-              <div className={styles.muted}>Services</div>
-              <div className="mt-1 font-medium">{services.length ? services.join(', ') : 'Select at least one service'}</div>
+              <div className={styles.muted}>{opsText("Services")}</div>
+              <div className="mt-1 font-medium">{services.length ? services.map(opsText).join(', ') : opsText('Select at least one service.')}</div>
             </div>
           </div>
 
@@ -429,10 +424,10 @@ export function CorporateNewTripPage({
             disabled={isSubmitting || !canSubmit}
             className={`mt-5 w-full rounded-lg px-4 py-3 text-sm font-semibold ${styles.buttonPrimary} disabled:cursor-not-allowed disabled:opacity-55`}
           >
-            {isSubmitting ? 'Submitting...' : 'Submit request for approval'}
+            {isSubmitting ? opsText("Submitting...") : opsText('Submit request for approval')}
           </button>
           {!canSubmit ? (
-            <div className={`mt-3 text-xs ${styles.muted}`}>Complete the required fields marked with <RequiredMark /> to submit.</div>
+            <div className={`mt-3 text-xs ${styles.muted}`}>{opsText("Complete the required fields marked with")}<RequiredMark /> {opsText("to submit.")}</div>
           ) : null}
         </div>
       </aside>

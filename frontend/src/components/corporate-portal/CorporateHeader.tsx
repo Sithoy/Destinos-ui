@@ -1,3 +1,5 @@
+import { opsText } from '../../locales/operations';
+import { LanguageToggle } from '../LanguageToggle';
 import { LogOut, Moon, Search, Sun } from 'lucide-react';
 import type { CorporatePortalTheme } from '../../types/corporatePortal';
 import { corporatePortalThemeStyles } from '../../pages/corporate-portal/portalTheme';
@@ -29,9 +31,9 @@ export function CorporateHeader({
     <header className={`border-b px-5 py-5 ${styles.header}`}>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.26em] text-[#d9b46f]">{descriptor}</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
-          <p className={`mt-1 text-sm ${styles.muted}`}>{subtitle}</p>
+          <div className="crm-eyebrow">{opsText(descriptor)}</div>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{opsText(title)}</h1>
+          <p className={`mt-1 text-sm ${styles.muted}`}>{opsText(subtitle)}</p>
         </div>
 
         <div className="flex min-w-0 basis-full justify-center lg:basis-auto lg:flex-1 lg:px-6">
@@ -40,21 +42,22 @@ export function CorporateHeader({
             <input
               value={searchValue}
               onChange={(event) => onSearchChange(event.target.value)}
-              aria-label="Search requests and travelers"
-              placeholder="Search request, traveler, route or service"
+              aria-label={opsText("Search requests and travelers")}
+              placeholder={opsText("Search request, traveler, route or service")}
               className="w-full bg-transparent text-sm outline-none placeholder:inherit"
             />
           </label>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <LanguageToggle compact light={theme !== 'dark'} />
           {action}
-          <button type="button" onClick={onToggleTheme} className={`inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`} aria-label="Toggle theme">
+          <button type="button" onClick={onToggleTheme} className={`inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`} aria-label={opsText("Toggle theme")}>
             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
-          <button type="button" onClick={onSignOut} className={`inline-flex h-11 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
+          <button type="button" onClick={onSignOut} aria-label={opsText("Sign out")} className={`inline-flex h-11 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
             <LogOut className="h-4 w-4" />
-            Sign out
+            <span className="hidden sm:inline">{opsText("Sign out")}</span>
           </button>
         </div>
       </div>

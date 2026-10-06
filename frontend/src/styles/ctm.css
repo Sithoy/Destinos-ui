@@ -1,0 +1,23 @@
+/* CTM uses the CRM surface tokens, with portal-specific status and layout rules. */
+.ctm-workspace { --ctm-success: #21714a; --ctm-warning: #98600a; --ctm-info: #236786; --ctm-danger: #b13f54; }
+.ctm-workspace[data-theme='dark'] { --ctm-success: #86efac; --ctm-warning: #fcd34d; --ctm-info: #7dd3fc; --ctm-danger: #fda4af; }
+.ctm-tone-emerald { color: var(--ctm-success); }
+.ctm-tone-amber { color: var(--ctm-warning); }
+.ctm-tone-sky { color: var(--ctm-info); }
+.ctm-tone-rose { color: var(--ctm-danger); }
+.ctm-secondary:hover { background: var(--crm-hover); }
+.ctm-accent-link:hover { color: var(--crm-accent); }
+.ctm-sidebar-note { border-color: #ffffff18; background: #ffffff05; color: #d6e2e6; line-height: 1.7; }
+.ctm-workspace .crm-panel { box-shadow: var(--crm-shadow); }
+.ctm-workspace .crm-input { border-radius: 10px; }
+.ctm-workspace .crm-metric { min-width: 0; }
+.ctm-workspace .crm-metric:hover { border-color: #c9a77e; }
+.ctm-workspace button { touch-action: manipulation; }
+.ctm-workspace input[type='checkbox'] { accent-color: #fe8500; }
+.ctm-workspace table { font-variant-numeric: tabular-nums; }
+.ctm-workspace th { color: var(--crm-muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+@media (max-width: 767px) {
+  .ctm-workspace .crm-header > div > div:first-child { width: 100%; }
+  .ctm-workspace .crm-header > div > div:last-child { order: 1; }
+  .ctm-workspace .crm-header > div > div:nth-child(2) { order: 2; }
+}

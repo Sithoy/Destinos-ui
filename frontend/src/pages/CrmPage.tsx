@@ -1,3 +1,7 @@
+import { opsText, opsLocale } from '../locales/operations';
+import { useTranslation } from 'react-i18next';
+import { LanguageToggle } from '../components/LanguageToggle';
+import { TravelCalendar } from '../modules/crm/calendar/TravelCalendar';
 import '../styles/crm.css';
 import { CrmLoginLayout } from '../components/CrmLoginLayout';
 import { ExperienceSnapshot } from '../components/ExperienceSnapshot';
@@ -30,6 +34,7 @@ import {
   Shield,
   Sparkles,
   Sun,
+  Sunrise,
   Users,
   X,
   type LucideIcon,
@@ -79,6 +84,7 @@ import {
   updateCrmQuoteLineRecord,
   updateCrmClientRecord,
   updateCrmUserRecord,
+  userHasCapability,
 } from '../data/crm';
 import {
   createCtmTripBooking,
@@ -101,10 +107,16 @@ import {
 import { classicLogo } from '../data/travel';
 import { BrandLockup } from '../components/ui';
 import { BriefingGate, appendBriefingDecisionNote, briefingChecklistItems, briefingReadiness, type BriefingDecision } from '../modules/crm/briefing';
+import { RequestQueueCard, RequestStatusReport, csvEscape, dateTimeValue, fallbackPriority, formatDate, formatDateOnly, initials, isCorporateLead, leadFlowTitle, leadLifecycleLabel, leadLifecycleStage, leadOwner, leadPrimaryBlocker, leadSegment, leftRailStatusCards, lifecycleStageLabels, priorityLabels, processForLead, statusLabels, typeLabels, type InfoCard, type LeadTypeFilter } from '../modules/crm/shared';
+import { isOpenTask, leadTasks, taskQueueCount, tasksSurfaceMeta, workflowReminderGenerationAvailability } from '../modules/crm/tasks';
+import { calendarRequestCount, calendarSurfaceMeta, leadHasTravelDates } from '../modules/crm/calendar';
+import { exportCsv, reportsSurfaceMeta } from '../modules/crm/reports';
+import { CrmReports } from '../modules/crm/reports/CrmReports';
+import { MyDay } from '../modules/crm/myday';
+import { TasksQueue } from '../modules/crm/tasks';
 import type { CrmClient, CrmCommunicationRecord, CrmLead, CrmManagedUser, CrmPaymentRecord, CrmQuote, CrmQuoteLine, CrmRole, CrmSession, CrmTripItinerary, CrmWorkflowReminder, CrmWorkflowState, InquiryKind, LeadLifecycleStage, LeadPriority, LeadStatus, QuoteLineCategory, QuoteLineStatus } from '../types';
 import type { CorporateBookingStatus, CorporateCompanyAccount, CorporateCompanyAccountInput, CorporateCompanyAccountStatus, CorporateCompanyServiceLevel, CorporateCompanyUserAccount, CorporateCompanyUserInput, CorporateCompanyUserRole, CorporateInvoiceStatus, CorporatePaymentMethod, CorporatePaymentStatus, CorporateQuoteStatus, CorporateTripRequest } from '../types/corporatePortal';
 
-type LeadTypeFilter = 'all' | InquiryKind;
 type StatusFilter = 'all' | LeadStatus | 'confirmedGroup' | 'workflowGroup';
 type PriorityFilter = 'all' | LeadPriority | 'attention';
 type CrmTheme = 'dark' | 'light';
@@ -128,8 +140,7 @@ type DetailTab =
   | 'payment';
 type DeskView = 'all' | 'leisure' | 'corporate';
 type CommandLens = 'all' | 'corporate' | 'leisure' | 'attention' | 'blocked' | 'ready';
-type CrmNavId = 'command' | 'leisureStudio' | 'corporateDesk' | 'corporateAccounts' | 'tasks' | 'calendar' | 'clients' | 'reports' | 'settings';
-type ProcessTaskTone = 'urgent' | 'normal' | 'upcoming';
+type CrmNavId = 'myday' | 'command' | 'leisureStudio' | 'corporateDesk' | 'corporateAccounts' | 'tasks' | 'calendar' | 'clients' | 'reports' | 'settings';
 type CommunicationKind = 'proposal' | 'payment' | 'travel_pack' | 'follow_up';
 type CommunicationChannel = 'email' | 'whatsapp' | 'phone';
 type CorporateDeskSignalTone = 'success' | 'warning' | 'danger' | 'info';
@@ -235,33 +246,10 @@ type CommunicationDraft = {
   followUpDue: string;
 };
 
-type ProcessTask = {
-  title: string;
-  due: string;
-  tone: ProcessTaskTone;
-};
-
-type FlowProcessMap = Record<
-  LeadStatus,
-  {
-    primaryAction: string;
-    nextAction: string;
-    nextStatus: LeadStatus | null;
-    stageGate: string;
-    taskTitles: [string, string, string];
-  }
->;
-
 type ProcessHistoryItem = {
   label: string;
   meta: string;
   tone: 'done' | 'current' | 'upcoming' | 'closed';
-};
-
-type InfoCard = {
-  label: string;
-  value: string;
-  meta?: string;
 };
 
 type QuoteLinePatch = Partial<Pick<CrmQuoteLine, 'category' | 'supplier' | 'description' | 'quantity' | 'unitCost' | 'unitSell' | 'status' | 'confirmationReference' | 'supplierDeadline' | 'bookingOwner' | 'bookingNotes' | 'confirmedAt' | 'notes'>>;
@@ -312,34 +300,6 @@ const PAGE_SIZE = 10;
 const CRM_THEME_STORAGE_KEY = 'dpm.crm.theme';
 const QUOTE_LINE_SAVE_DELAY_MS = 650;
 
-const statusLabels: Record<LeadStatus, string> = {
-  new: 'New',
-  contacted: 'Qualification',
-  planning: 'Trip Design',
-  proposal: 'Proposal Sent',
-  won: 'Confirmed',
-  execution: 'Execution',
-  completed: 'Completed',
-  lost: 'Cancelled',
-};
-
-const lifecycleStageLabels: Record<LeadLifecycleStage, string> = {
-  new_request: 'New Request',
-  pending_information: 'Pending Information',
-  validated: 'Validated',
-  quote_in_progress: 'Quote in Progress',
-  quote_sent: 'Quote Sent',
-  awaiting_approval: 'Awaiting Approval',
-  approved: 'Approved',
-  awaiting_payment_finance: 'Awaiting Payment / Finance',
-  booking_in_progress: 'Booking in Progress',
-  confirmed: 'Confirmed',
-  travel_pack_sent: 'Travel Pack Sent',
-  in_travel: 'In Travel',
-  completed: 'Completed',
-  closed: 'Closed',
-};
-
 const lifecycleStageOrder: LeadLifecycleStage[] = [
   'new_request',
   'pending_information',
@@ -358,17 +318,6 @@ const lifecycleStageOrder: LeadLifecycleStage[] = [
 
 const lifecycleWorkflowSteps = lifecycleStageOrder.map((stage) => [stage, lifecycleStageLabels[stage]] as const);
 
-const statusToLifecycleStage: Record<LeadStatus, LeadLifecycleStage> = {
-  new: 'new_request',
-  contacted: 'pending_information',
-  planning: 'quote_in_progress',
-  proposal: 'quote_sent',
-  won: 'awaiting_payment_finance',
-  execution: 'booking_in_progress',
-  completed: 'completed',
-  lost: 'closed',
-};
-
 const lifecycleStageToStatus: Record<LeadLifecycleStage, LeadStatus> = {
   new_request: 'new',
   pending_information: 'contacted',
@@ -384,13 +333,6 @@ const lifecycleStageToStatus: Record<LeadLifecycleStage, LeadStatus> = {
   in_travel: 'execution',
   completed: 'completed',
   closed: 'lost',
-};
-
-const priorityLabels: Record<LeadPriority, string> = {
-  low: 'Low',
-  normal: 'Normal',
-  high: 'High',
-  urgent: 'Urgent',
 };
 
 const quoteStatusLabels: Record<CrmQuote['status'], string> = {
@@ -528,13 +470,6 @@ const communicationChannelLabels: Record<CommunicationChannel, string> = {
 const communicationKinds = Object.keys(communicationKindLabels) as CommunicationKind[];
 const communicationChannels = Object.keys(communicationChannelLabels) as CommunicationChannel[];
 
-const typeLabels: Record<LeadTypeFilter, string> = {
-  all: 'All',
-  classic: 'Classic',
-  luxury: 'Luxury',
-  corporate: 'Corporate',
-};
-
 const statusOrder: LeadStatus[] = ['new', 'contacted', 'planning', 'proposal', 'won', 'execution', 'completed', 'lost'];
 const typeFilters = ['all', 'luxury', 'corporate', 'classic'] as LeadTypeFilter[];
 
@@ -558,137 +493,8 @@ const corporateWorkflowSteps = [
   ['completed', 'Completed'],
 ] as const;
 
-const ownerByService: Record<InquiryKind, string> = {
-  classic: 'Marta Lopes',
-  luxury: 'Nadia Cossa',
-  corporate: 'Carlos Mavie',
-};
-
-const serviceProcessFocus: Record<InquiryKind, string> = {
-  classic: 'simple package clarity, budget fit, and practical travel options',
-  luxury: 'concierge preferences, premium availability, and discreet service details',
-  corporate: 'traveler list, approval flow, policy fit, and invoice structure',
-};
-
-const traditionalStatusProcess: FlowProcessMap = {
-  new: {
-    primaryAction: 'Qualify request',
-    nextAction: 'Confirm client intent, dates, budget, and service expectations.',
-    nextStatus: 'contacted',
-    stageGate: 'Move to Qualification when the request is real enough to invest planning time.',
-    taskTitles: ['Call or WhatsApp client', 'Validate dates and destination', 'Confirm budget range'],
-  },
-  contacted: {
-    primaryAction: 'Start trip design',
-    nextAction: 'Turn the qualified request into a small set of viable travel options.',
-    nextStatus: 'planning',
-    stageGate: 'Move to Trip Design when constraints and decision makers are clear.',
-    taskTitles: ['Capture missing requirements', 'Check travel constraints', 'Assign supplier research'],
-  },
-  planning: {
-    primaryAction: 'Prepare proposal',
-    nextAction: 'Build the itinerary, pricing logic, supplier holds, and recommendation notes.',
-    nextStatus: 'proposal',
-    stageGate: 'Move to Proposal Sent only when the offer is complete enough for client approval.',
-    taskTitles: ['Compare supplier options', 'Draft itinerary and quote', 'Check service inclusions'],
-  },
-  proposal: {
-    primaryAction: 'Follow up approval',
-    nextAction: 'Track client approval, payment conditions, and expiring fare or room holds.',
-    nextStatus: 'won',
-    stageGate: 'Move to Confirmed after client approval and payment conditions are satisfied.',
-    taskTitles: ['Follow up proposal', 'Extend critical holds', 'Clarify approval blockers'],
-  },
-  won: {
-    primaryAction: 'Launch execution',
-    nextAction: 'Convert approval into bookings, documents, and operational ownership.',
-    nextStatus: 'execution',
-    stageGate: 'Move to Execution when core bookings and payment conditions are controlled.',
-    taskTitles: ['Confirm bookings', 'Prepare invoice or payment record', 'Create service checklist'],
-  },
-  execution: {
-    primaryAction: 'Complete trip',
-    nextAction: 'Deliver documents, concierge notes, reminders, and active travel support.',
-    nextStatus: 'completed',
-    stageGate: 'Move to Completed when the trip is delivered and follow-up is ready.',
-    taskTitles: ['Send final travel pack', 'Confirm special requests', 'Schedule travel-day support'],
-  },
-  completed: {
-    primaryAction: 'Review relationship',
-    nextAction: 'Capture feedback, repeat preferences, and future opportunity signals.',
-    nextStatus: null,
-    stageGate: 'Keep completed trips as relationship intelligence for future sales.',
-    taskTitles: ['Request feedback', 'Log preferences', 'Create future follow-up cue'],
-  },
-  lost: {
-    primaryAction: 'Reopen request',
-    nextAction: 'Record cancellation reason and decide whether this lead should be nurtured later.',
-    nextStatus: 'new',
-    stageGate: 'Closed requests should explain why the opportunity stopped.',
-    taskTitles: ['Record loss reason', 'Tag future interest', 'Schedule nurture follow-up'],
-  },
-};
-
-const corporateStatusProcess: FlowProcessMap = {
-  new: {
-    primaryAction: 'Qualify account need',
-    nextAction: 'Confirm traveler count, route, timing, and whether policy or invoice constraints already exist.',
-    nextStatus: 'contacted',
-    stageGate: 'Move to Qualification when the company need is real and the coordinating contact is confirmed.',
-    taskTitles: ['Confirm company requester', 'Capture traveler scope', 'Check policy or billing requirements'],
-  },
-  contacted: {
-    primaryAction: 'Build travel brief',
-    nextAction: 'Capture traveler list shape, approval owner, flexibility, and the operational constraints that affect quoting.',
-    nextStatus: 'planning',
-    stageGate: 'Move to Travel Plan when DPM can prepare options against a stable company brief.',
-    taskTitles: ['Confirm traveler matrix', 'Validate approval owner', 'Clarify fare and hotel policy'],
-  },
-  planning: {
-    primaryAction: 'Prepare proposal',
-    nextAction: 'Turn the movement brief into pricing, routing logic, service scope, and approval-ready commercial notes.',
-    nextStatus: 'proposal',
-    stageGate: 'Move to Proposal when pricing, policy fit, and operational assumptions are clear enough for company review.',
-    taskTitles: ['Build traveler option set', 'Draft approval-ready proposal', 'Check invoicing structure'],
-  },
-  proposal: {
-    primaryAction: 'Follow up approval',
-    nextAction: 'Track company approval, traveler changes, expiring fares, and internal finance dependencies before locking travel.',
-    nextStatus: 'won',
-    stageGate: 'Move to Approval Secured when the company signs off the proposal and commercial conditions are controlled.',
-    taskTitles: ['Follow up approver', 'Track traveler changes', 'Protect time-sensitive holds'],
-  },
-  won: {
-    primaryAction: 'Launch fulfilment',
-    nextAction: 'Convert approval into bookings, traveler documentation, invoicing, and coordinated operational ownership.',
-    nextStatus: 'execution',
-    stageGate: 'Move to Fulfilment when travel is approved and the operating team can execute confidently.',
-    taskTitles: ['Confirm booking path', 'Prepare invoice record', 'Lock traveler support checklist'],
-  },
-  execution: {
-    primaryAction: 'Close operating loop',
-    nextAction: 'Deliver travel packs, support active movement, and keep the company informed across traveler changes.',
-    nextStatus: 'completed',
-    stageGate: 'Move to Completed when the movement is delivered and the account notes are updated for future travel.',
-    taskTitles: ['Deliver final movement pack', 'Support active travelers', 'Capture post-trip account notes'],
-  },
-  completed: {
-    primaryAction: 'Review account delivery',
-    nextAction: 'Capture service feedback, repeat routes, and policy learnings for the next corporate movement.',
-    nextStatus: null,
-    stageGate: 'Keep completed corporate trips as account intelligence for future requests.',
-    taskTitles: ['Request account feedback', 'Log repeat route patterns', 'Prepare next-travel follow-up'],
-  },
-  lost: {
-    primaryAction: 'Reopen request',
-    nextAction: 'Record why the company movement stopped and whether the account should be nurtured later.',
-    nextStatus: 'new',
-    stageGate: 'Closed corporate requests should explain whether budget, timing, policy, or traveler readiness stopped the work.',
-    taskTitles: ['Record loss reason', 'Tag account risk', 'Schedule follow-up if relevant'],
-  },
-};
-
 const navItems: Array<{ id: CrmNavId; label: string; Icon: LucideIcon }> = [
+  { id: 'myday', label: 'My Day', Icon: Sunrise },
   { id: 'command', label: 'Command Center', Icon: LayoutDashboard },
   { id: 'leisureStudio', label: 'Leisure Studio', Icon: Sparkles },
   { id: 'corporateDesk', label: 'Corporate Desk', Icon: Briefcase },
@@ -812,23 +618,6 @@ const themeStyles = {
   },
 } as const;
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
-
-function formatDateOnly(value?: string | null) {
-  if (!value) return 'Date pending';
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(value));
-}
 
 function formatDateRange(start?: string | null, end?: string | null) {
   if (!start && !end) return 'Dates pending';
@@ -836,11 +625,6 @@ function formatDateRange(start?: string | null, end?: string | null) {
   return `${formatDateOnly(start)} - ${formatDateOnly(end)}`;
 }
 
-function dateTimeValue(value?: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
 
 function parseStoredTravelDates(value?: string | null) {
   if (!value) return { startDate: null, endDate: null };
@@ -893,67 +677,9 @@ function dateContainmentError(value: string | null | undefined, min: string | nu
   return '';
 }
 
-function isDueBy(value: string | null | undefined, limit: Date) {
-  const date = dateTimeValue(value);
-  return Boolean(date && date.getTime() <= limit.getTime());
-}
-
-function workflowReminderGenerationAvailability(
-  lead: CrmLead | null,
-  workflowState: CrmWorkflowState | null,
-  pendingReminders: CrmWorkflowReminder[],
-  paymentRecords: CrmPaymentRecord[],
-  communicationRecords: CrmCommunicationRecord[],
-  leadQuotes: CrmQuote[],
-) {
-  if (!lead) return { available: false, reason: 'Select a request before generating reminders.' };
-  if (!workflowState) return { available: false, reason: 'Workflow state is still loading.' };
-
-  if (lead.status === 'completed' || lead.status === 'lost' || workflowState.currentStage === 'completed' || workflowState.currentStage === 'closed') {
-    return { available: false, reason: 'No reminders are needed for completed or closed requests.' };
-  }
-
-  if (pendingReminders.length > 0) {
-    return { available: false, reason: 'Pending reminders already exist for this request.' };
-  }
-
-  const now = new Date();
-  const twoDayLimit = new Date(now);
-  twoDayLimit.setDate(twoDayLimit.getDate() + 2);
-  const hasWorkflowBlocker = workflowState.blockers.length > 0;
-  const hasOverdueFollowUp = communicationRecords.some((record) => (
-    record.followUpDue
-    && isDueBy(record.followUpDue, now)
-    && record.status !== 'cancelled'
-    && record.status !== 'failed'
-  ));
-  const hasDuePayment = paymentRecords.some((record) => (
-    record.dueDate
-    && isDueBy(record.dueDate, twoDayLimit)
-    && !['paid', 'cancelled', 'refunded'].includes(record.status)
-  ));
-  const hasSupplierDeadline = leadQuotes.some((quote) => quote.lines.some((line) => (
-    line.supplierDeadline
-    && isDueBy(line.supplierDeadline, twoDayLimit)
-    && line.status !== 'confirmed'
-  )));
-  const hasTravelPack = communicationRecords.some((record) => (
-    record.kind === 'travel_pack' && (record.status === 'ready' || record.status === 'sent')
-  ));
-  const needsTravelPack = workflowState.currentStage === 'confirmed' && !hasTravelPack;
-
-  if (hasWorkflowBlocker) return { available: true, reason: 'Generate reminders for current workflow blockers.' };
-  if (hasOverdueFollowUp) return { available: true, reason: 'Generate reminders for overdue client follow-ups.' };
-  if (hasDuePayment) return { available: true, reason: 'Generate reminders for payment deadlines.' };
-  if (hasSupplierDeadline) return { available: true, reason: 'Generate reminders for supplier deadlines.' };
-  if (needsTravelPack) return { available: true, reason: 'Generate a reminder to prepare the travel pack.' };
-
-  return { available: false, reason: 'No reminder rule is active for this stage.' };
-}
-
 function moneyValue(value: string | number | null | undefined, currency = 'USD') {
   const numeric = Number(value ?? 0);
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat(opsLocale(), {
     style: 'currency',
     currency,
     maximumFractionDigits: 0,
@@ -1075,46 +801,9 @@ function getCorporateDeskNextAction(trip: CorporateTripRequest) {
   return 'Keep monitoring CTM signals.';
 }
 
-function csvEscape(value: unknown) {
-  return `"${String(value ?? '').replace(/"/g, '""')}"`;
-}
-
-function fallbackPriority(lead: CrmLead): LeadPriority {
-  if (lead.priority) return lead.priority;
-  const urgency = (lead.urgency ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (urgency.includes('semana') || urgency.includes('week')) return 'urgent';
-  if (urgency.includes('mes') || urgency.includes('mês') || urgency.includes('month')) return 'high';
-  if (urgency.includes('pesquisar') || urgency.includes('research')) return 'low';
-  return 'normal';
-}
-
-function attentionLevel(lead: CrmLead) {
-  const priority = fallbackPriority(lead);
-  if (priority === 'urgent' || priority === 'high') return 'urgent';
-  if (lead.status === 'new') return 'new';
-  if (lead.status === 'contacted' || lead.status === 'planning' || lead.status === 'proposal' || lead.status === 'execution') return 'active';
-  if (lead.status === 'won' || lead.status === 'completed') return 'settled';
-  return 'quiet';
-}
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return `${parts[0]?.[0] ?? 'D'}${parts[1]?.[0] ?? ''}`.toUpperCase();
-}
-
 function readCrmTheme(): CrmTheme {
   if (typeof window === 'undefined') return 'light';
   return window.localStorage.getItem(CRM_THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
-}
-
-function leadSegment(lead: CrmLead) {
-  if (lead.serviceKey === 'corporate') return 'Corporate';
-  if (lead.serviceKey === 'luxury') return 'Private Client';
-  return 'Private Client';
-}
-
-function isCorporateLead(lead: CrmLead) {
-  return lead.serviceKey === 'corporate';
 }
 
 function isLeisureLead(lead: CrmLead) {
@@ -1125,14 +814,6 @@ function workflowStepsForLead(lead: CrmLead) {
   return isCorporateLead(lead) ? corporateWorkflowSteps : traditionalWorkflowSteps;
 }
 
-function leadLifecycleStage(lead: CrmLead): LeadLifecycleStage {
-  return lead.lifecycleStage ?? statusToLifecycleStage[lead.status];
-}
-
-function leadLifecycleLabel(lead: CrmLead) {
-  return lifecycleStageLabels[leadLifecycleStage(lead)];
-}
-
 function nextLifecycleStage(lead: CrmLead): LeadLifecycleStage | null {
   const currentStage = leadLifecycleStage(lead);
   if (currentStage === 'closed') return 'new_request';
@@ -1141,11 +822,7 @@ function nextLifecycleStage(lead: CrmLead): LeadLifecycleStage | null {
 }
 
 function lifecycleStageActionLabel(nextStage: LeadLifecycleStage | null) {
-  return nextStage ? `Move to ${lifecycleStageLabels[nextStage]}` : 'Lifecycle complete';
-}
-
-function leadFlowTitle(lead: CrmLead) {
-  return isCorporateLead(lead) ? 'Corporate travel operations flow' : 'Traditional trip design flow';
+  return nextStage ? `${opsText('Move to')} ${opsText(lifecycleStageLabels[nextStage])}` : opsText('Lifecycle complete');
 }
 
 function leadFlowDescription(lead: CrmLead) {
@@ -1329,53 +1006,10 @@ function corporateDocumentCards(lead: CrmLead): InfoCard[] {
   ];
 }
 
-function leadPrimaryBlocker(lead: CrmLead) {
-  const lifecycleStage = leadLifecycleStage(lead);
-  if (lifecycleStage === 'pending_information') return 'Missing information before validation';
-  if (lifecycleStage === 'awaiting_approval') return isCorporateLead(lead) ? 'Company approval still pending' : 'Client approval still pending';
-  if (lifecycleStage === 'awaiting_payment_finance') return isCorporateLead(lead) ? 'Finance clearance before booking release' : 'Payment confirmation before booking release';
-  if (lifecycleStage === 'booking_in_progress') return 'Supplier confirmations still in progress';
-  if (lifecycleStage === 'travel_pack_sent') return 'Travel pack sent, monitor readiness';
-  if (lifecycleStage === 'in_travel') return 'Active travel support in progress';
-  if (lifecycleStage === 'closed') return 'Request closed';
-
-  if (lead.serviceKey === 'corporate') {
-    if (lead.status === 'proposal') return 'Client approval still pending';
-    if (lead.status === 'won') return 'Finance clearance before booking release';
-    if (lead.requestedServices.toLowerCase().includes('visa')) return 'Traveler visa readiness still open';
-    return 'Traveler coordination still needs control';
-  }
-
-  if (lead.status === 'proposal') return 'Client decision still pending';
-  if (lead.status === 'won') return 'Payment confirmation before release';
-  if (lead.serviceKey === 'luxury') return 'Premium inventory timing still sensitive';
-  return 'Trip details still need final confirmation';
-}
-
 function extractManagerBoardMeta(notes: string | undefined) {
   const match = (notes || '').match(/\[Manager board\] Owner: (.+?) \| Task: (.+?)(?:\r?\n|$)/);
   if (!match) return null;
   return { owner: match[1], task: match[2] };
-}
-
-function leftRailStatusCards(lead: CrmLead): InfoCard[] {
-  return [
-    {
-      label: 'Current stage',
-      value: leadLifecycleLabel(lead),
-      meta: leadFlowTitle(lead),
-    },
-    {
-      label: 'Primary blocker',
-      value: leadPrimaryBlocker(lead),
-      meta: processForLead(lead).stageGate,
-    },
-    {
-      label: 'Next owner',
-      value: leadOwner(lead),
-      meta: processForLead(lead).primaryAction,
-    },
-  ];
 }
 
 function itinerarySummaryCards(lead: CrmLead, itinerary?: CrmTripItinerary | null): InfoCard[] {
@@ -1762,14 +1396,9 @@ function crmOwnerFallback(lead: CrmLead) {
   return leadOwner(lead);
 }
 
-
 function leisurePackageOptions(lead: CrmLead): LeisurePackageOption[] {
   void lead;
   return [];
-}
-
-function leadOwner(lead: CrmLead) {
-  return ownerByService[lead.serviceKey];
 }
 
 function clientLabel(client: CrmClient) {
@@ -1806,27 +1435,8 @@ function findMatchingClientRecord(clients: CrmClient[], input: ReturnType<typeof
 function canEditManagedUser(actor: CrmSession['user'] | null | undefined, target: CrmManagedUser) {
   if (!actor || !canManageUsers(actor)) return false;
   if (actor.role === 'admin') return true;
-  if (actor.role === 'manager') return target.role === 'agent' || target.role === 'viewer' || target.role === 'client' || target.role === 'none';
+  if (actor.role === 'manager') return target.role === 'agent' || target.role === 'viewer' || target.role === 'consultant' || target.role === 'operations' || target.role === 'finance' || target.role === 'auditor' || target.role === 'client' || target.role === 'none';
   return false;
-}
-
-function processForLead(lead: CrmLead) {
-  const process = (isCorporateLead(lead) ? corporateStatusProcess : traditionalStatusProcess)[lead.status];
-  return {
-    ...process,
-    nextAction: `${process.nextAction} Focus on ${serviceProcessFocus[lead.serviceKey]}.`,
-  };
-}
-
-function leadTasks(lead: CrmLead): ProcessTask[] {
-  const process = processForLead(lead);
-  const priority = fallbackPriority(lead);
-  const due = priority === 'urgent' ? 'Due now' : priority === 'high' ? 'Today' : priority === 'normal' ? '24h' : 'This week';
-  return process.taskTitles.map((title, index) => ({
-    title,
-    due: index === 0 ? due : index === 1 ? 'Next step' : 'Before stage move',
-    tone: index === 0 && (priority === 'urgent' || priority === 'high') ? 'urgent' : index === 2 ? 'upcoming' : 'normal',
-  }));
 }
 
 function workflowHistory(lead: CrmLead): ProcessHistoryItem[] {
@@ -1834,61 +1444,6 @@ function workflowHistory(lead: CrmLead): ProcessHistoryItem[] {
     { label: 'Request created', meta: formatDate(lead.createdAt), tone: 'done' },
     { label: lifecycleStageLabels[leadLifecycleStage(lead)], meta: 'Current recorded stage', tone: 'current' },
   ];
-}
-
-function exportCsv(leads: CrmLead[]) {
-  const headers = [
-    'Created',
-    'Type',
-    'Service',
-    'Status',
-    'Lifecycle stage',
-    'Priority',
-    'Name',
-    'Email',
-    'WhatsApp',
-    'Preferred contact',
-    'Requested services',
-    'Trip type',
-    'Departure city',
-    'Destination',
-    'Dates',
-    'Travelers',
-    'Budget',
-    'Urgency',
-    'Notes',
-    'Internal notes',
-  ];
-  const rows = leads.map((lead) => [
-    lead.createdAt,
-    typeLabels[lead.serviceKey] ?? lead.serviceKey,
-    lead.service,
-    statusLabels[lead.status],
-    leadLifecycleLabel(lead),
-    priorityLabels[fallbackPriority(lead)],
-    lead.name,
-    lead.email,
-    lead.whatsapp,
-    lead.preferredContact,
-    lead.requestedServices,
-    lead.tripType,
-    lead.departureCity,
-    lead.destination,
-    lead.dates,
-    lead.travelers,
-    lead.budget,
-    lead.urgency,
-    lead.notes,
-    lead.internalNotes,
-  ]);
-  const csv = [headers, ...rows].map((row) => row.map((cell) => csvEscape(cell)).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `dpm-leads-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 function exportClientsCsv(clients: CrmClient[]) {
@@ -1926,10 +1481,10 @@ function CrmBrandMark({ theme }: { theme: CrmTheme }) {
         compact
         align="left"
         gapClass="gap-2.5"
-        logoSize="h-10"
-        logoArtScale="scale-[1.06]"
+        logoSize="h-[52px]"
+        logoArtScale="scale-[1.55]"
         logoArtOffset="translate-x-0"
-        wordmarkWidthClass="w-[9.5rem] max-w-[calc(100vw-9rem)]"
+        wordmarkWidthClass="w-[8.5rem]"
       />
     </div>
   );
@@ -2145,6 +1700,7 @@ function corporateCompanyUserFormFromAccount(user: CorporateCompanyUserAccount):
 }
 
 export function CrmPage() {
+  useTranslation();
   const apiEnabled = hasCrmApi();
   const [crmSession, setCrmSession] = useState<CrmSession | null>(() => readCrmSession());
   const [leads, setLeads] = useState<CrmLead[]>(() => (apiEnabled ? [] : readCrmLeads()));
@@ -2161,6 +1717,7 @@ export function CrmPage() {
   const [crmUsers, setCrmUsers] = useState<CrmManagedUser[]>([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [crmError, setCrmError] = useState('');
+  const [reportsReady, setReportsReady] = useState(false);
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -2177,7 +1734,7 @@ export function CrmPage() {
   const [selectedCorporateWorkflowStageId, setSelectedCorporateWorkflowStageId] = useState('');
   const [page, setPage] = useState(1);
   const [theme, setTheme] = useState<CrmTheme>(() => readCrmTheme());
-  const [activeNav, setActiveNav] = useState<CrmNavId>('command');
+  const [activeNav, setActiveNav] = useState<CrmNavId>('myday');
   const [showFilters, setShowFilters] = useState(false);
   const [showManualRequest, setShowManualRequest] = useState(false);
   const [manualRequest, setManualRequest] = useState<Record<string, string>>(() => emptyManualRequest());
@@ -2202,6 +1759,14 @@ export function CrmPage() {
   const [activeTripDesignEditor, setActiveTripDesignEditor] = useState<TripDesignEditor>('stop');
   const [communicationDraft, setCommunicationDraft] = useState<CommunicationDraft>(() => emptyCommunicationDraft());
   const styles = themeStyles[theme];
+  const canSendQuotes = userHasCapability(crmSession?.user, 'quotes.send');
+  const canAdvanceWorkflow = userHasCapability(crmSession?.user, 'workflow.advance');
+  const canCreatePayments = userHasCapability(crmSession?.user, 'payments.create');
+  const canVerifyPayments = userHasCapability(crmSession?.user, 'payments.verify');
+  const canExportReports = userHasCapability(crmSession?.user, 'reports.export');
+  const canAdminUsers = userHasCapability(crmSession?.user, 'users.admin');
+  const canViewFinancials = userHasCapability(crmSession?.user, 'financials.view');
+  const visibleNavItems = navItems.filter((item) => item.id !== 'settings' || canAdminUsers);
   const quoteLineEditsRef = useRef<Record<string, QuoteLinePatch>>({});
   const quoteLineSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -2240,7 +1805,7 @@ export function CrmPage() {
         fetchCrmQuotes(crmSession),
         fetchCrmPaymentRecords(crmSession),
         fetchCrmCommunicationRecords(crmSession),
-        fetchCrmWorkflowReminders(crmSession, 'pending'),
+        fetchCrmWorkflowReminders(crmSession).then(tasks => tasks.filter(isOpenTask)),
         fetchCrmTripItineraries(crmSession),
         fetchCtmTripRequests(crmSession),
         canManageUsers(crmSession?.user) ? fetchCtmCompanyAccounts(crmSession) : Promise.resolve([]),
@@ -2249,6 +1814,7 @@ export function CrmPage() {
       ]);
       if (leadsResult.status === 'fulfilled') setLeads(leadsResult.value);
       if (clientsResult.status === 'fulfilled') setClients(clientsResult.value);
+      setReportsReady([leadsResult, quotesResult, workflowRemindersResult].every(result => result.status === 'fulfilled'));
       if (quotesResult.status === 'fulfilled') setQuotes(quotesResult.value);
       if (paymentRecordsResult.status === 'fulfilled') setPaymentRecords(paymentRecordsResult.value);
       if (communicationRecordsResult.status === 'fulfilled') setCommunicationRecords(communicationRecordsResult.value);
@@ -2302,7 +1868,7 @@ export function CrmPage() {
             : lead.status === statusFilter);
       const priority = fallbackPriority(lead);
       const matchesPriority = priorityFilter === 'all' || (priorityFilter === 'attention' ? priority === 'high' || priority === 'urgent' : priority === priorityFilter);
-      const matchesNav = activeNav !== 'calendar' || Boolean(lead.dates);
+      const matchesNav = activeNav !== 'calendar' || leadHasTravelDates(lead);
       const matchesQuery =
         !needle ||
         [
@@ -2489,10 +2055,13 @@ export function CrmPage() {
     : selectedProcess?.nextAction || '';
   const selectedDetailTabs = useMemo(() => {
     if (!selectedLead) return [];
-    if (activeNav === 'leisureStudio') return leisureWorkbenchTabs.map((tab) => tab.id);
-    if (activeNav === 'corporateDesk') return corporateWorkbenchTabs.map((tab) => tab.id);
-    return detailTabsForLead(selectedLead);
-  }, [activeNav, selectedLead]);
+    const tabs = activeNav === 'leisureStudio'
+      ? leisureWorkbenchTabs.map((tab) => tab.id)
+      : activeNav === 'corporateDesk'
+        ? corporateWorkbenchTabs.map((tab) => tab.id)
+        : detailTabsForLead(selectedLead);
+    return canViewFinancials ? tabs : tabs.filter((tab) => tab !== 'finance' && tab !== 'costing');
+  }, [activeNav, canViewFinancials, selectedLead]);
   const selectedTasks = selectedLead ? leadTasks(selectedLead) : [];
   const selectedBriefing = selectedLead ? briefingReadiness(selectedLead) : null;
   const selectedCorporateBriefReady = selectedLead?.serviceKey === 'corporate' ? Boolean(selectedBriefing?.canApprove) : true;
@@ -2646,11 +2215,11 @@ export function CrmPage() {
   const corporateFinanceCount = corporateLeads.filter((lead) => lead.status === 'won').length;
   const corporateFulfilmentCount = corporateLeads.filter((lead) => lead.status === 'execution' || lead.status === 'completed').length;
   const urgentNewCount = leads.filter((lead) => lead.status === 'new' && (fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high')).length;
-  const taskCount = workflowReminders.length || leads.filter((lead) => fallbackPriority(lead) === 'urgent' || fallbackPriority(lead) === 'high').length;
-  const calendarCount = leads.filter((lead) => Boolean(lead.dates) && lead.status !== 'lost' && lead.status !== 'completed').length;
+  const taskCount = taskQueueCount(leads, workflowReminders);
+  const calendarCount = calendarRequestCount(leads);
   const clientCount = clients.length;
   const activeUserCount = crmUsers.filter((user) => user.isActive).length;
-  const managerAdminCount = crmUsers.filter((user) => user.role === 'admin' || user.role === 'manager').length;
+  const managerAdminCount = crmUsers.filter((user) => user.role === 'admin' || user.role === 'manager' || user.role === 'team_manager').length;
   const activeAgentCount = crmUsers.filter((user) => user.role === 'agent' && user.isActive).length;
   const inactiveUserCount = crmUsers.filter((user) => !user.isActive).length;
   const activeCorporateCompanyCount = corporateCompanies.filter((company) => company.status === 'active').length;
@@ -2668,14 +2237,15 @@ export function CrmPage() {
     settings: crmUsers.length,
   };
   const navCopy: Record<CrmNavId, { title: string; subtitle: string }> = {
+    myday: { title: 'My Day', subtitle: 'What needs attention right now: waiting clients, expiring holds, pending approvals, and tasks due' },
     command: { title: 'Command Center', subtitle: 'Incoming requests from website forms and phone intake' },
     leisureStudio: { title: 'Leisure Studio', subtitle: 'Classic and luxury trip workspaces for proposal, payment, itinerary, and travel-pack delivery' },
     corporateDesk: { title: 'Corporate Desk', subtitle: 'Corporate request workspace for travelers, approvals, finance, documents, and fulfilment' },
     corporateAccounts: { title: 'Corporate Accounts', subtitle: 'Create company accounts and CTM users before corporate travel requests start flowing' },
-    tasks: { title: 'Priority Tasks', subtitle: 'Backend workflow reminders and high-attention requests that need action from the team' },
-    calendar: { title: 'Travel Calendar', subtitle: 'Requests with travel dates, useful for upcoming movement planning' },
+    tasks: tasksSurfaceMeta,
+    calendar: calendarSurfaceMeta,
     clients: { title: 'Clients', subtitle: 'Client and company requests captured in the CRM pipeline' },
-    reports: { title: 'Reports', subtitle: 'Filtered CRM data ready for export and review' },
+    reports: reportsSurfaceMeta,
     settings: { title: 'Settings', subtitle: 'CRM access, user roles, and operating preferences' },
   };
   const requestCentricNav = activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'corporateAccounts' && activeNav !== 'command';
@@ -2808,7 +2378,7 @@ export function CrmPage() {
   }
 
   async function reloadWorkflowReminders() {
-    const nextWorkflowReminders = await fetchCrmWorkflowReminders(crmSession, 'pending');
+    const nextWorkflowReminders = await fetchCrmWorkflowReminders(crmSession).then(tasks => tasks.filter(isOpenTask));
     setWorkflowReminders(nextWorkflowReminders);
     return nextWorkflowReminders;
   }
@@ -3304,14 +2874,6 @@ export function CrmPage() {
       return;
     }
 
-    if (nextNav === 'tasks') {
-      setDeskView('all');
-      setStatusFilter('all');
-      setPriorityFilter('attention');
-      setShowFilters(true);
-      return;
-    }
-
     if (nextNav === 'calendar') {
       setDeskView('all');
       setStatusFilter('all');
@@ -3337,6 +2899,16 @@ export function CrmPage() {
     setDeskView('all');
     setStatusFilter('all');
     setShowFilters(false);
+  }
+
+  function openLeadWorkspace(leadId: string) {
+    const lead = leads.find((item) => String(item.id) === String(leadId));
+    if (!lead) {
+      setCrmError('That request is not visible to you or is not loaded yet.');
+      return;
+    }
+    activateNav(isCorporateLead(lead) ? 'corporateDesk' : 'leisureStudio');
+    setSelectedLeadId(lead.id);
   }
 
   function showPriorityQueue() {
@@ -3902,22 +3474,22 @@ export function CrmPage() {
           <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">Corporate Trip Design</div>
+                <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">{opsText("Corporate Trip Design")}</div>
                 <div className="mt-2 text-xl font-semibold">{selectedItinerary?.title || selectedLead.destination || 'Route pending'}</div>
                 <div className={`mt-1 text-sm ${styles.muted}`}>
-                  {selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : selectedLead.dates || 'Dates pending'} - {selectedLead.travelers || 'Travelers pending'}
+                  {selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : selectedLead.dates || opsText("Dates pending")} - {selectedLead.travelers || opsText("Travelers pending")}
                 </div>
               </div>
               <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
-                {selectedItinerary ? itineraryStatusLabels[selectedItinerary.status] : 'Design draft'}
+                {selectedItinerary ? opsText(itineraryStatusLabels[selectedItinerary.status]) : 'Design draft'}
               </span>
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-4">
               {selectedItinerarySummary.map((card) => (
                 <div key={card.label} className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
-                  <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{card.label}</div>
+                  <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText(card.label)}</div>
                   <div className="mt-1 text-sm font-semibold">{card.value}</div>
-                  {card.meta ? <div className={`mt-1 line-clamp-2 text-xs ${styles.muted}`}>{card.meta}</div> : null}
+                  {card.meta ? <div className={`mt-1 line-clamp-2 text-xs ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                 </div>
               ))}
             </div>
@@ -3925,12 +3497,12 @@ export function CrmPage() {
 
           <div className={`overflow-hidden rounded-xl border ${styles.panelSoft}`}>
             <div className={`grid grid-cols-[60px_minmax(150px,1fr)_90px_minmax(180px,1.1fr)_minmax(150px,1fr)_100px] gap-3 border-b px-4 py-3 text-xs uppercase tracking-[0.14em] ${styles.tableHead}`}>
-              <div>Stop</div>
-              <div>City</div>
-              <div>Nights</div>
-              <div>Stay</div>
-              <div>Room</div>
-              <div>Status</div>
+              <div>{opsText("Stop")}</div>
+              <div>{opsText("City")}</div>
+              <div>{opsText("Nights")}</div>
+              <div>{opsText("Stay")}</div>
+              <div>{opsText("Room")}</div>
+              <div>{opsText("Status")}</div>
             </div>
             {selectedItineraryStops.length > 0 ? selectedItineraryStops.map((stop, index) => (
               <div key={`${stop.city}-${index}`} className={`grid grid-cols-[60px_minmax(150px,1fr)_90px_minmax(180px,1.1fr)_minmax(150px,1fr)_100px] gap-3 border-b px-4 py-3 text-sm ${styles.panel}`}>
@@ -3947,38 +3519,37 @@ export function CrmPage() {
                 </div>
               </div>
             )) : (
-              <div className={`px-4 py-6 text-sm ${styles.muted}`}>Add city stops to shape the corporate itinerary before quote build.</div>
+              <div className={`px-4 py-6 text-sm ${styles.muted}`}>{opsText("Add city stops to shape the corporate itinerary before quote build.")}</div>
             )}
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
               <div className="flex items-center justify-between gap-3">
-                <div className="font-semibold">Movement plan</div>
-                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedTransportSegments.length || selectedItineraryStops.length} segments</span>
+                <div className="font-semibold">{opsText("Movement plan")}</div>
+                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedTransportSegments.length || selectedItineraryStops.length} {opsText("segments")}</span>
               </div>
               <div className="mt-4 grid gap-3">
                 {selectedTransportSegments.length > 0 ? selectedTransportSegments.map((segment) => (
                   <div key={segment.id} className={`rounded-lg border p-3 ${styles.panel}`}>
                     <div className="flex items-center justify-between gap-3">
-                      <div className="font-medium">{segment.fromCity} to {segment.toCity}</div>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{itineraryBookingStatusLabels[segment.bookingStatus]}</span>
+                      <div className="font-medium">{segment.fromCity} {opsText("to")}{' '}{segment.toCity}</div>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{opsText(itineraryBookingStatusLabels[segment.bookingStatus])}</span>
                     </div>
-                    <div className={`mt-2 text-xs ${styles.muted}`}>{segment.mode} - {segment.supplier || 'Supplier pending'}</div>
+                    <div className={`mt-2 text-xs ${styles.muted}`}>{segment.mode} - {segment.supplier || opsText("Supplier pending")}</div>
                     <div className={`mt-1 text-xs ${styles.muted}`}>{segment.reference || 'Reference pending'}</div>
                   </div>
                 )) : (
                   <div className={`rounded-lg border p-3 text-sm ${styles.panel}`}>
-                    Movement method, timing, and supplier are pending. Add flights, transfers, train, or car segments as the design becomes real.
-                  </div>
+                    {opsText("Movement method, timing, and supplier are pending. Add flights, transfers, train, or car segments as the design becomes real.")}</div>
                 )}
               </div>
             </div>
 
             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
               <div className="flex items-center justify-between gap-3">
-                <div className="font-semibold">Meetings / activities</div>
-                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedItineraryExperiences.length} planned</span>
+                <div className="font-semibold">{opsText("Meetings / activities")}</div>
+                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedItineraryExperiences.length} {opsText("planned")}</span>
               </div>
               <div className="mt-4 grid gap-3">
                 {selectedItineraryExperiences.length > 0 ? selectedItineraryExperiences.map((experience) => (
@@ -3992,8 +3563,7 @@ export function CrmPage() {
                   </div>
                 )) : (
                   <div className={`rounded-lg border p-3 text-sm ${styles.panel}`}>
-                    Add meetings, business activities, arrival support, or optional experiences when they affect quote scope.
-                  </div>
+                    {opsText("Add meetings, business activities, arrival support, or optional experiences when they affect quote scope.")}</div>
                 )}
               </div>
             </div>
@@ -4003,9 +3573,9 @@ export function CrmPage() {
         <div className="grid content-start gap-3 xl:sticky xl:top-24">
           <div className={`rounded-xl border p-3 ${styles.panelSoft}`}>
             <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold">Design readiness</div>
+              <div className="text-sm font-semibold">{opsText("Design readiness")}</div>
               <span className={`rounded-full px-2.5 py-1 text-[11px] ${isCostingReady ? 'bg-emerald-500/15 text-emerald-200' : 'bg-red-500/15 text-red-200'}`}>
-                {isCostingReady ? 'Quote ready' : 'Before quote'}
+                {isCostingReady ? opsText("Quote ready") : 'Before quote'}
               </span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
@@ -4013,7 +3583,7 @@ export function CrmPage() {
                 <div key={item.label} className={`min-w-0 rounded-lg border px-2.5 py-2 ${styles.panel}`}>
                   <div className="flex items-center gap-1.5">
                     <CheckSquare className={`h-3.5 w-3.5 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
-                    <span className="truncate text-xs font-medium">{item.label}</span>
+                    <span className="truncate text-xs font-medium">{opsText(item.label)}</span>
                   </div>
                   <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{item.meta}</div>
                 </div>
@@ -4023,8 +3593,8 @@ export function CrmPage() {
 
           <div className={`rounded-xl border p-3 ${styles.panelSoft}`}>
             <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold">Add / edit</div>
-              <span className={`rounded-full px-2.5 py-1 text-[11px] ${styles.buttonGhost}`}>Design items</span>
+              <div className="text-sm font-semibold">{opsText("Add / edit")}</div>
+              <span className={`rounded-full px-2.5 py-1 text-[11px] ${styles.buttonGhost}`}>{opsText("Design items")}</span>
             </div>
             <div className="mt-3 grid grid-cols-3 gap-1.5">
               {([
@@ -4040,7 +3610,7 @@ export function CrmPage() {
                   onClick={() => setActiveTripDesignEditor(id)}
                   className={`h-9 rounded-lg px-2 text-xs transition ${activeTripDesignEditor === id ? styles.buttonActive : styles.buttonGhost}`}
                 >
-                  {label}
+                  {opsText(label)}
                 </button>
               ))}
             </div>
@@ -4048,11 +3618,11 @@ export function CrmPage() {
             <div className={`mt-3 rounded-lg border p-3 ${styles.panel}`}>
               {activeTripDesignEditor === 'stop' ? (
                 <div className="grid gap-2">
-                  <div className="text-sm font-semibold">City stop</div>
-                  <input value={tripDesignDrafts.stop.city} onChange={(event) => updateTripDesignDraft('stop', 'city', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="City" />
+                  <div className="text-sm font-semibold">{opsText("City stop")}</div>
+                  <input value={tripDesignDrafts.stop.city} onChange={(event) => updateTripDesignDraft('stop', 'city', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("City")} />
                   <div className="grid grid-cols-2 gap-2">
-                    <input value={tripDesignDrafts.stop.country} onChange={(event) => updateTripDesignDraft('stop', 'country', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Country" />
-                    <input value={tripDesignDrafts.stop.nights} onChange={(event) => updateTripDesignDraft('stop', 'nights', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Nights" />
+                    <input value={tripDesignDrafts.stop.country} onChange={(event) => updateTripDesignDraft('stop', 'country', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Country")} />
+                    <input value={tripDesignDrafts.stop.nights} onChange={(event) => updateTripDesignDraft('stop', 'nights', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Nights")} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <input type="date" value={tripDesignDrafts.stop.arrivalDate} min={maxDateInput(currentDateInput(), selectedTripDateRange.startDate)} max={selectedTripDateRange.endDate ?? undefined} onChange={(event) => updateTripDesignDraft('stop', 'arrivalDate', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
@@ -4067,50 +3637,48 @@ export function CrmPage() {
                     value={tripDesignDrafts.stop.notes}
                     onChange={(event) => updateTripDesignDraft('stop', 'notes', event.target.value)}
                     className={`h-20 resize-none rounded-lg border px-3 py-2 text-xs leading-5 ${styles.input}`}
-                    placeholder="Stop logic, meeting purpose, traveller constraints, or routing notes"
+                    placeholder={opsText("Stop logic, meeting purpose, traveller constraints, or routing notes")}
                   />
                   <button type="button" onClick={submitTripDesignStop} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                    Add city
-                  </button>
+                    {opsText("Add city")}</button>
                 </div>
               ) : null}
 
               {activeTripDesignEditor === 'stay' ? (
                 <div className="grid gap-2">
-                  <div className="text-sm font-semibold">Stay</div>
+                  <div className="text-sm font-semibold">{opsText("Stay")}</div>
                   <select value={tripDesignDrafts.stay.stopId || selectedItinerary?.stops[0]?.id || ''} onChange={(event) => updateTripDesignDraft('stay', 'stopId', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
-                    <option value="">Choose stop</option>
+                    <option value="">{opsText("Choose stop")}</option>
                     {selectedItinerary?.stops.map((stop) => (
                       <option key={stop.id} value={stop.id}>{stop.city}</option>
                     ))}
                   </select>
-                  <input value={tripDesignDrafts.stay.name} onChange={(event) => updateTripDesignDraft('stay', 'name', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Hotel / accommodation" />
-                  <input value={tripDesignDrafts.stay.roomType} onChange={(event) => updateTripDesignDraft('stay', 'roomType', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Room type" />
+                  <input value={tripDesignDrafts.stay.name} onChange={(event) => updateTripDesignDraft('stay', 'name', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Hotel / accommodation")} />
+                  <input value={tripDesignDrafts.stay.roomType} onChange={(event) => updateTripDesignDraft('stay', 'roomType', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Room type")} />
                   <div className="grid grid-cols-2 gap-2">
                     <input type="date" value={tripDesignDrafts.stay.checkIn} min={maxDateInput(currentDateInput(), selectedStayStop?.arrivalDate)} max={selectedStayStop?.departureDate ?? undefined} onChange={(event) => updateTripDesignDraft('stay', 'checkIn', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
                     <input type="date" value={tripDesignDrafts.stay.checkOut} min={maxDateInput(currentDateInput(), tripDesignDrafts.stay.checkIn, selectedStayStop?.arrivalDate)} max={selectedStayStop?.departureDate ?? undefined} onChange={(event) => updateTripDesignDraft('stay', 'checkOut', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <input value={tripDesignDrafts.stay.rooms} onChange={(event) => updateTripDesignDraft('stay', 'rooms', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Rooms" />
+                    <input value={tripDesignDrafts.stay.rooms} onChange={(event) => updateTripDesignDraft('stay', 'rooms', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Rooms")} />
                     <select value={tripDesignDrafts.stay.bookingStatus} onChange={(event) => updateTripDesignDraft('stay', 'bookingStatus', event.target.value as TripDesignDrafts['stay']['bookingStatus'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
                       {Object.keys(itineraryBookingStatusLabels).map((status) => (
-                        <option key={status} value={status}>{itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels]}</option>
+                        <option key={status} value={status}>{opsText(itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels])}</option>
                       ))}
                     </select>
                   </div>
-                  <input value={tripDesignDrafts.stay.supplier} onChange={(event) => updateTripDesignDraft('stay', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Supplier" />
+                  <input value={tripDesignDrafts.stay.supplier} onChange={(event) => updateTripDesignDraft('stay', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Supplier")} />
                   <button type="button" onClick={submitTripDesignStay} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                    Add stay
-                  </button>
+                    {opsText("Add stay")}</button>
                 </div>
               ) : null}
 
               {activeTripDesignEditor === 'movement' ? (
                 <div className="grid gap-2">
-                  <div className="text-sm font-semibold">Movement</div>
+                  <div className="text-sm font-semibold">{opsText("Movement")}</div>
                   <div className="grid grid-cols-2 gap-2">
-                    <input value={tripDesignDrafts.movement.fromCity} onChange={(event) => updateTripDesignDraft('movement', 'fromCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="From" />
-                    <input value={tripDesignDrafts.movement.toCity} onChange={(event) => updateTripDesignDraft('movement', 'toCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="To" />
+                    <input value={tripDesignDrafts.movement.fromCity} onChange={(event) => updateTripDesignDraft('movement', 'fromCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("From")} />
+                    <input value={tripDesignDrafts.movement.toCity} onChange={(event) => updateTripDesignDraft('movement', 'toCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("To")} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <select value={tripDesignDrafts.movement.mode} onChange={(event) => updateTripDesignDraft('movement', 'mode', event.target.value as TripDesignDrafts['movement']['mode'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
@@ -4120,7 +3688,7 @@ export function CrmPage() {
                     </select>
                     <select value={tripDesignDrafts.movement.bookingStatus} onChange={(event) => updateTripDesignDraft('movement', 'bookingStatus', event.target.value as TripDesignDrafts['movement']['bookingStatus'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
                       {Object.keys(itineraryBookingStatusLabels).map((status) => (
-                        <option key={status} value={status}>{itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels]}</option>
+                        <option key={status} value={status}>{opsText(itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels])}</option>
                       ))}
                     </select>
                   </div>
@@ -4128,46 +3696,44 @@ export function CrmPage() {
                     <input type="datetime-local" value={tripDesignDrafts.movement.departureAt} min={`${maxDateInput(currentDateInput(), selectedTripDateRange.startDate) ?? currentDateInput()}T00:00`} max={selectedTripDateRange.endDate ? `${selectedTripDateRange.endDate}T23:59` : undefined} onChange={(event) => updateTripDesignDraft('movement', 'departureAt', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
                     <input type="datetime-local" value={tripDesignDrafts.movement.arrivalAt} min={tripDesignDrafts.movement.departureAt || `${maxDateInput(currentDateInput(), selectedTripDateRange.startDate) ?? currentDateInput()}T00:00`} max={selectedTripDateRange.endDate ? `${selectedTripDateRange.endDate}T23:59` : undefined} onChange={(event) => updateTripDesignDraft('movement', 'arrivalAt', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
                   </div>
-                  <input value={tripDesignDrafts.movement.supplier} onChange={(event) => updateTripDesignDraft('movement', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Supplier / airline / operator" />
+                  <input value={tripDesignDrafts.movement.supplier} onChange={(event) => updateTripDesignDraft('movement', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Supplier / airline / operator")} />
                   <button type="button" onClick={submitTripDesignMovement} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                    Add movement
-                  </button>
+                    {opsText("Add movement")}</button>
                 </div>
               ) : null}
 
               {activeTripDesignEditor === 'experience' ? (
                 <div className="grid gap-2">
-                  <div className="text-sm font-semibold">Meeting / activity</div>
+                  <div className="text-sm font-semibold">{opsText("Meeting / activity")}</div>
                   <select value={tripDesignDrafts.experience.stopId || selectedItinerary?.stops[0]?.id || ''} onChange={(event) => updateTripDesignDraft('experience', 'stopId', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
-                    <option value="">Choose stop</option>
+                    <option value="">{opsText("Choose stop")}</option>
                     {selectedItinerary?.stops.map((stop) => (
                       <option key={stop.id} value={stop.id}>{stop.city}</option>
                     ))}
                   </select>
-                  <input value={tripDesignDrafts.experience.title} onChange={(event) => updateTripDesignDraft('experience', 'title', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Meeting / activity" />
-                  <input value={tripDesignDrafts.experience.category} onChange={(event) => updateTripDesignDraft('experience', 'category', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Category" />
+                  <input value={tripDesignDrafts.experience.title} onChange={(event) => updateTripDesignDraft('experience', 'title', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Meeting / activity")} />
+                  <input value={tripDesignDrafts.experience.category} onChange={(event) => updateTripDesignDraft('experience', 'category', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Category")} />
                   <div className="grid grid-cols-2 gap-2">
-                    <input value={tripDesignDrafts.experience.supplier} onChange={(event) => updateTripDesignDraft('experience', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Supplier / host" />
+                    <input value={tripDesignDrafts.experience.supplier} onChange={(event) => updateTripDesignDraft('experience', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Supplier / host")} />
                     <select value={tripDesignDrafts.experience.status} onChange={(event) => updateTripDesignDraft('experience', 'status', event.target.value as TripDesignDrafts['experience']['status'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
                       {Object.keys(itineraryBookingStatusLabels).map((status) => (
-                        <option key={status} value={status}>{itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels]}</option>
+                        <option key={status} value={status}>{opsText(itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels])}</option>
                       ))}
                     </select>
                   </div>
                   <button type="button" onClick={submitTripDesignExperience} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                    Add activity
-                  </button>
+                    {opsText("Add activity")}</button>
                 </div>
               ) : null}
 
               {activeTripDesignEditor === 'notes' ? (
                 <div className="grid gap-2">
-                  <div className="text-sm font-semibold">Design notes</div>
+                  <div className="text-sm font-semibold">{opsText("Design notes")}</div>
                   <textarea
                     value={selectedLead.internalNotes || ''}
                     onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
                     className={`h-44 w-full resize-none rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
-                    placeholder="Capture flight logic, hotel reasons, room preferences, meeting constraints, flexibility, and quote assumptions."
+                    placeholder={opsText("Capture flight logic, hotel reasons, room preferences, meeting constraints, flexibility, and quote assumptions.")}
                   />
                 </div>
               ) : null}
@@ -4373,7 +3939,7 @@ export function CrmPage() {
         <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0d1828] p-6 shadow-2xl">
           <CrmBrandMark theme="dark" />
           <div className="mt-8">
-            <h1 className="text-2xl font-semibold">CRM backend required</h1>
+            <h1 className="text-2xl font-semibold">{opsText("CRM backend required")}</h1>
             <p className="mt-2 text-sm leading-6 text-white/60">
               CRM access is role-based and only works when the backend API is configured. Set `VITE_CRM_API_URL` and sign in with a CRM-enabled account.
             </p>
@@ -4389,12 +3955,11 @@ export function CrmPage() {
         <form onSubmit={submitLogin} className="crm-login-form">
           <CrmBrandMark theme="light" />
           <div className="mt-8">
-            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#9b4e06]">DPM CRM</p><h2>Welcome back.</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Sign in to care for your clients and keep every journey moving.</p>
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#9b4e06]">DPM CRM</p><h2>{opsText("Welcome back.")}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{opsText("Sign in to care for your clients and keep every journey moving.")}</p>
           </div>
           <label className="mt-6 block text-sm font-medium text-slate-700">
-            Username or email
-            <input
+            {opsText("Username or email")}<input
               value={loginIdentifier}
               onChange={(event) => setLoginIdentifier(event.target.value)}
               className="mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-[#b5661a]"
@@ -4404,8 +3969,7 @@ export function CrmPage() {
             />
           </label>
           <label className="mt-4 block text-sm font-medium text-slate-700">
-            Password
-            <input
+            {opsText("Password")}<input
               value={loginPassword}
               onChange={(event) => setLoginPassword(event.target.value)}
               className="mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-[#b5661a]"
@@ -4420,7 +3984,7 @@ export function CrmPage() {
             disabled={isLoggingIn}
             className="mt-6 h-11 w-full rounded-lg bg-[#fe8500] px-4 text-sm font-semibold text-[#35180f] transition hover:bg-[#ff9828] disabled:opacity-55"
           >
-            {isLoggingIn ? 'Signing in...' : 'Sign in'}
+            {isLoggingIn ? opsText("Signing in...") : opsText("Sign in")}
           </button>
         </form>
       </CrmLoginLayout>
@@ -4435,14 +3999,13 @@ export function CrmPage() {
             <CrmBrandMark theme="dark" />
           </div>
 
-          <p className="crm-sidebar-caption">Your workspace</p>
-          <label className="crm-mobile-nav md:hidden">Workspace
-            <select aria-label="CRM navigation" value={activeNav} onChange={event => activateNav(event.target.value as CrmNavId)}>
-              {navItems.map(item => <option key={item.id} value={item.id}>{item.label}{navCounts[item.id] ? ` (${navCounts[item.id]})` : ''}</option>)}
+          <p className="crm-sidebar-caption">{opsText("Your workspace")}</p>
+          <label className="crm-mobile-nav md:hidden">{opsText("Workspace")}<select aria-label={opsText("CRM navigation")} value={activeNav} onChange={event => activateNav(event.target.value as CrmNavId)}>
+              {visibleNavItems.map(item => <option key={item.id} value={item.id}>{opsText(item.label)}{' '}{navCounts[item.id] ? ` (${navCounts[item.id]})` : ''}</option>)}
             </select>
           </label>
-          <nav aria-label="CRM navigation" className="hidden gap-2 overflow-x-auto md:flex xl:grid">
-            {navItems.map(({ id, label, Icon }) => {
+          <nav aria-label={opsText("CRM navigation")} className="hidden gap-2 overflow-x-auto md:flex xl:grid">
+            {visibleNavItems.map(({ id, label, Icon }) => {
               const active = activeNav === id;
               const count = navCounts[id];
               return (
@@ -4454,7 +4017,7 @@ export function CrmPage() {
                 className={`crm-nav-item flex h-12 shrink-0 items-center gap-3 px-3 font-medium transition ${id === 'clients' ? 'crm-sidebar-divider' : ''}`}
               >
                 <Icon className="h-4 w-4" />
-                <span>{label}</span>
+                <span>{opsText(label)}</span>
                 {count && count > 0 && id !== 'settings' ? (
                   <span className={`ml-auto rounded-full px-2 py-0.5 text-xs ${id === 'tasks' ? 'bg-red-500 text-white' : 'crm-nav-count'}`}>
                     {count}
@@ -4465,7 +4028,7 @@ export function CrmPage() {
             })}
           </nav>
 
-          <div className="crm-session"><span className="crm-session-avatar" aria-hidden="true">{initials(crmSession.user.first_name || crmSession.user.username)}</span><div><p className="crm-session-name">{crmSession.user.first_name || crmSession.user.username}</p><p className="crm-session-role">{crmSession.user.role} access</p></div></div>
+          <div className="crm-session"><span className="crm-session-avatar" aria-hidden="true">{initials(crmSession.user.first_name || crmSession.user.username)}</span><div><p className="crm-session-name">{crmSession.user.first_name || crmSession.user.username}</p><p className="crm-session-role">{crmSession.user.role} {opsText("access")}</p></div></div>
           <a
             href="https://etios.net"
             target="_blank"
@@ -4488,9 +4051,9 @@ export function CrmPage() {
           <header className={`border-b px-5 py-5 ${styles.header}`}>
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="min-w-[240px] flex-1">
-                <div className="crm-eyebrow">Destinos pelo Mundo / Workspace</div>
-                <h1 className="mt-1 text-2xl font-semibold tracking-tight">{navCopy[activeNav].title}</h1>
-                <p className={`mt-1 text-sm ${styles.muted}`}>{navCopy[activeNav].subtitle}</p>
+                <div className="crm-eyebrow">{opsText("Destinos pelo Mundo / Workspace")}</div>
+                <h1 className="mt-1 text-2xl font-semibold tracking-tight">{opsText(navCopy[activeNav].title)}</h1>
+                <p className={`mt-1 text-sm ${styles.muted}`}>{opsText(navCopy[activeNav].subtitle)}</p>
               </div>
               <div className="hidden min-w-0 justify-center lg:flex lg:flex-1 lg:px-6">
                 <label className={`flex h-11 w-full max-w-2xl items-center gap-2 rounded-lg border px-3 ${styles.input}`}>
@@ -4499,12 +4062,13 @@ export function CrmPage() {
                     value={query}
                     onChange={(event) => changeQuery(event.target.value)}
                     className="w-full bg-transparent text-sm outline-none placeholder:inherit"
-                    aria-label="Search CRM"
-                    placeholder="Search client, destination, date..."
+                    aria-label={opsText("Search CRM")}
+                    placeholder={opsText("Search client, destination, date...")}
                   />
                 </label>
               </div>
               <div className="flex max-w-full flex-wrap items-center justify-start gap-1.5 sm:gap-2 lg:justify-end">
+                <LanguageToggle compact light={theme !== 'dark'} />
                 <button
                   type="button"
                   onClick={() =>
@@ -4524,14 +4088,14 @@ export function CrmPage() {
                   className="crm-primary inline-flex h-11 items-center gap-2 px-4 text-sm transition disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Plus className="h-4 w-4" />
-                  <span className="hidden sm:inline">{activeNav === 'clients' ? 'Register Client' : activeNav === 'settings' ? 'Add User' : activeNav === 'corporateAccounts' ? 'New Company' : activeNav === 'corporateDesk' ? 'New Request' : 'New Leisure Request'}</span>
-                  <span className="sm:hidden">{activeNav === 'clients' ? 'Add client' : activeNav === 'settings' ? 'Add user' : activeNav === 'corporateAccounts' ? 'New company' : 'New request'}</span>
+                  <span className="hidden sm:inline">{activeNav === 'clients' ? opsText("Register Client") : activeNav === 'settings' ? opsText("Add User") : activeNav === 'corporateAccounts' ? opsText("New Company") : activeNav === 'corporateDesk' ? opsText("New Request") : opsText("New Leisure Request")}</span>
+                  <span className="sm:hidden">{activeNav === 'clients' ? opsText("Add client") : activeNav === 'settings' ? opsText("Add user") : activeNav === 'corporateAccounts' ? opsText("New company") : opsText("New request")}</span>
                 </button>
                 <button
                   type="button"
                   onClick={showPriorityQueue}
                   className={`relative inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`}
-                  aria-label="Show priority new requests"
+                  aria-label={opsText("Show priority new requests")}
                 >
                   <Bell className="h-4 w-4" />
                   {urgentNewCount > 0 ? (
@@ -4540,13 +4104,13 @@ export function CrmPage() {
                     </span>
                   ) : null}
                 </button>
-                <button type="button" onClick={toggleTheme} aria-label="Toggle theme" className={`inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`}>
+                <button type="button" onClick={toggleTheme} aria-label={opsText("Toggle theme")} className={`inline-flex h-11 w-11 items-center justify-center rounded-lg ${styles.buttonGhost}`}>
                   {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 </button>
                 {apiEnabled ? (
-                  <button type="button" aria-label="Sign out" onClick={signOut} className={`inline-flex h-11 min-w-11 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
+                  <button type="button" aria-label={opsText("Sign out")} onClick={signOut} className={`inline-flex h-11 min-w-11 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
                     <LogOut className="h-4 w-4" />
-                    <span className="hidden sm:inline">Sign out</span>
+                    <span className="hidden sm:inline">{opsText("Sign out")}</span>
                   </button>
                 ) : null}
               </div>
@@ -4558,18 +4122,36 @@ export function CrmPage() {
                   value={query}
                   onChange={(event) => changeQuery(event.target.value)}
                   className="w-full bg-transparent text-sm outline-none placeholder:inherit"
-                  aria-label="Search CRM"
-                    placeholder="Search client, destination, date..."
+                  aria-label={opsText("Search CRM")}
+                    placeholder={opsText("Search client, destination, date...")}
                 />
               </label>
             </div>
           </header>
 
+          {activeNav === 'myday' || activeNav === 'tasks' || activeNav === 'calendar' || activeNav === 'reports' ? (
+            <div className="block">
+              <div className="min-w-0">
+                <div className="p-5">
+                  {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
+                  {activeNav === 'reports' ? (
+                    isLoadingLeads ? <p>{opsText('Loading...')}</p> : !reportsReady ? <p>{opsText('Could not load CRM data.')}</p> : <CrmReports leads={leads} quotes={quotes} tasks={workflowReminders} canViewFinancials={canViewFinancials} canExport={canExportReports} onOpenLead={lead => openLeadWorkspace(lead.id)} query={query} />
+                  ) : activeNav === 'calendar' ? (
+                    <TravelCalendar leads={leads} itineraries={tripItineraries} tasks={workflowReminders} styles={styles} onOpenLead={openLeadWorkspace} loading={isLoadingLeads} query={query} />
+                  ) : activeNav === 'myday' ? (
+                    <MyDay session={crmSession} styles={styles} onOpenLead={openLeadWorkspace} onOpenTasks={() => activateNav('tasks')} />
+                  ) : (
+                    <TasksQueue session={crmSession} assignableUsers={crmUsers} styles={styles} onOpenLead={openLeadWorkspace} />
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className={activeNav === 'corporateAccounts' || activeNav === 'corporateDesk' ? 'block' : activeNav === 'leisureStudio' ? 'grid xl:grid-cols-[360px_minmax(0,1fr)]' : requestCentricNav ? 'grid xl:grid-cols-[380px_minmax(0,1fr)]' : 'grid 2xl:grid-cols-[minmax(0,1fr)_380px]'}>
             <div className={`min-w-0 ${activeNav === 'corporateDesk' && selectedLead ? 'hidden' : activeNav === 'corporateDesk' ? '' : `border-r ${theme === 'dark' ? 'border-white/10' : 'border-slate-200'}`}`}>
           <div className="p-5">
             {crmError ? <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{crmError}</div> : null}
-            {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>Loading CRM requests...</div> : null}
+            {isLoadingLeads ? <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles.panelSoft}`}>{opsText("Loading CRM requests...")}</div> : null}
             {activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
               <div className={`grid gap-4 ${activeNav === 'command' ? 'grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6' : 'sm:grid-cols-2 lg:grid-cols-4'}`}>
                 {(activeNav === 'settings' ? settingsMetricCards : activeNav === 'corporateAccounts' ? corporateAccountMetricCards : metricCards).map((card) => (
@@ -4600,40 +4182,20 @@ export function CrmPage() {
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <span className={`text-sm ${styles.soft}`}>{card.label}</span>
+                      <span className={`text-sm ${styles.soft}`}>{opsText(card.label)}</span>
                       <span className="crm-metric-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
                         <card.Icon className="h-4 w-4" />
                       </span>
                     </div>
                     <div className="mt-3 text-3xl font-semibold">{card.value}</div>
-                    <div className={`mt-3 text-sm ${card.label === 'New Requests' ? 'text-emerald-400' : styles.muted}`}>{card.meta}</div>
+                    <div className={`mt-3 text-sm ${card.label === 'New Requests' ? 'text-emerald-400' : styles.muted}`}>{opsText(card.meta)}</div>
                   </button>
                 ))}
               </div>
             ) : null}
 
             {activeNav !== 'clients' && activeNav !== 'settings' && activeNav !== 'corporateAccounts' && activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' && selectedLead ? (
-              <div className={`mt-5 rounded-xl border p-4 ${styles.panel}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Status report</div>
-                    <div className="mt-2 text-base font-semibold">{selectedLead.name}</div>
-                    <div className={`mt-1 text-sm ${styles.muted}`}>{leadSegment(selectedLead)} · {selectedLead.destination || 'Destination pending'}</div>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
-                    {leadLifecycleLabel(selectedLead)}
-                  </span>
-                </div>
-                <div className="mt-4 grid gap-3">
-                  {selectedStatusCards.map((card) => (
-                    <div key={card.label} className={`rounded-lg border p-3 ${styles.panelSoft}`}>
-                      <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>{card.label}</div>
-                      <div className="mt-2 text-sm font-semibold">{card.value}</div>
-                      {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <RequestStatusReport lead={selectedLead} statusCards={selectedStatusCards} styles={styles} />
             ) : null}
 
             {activeNav !== 'settings' && activeNav !== 'corporateAccounts' && activeNav !== 'command' && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
@@ -4651,7 +4213,7 @@ export function CrmPage() {
                       deskView === desk.key ? `${styles.buttonActive} border-transparent` : `${styles.buttonGhost} border-white/10`
                     }`}
                   >
-                    <span className="font-medium">{desk.label}</span>
+                    <span className="font-medium">{opsText(desk.label)}</span>
                     <span className={`text-xs ${deskView === desk.key ? 'text-white/70' : styles.muted}`}>{desk.meta}</span>
                   </button>
                 ))}
@@ -4679,7 +4241,7 @@ export function CrmPage() {
                       commandLens === lens.key ? `${styles.buttonActive} border-transparent` : `${styles.buttonGhost} border-white/10`
                     }`}
                   >
-                    {lens.label}
+                    {opsText(lens.label)}
                   </button>
                 ))}
               </div>
@@ -4697,7 +4259,7 @@ export function CrmPage() {
                   }`}
                 >
                   {filter === 'luxury' ? <Sparkles className="h-4 w-4 text-[#d4af37]" /> : filter === 'corporate' ? <Briefcase className="h-4 w-4" /> : null}
-                  <span>{typeLabels[filter]}</span>
+                  <span>{opsText(typeLabels[filter])}</span>
                   <span className="rounded-full bg-black/15 px-2 py-0.5 text-xs">{typeCounts[filter]}</span>
                 </button>
               ))}
@@ -4708,12 +4270,12 @@ export function CrmPage() {
                   onChange={(event) => changeStatusFilter(event.target.value as StatusFilter)}
                   className={`h-11 rounded-xl border px-3 text-sm font-medium outline-none ${styles.select}`}
                 >
-                  <option value="all">All statuses</option>
-                  <option value="workflowGroup">Active workflow</option>
-                  <option value="confirmedGroup">Confirmed pipeline</option>
+                  <option value="all">{opsText("All statuses")}</option>
+                  <option value="workflowGroup">{opsText("Active workflow")}</option>
+                  <option value="confirmedGroup">{opsText("Confirmed pipeline")}</option>
                   {statusOrder.map((status) => (
                     <option key={status} value={status}>
-                      {statusLabels[status]}
+                      {opsText(statusLabels[status])}
                     </option>
                   ))}
                 </select>
@@ -4723,8 +4285,7 @@ export function CrmPage() {
                   className={`inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 px-4 ${showFilters ? styles.buttonActive : styles.buttonGhost}`}
                 >
                   <Filter className="h-4 w-4" />
-                  Filters
-                </button>
+                  {opsText("Filters")}</button>
               </div>
             </div>
             ) : null}
@@ -4732,7 +4293,7 @@ export function CrmPage() {
             {showFilters && activeNav !== 'leisureStudio' && activeNav !== 'corporateDesk' ? (
               <div className={`mt-3 grid gap-3 rounded-xl border p-3 md:grid-cols-[1fr_1fr_auto] ${styles.panelSoft}`}>
                 <label className="text-xs font-medium uppercase tracking-[0.14em]">
-                  <span className={styles.muted}>Priority</span>
+                  <span className={styles.muted}>{opsText("Priority")}</span>
                   <select
                     value={priorityFilter}
                     onChange={(event) => {
@@ -4741,29 +4302,28 @@ export function CrmPage() {
                     }}
                     className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm font-medium outline-none ${styles.select}`}
                   >
-                    <option value="all">All priorities</option>
-                    <option value="attention">High + urgent</option>
+                    <option value="all">{opsText("All priorities")}</option>
+                    <option value="attention">{opsText("High + urgent")}</option>
                     {(['urgent', 'high', 'normal', 'low'] as LeadPriority[]).map((priority) => (
                       <option key={priority} value={priority}>
-                        {priorityLabels[priority]}
+                        {opsText(priorityLabels[priority])}
                       </option>
                     ))}
                   </select>
                 </label>
                 <label className="text-xs font-medium uppercase tracking-[0.14em]">
-                  <span className={styles.muted}>Source</span>
+                  <span className={styles.muted}>{opsText("Source")}</span>
                   <select
                     value={query === 'Phone intake' ? 'phone' : 'all'}
                     onChange={(event) => changeQuery(event.target.value === 'phone' ? 'Phone intake' : '')}
                     className={`mt-2 h-10 w-full rounded-lg border px-3 text-sm font-medium outline-none ${styles.select}`}
                   >
-                    <option value="all">All requests</option>
-                    <option value="phone">Phone requests</option>
+                    <option value="all">{opsText("All requests")}</option>
+                    <option value="phone">{opsText("Phone requests")}</option>
                   </select>
                 </label>
                 <button type="button" onClick={clearFilters} className={`self-end rounded-lg px-4 py-2 text-sm ${styles.buttonGhost}`}>
-                  Clear
-                </button>
+                  {opsText("Clear")}</button>
               </div>
             ) : null}
 
@@ -4771,30 +4331,30 @@ export function CrmPage() {
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-lg font-semibold">
                   {activeNav === 'settings'
-                    ? 'CRM User Access'
+                    ? opsText("CRM User Access")
                     : activeNav === 'corporateAccounts'
-                      ? 'Company Accounts'
+                      ? opsText("Company Accounts")
                     : activeNav === 'leisureStudio'
-                      ? 'Leisure Requests'
+                      ? opsText("Leisure Requests")
                       : activeNav === 'corporateDesk'
-                        ? 'Corporate Requests'
+                        ? opsText("Corporate Requests")
                     : statusFilter === 'all'
-                    ? activeNav === 'calendar'
-                      ? 'Dated Requests'
-                      : activeNav === 'clients'
-                        ? 'Registered Clients'
-                        : 'Requests'
+                    ? activeNav === 'clients'
+                        ? opsText("Registered Clients")
+                        : opsText("Requests")
                     : statusFilter === 'confirmedGroup'
-                      ? 'Confirmed Pipeline'
+                      ? opsText("Confirmed Pipeline")
                       : statusFilter === 'workflowGroup'
-                        ? 'Active Workflow'
-                      : statusLabels[statusFilter]}
+                        ? opsText("Active Workflow")
+                      : opsText(statusLabels[statusFilter])}
                 </h2>
                 {activeNav !== 'settings' && activeNav !== 'corporateAccounts' ? (
                   <button
                     type="button"
                     onClick={() => (activeNav === 'clients' ? exportClientsCsv(filteredClients) : exportCsv(filteredLeads))}
-                    className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
+                    disabled={!canExportReports}
+                    title={canExportReports ? 'Export the filtered records as CSV' : 'Your role cannot export reports'}
+                    className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45 ${styles.buttonGhost}`}
                   >
                     <Download className="h-4 w-4" />
                     CSV
@@ -4806,18 +4366,18 @@ export function CrmPage() {
                 {activeNav === 'settings' ? (
                   <>
                     <div className={`grid grid-cols-[1.5fr_110px_100px_1fr_84px] gap-4 border-b px-5 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
-                      <div>User</div>
-                      <div>Role</div>
-                      <div>Status</div>
-                      <div>Groups</div>
-                      <div className="text-right">Action</div>
+                      <div>{opsText("User")}</div>
+                      <div>{opsText("Role")}</div>
+                      <div>{opsText("Status")}</div>
+                      <div>{opsText("Groups")}</div>
+                      <div className="text-right">{opsText("Action")}</div>
                     </div>
 
                     {pageUsers.length === 0 ? (
                       <div className="p-10 text-center">
                         <Shield className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                        <div className="mt-4 text-lg font-semibold">No CRM users found</div>
-                        <p className={`mt-2 text-sm ${styles.muted}`}>Create CRM accounts for managers, agents, and viewers from this screen.</p>
+                        <div className="mt-4 text-lg font-semibold">{opsText("No CRM users found")}</div>
+                        <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("Create CRM accounts for managers, agents, and viewers from this screen.")}</p>
                       </div>
                     ) : (
                       pageUsers.map((user) => {
@@ -4836,7 +4396,7 @@ export function CrmPage() {
                               <span className="min-w-0">
                                 <span className="block truncate text-sm font-semibold">
                                   {user.displayName}
-                                  {isCurrentUser ? <span className={`ml-2 text-xs font-medium ${styles.muted}`}>(you)</span> : null}
+                                  {isCurrentUser ? <span className={`ml-2 text-xs font-medium ${styles.muted}`}>{opsText("(you)")}</span> : null}
                                 </span>
                                 <span className={`mt-1 block truncate text-xs ${styles.muted}`}>
                                   {user.email || user.username}
@@ -4845,12 +4405,12 @@ export function CrmPage() {
                             </div>
                             <div className="flex items-center">
                               <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${user.role === 'admin' || user.role === 'manager' ? styles.type.corporate : user.role === 'agent' ? styles.type.classic : styles.panelSoft}`}>
-                                {roleLabel}
+                                {opsText(roleLabel)}
                               </span>
                             </div>
                             <div className="flex items-center">
                               <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${user.isActive ? 'bg-emerald-500/12 text-emerald-300 ring-emerald-400/20' : 'bg-slate-500/12 text-slate-300 ring-slate-400/20'}`}>
-                                {user.isActive ? 'Active' : 'Inactive'}
+                                {user.isActive ? opsText("Active") : opsText("Inactive")}
                               </span>
                             </div>
                             <div className={`flex min-w-0 items-center truncate text-sm ${styles.soft}`}>
@@ -4864,7 +4424,7 @@ export function CrmPage() {
                                 title={canEditUser ? 'Edit CRM user' : 'Only admins can modify admin or manager accounts'}
                                 className={`inline-flex h-9 items-center rounded-lg px-3 text-xs ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-45`}
                               >
-                                {canEditUser ? 'Edit' : 'Protected'}
+                                {canEditUser ? opsText("Edit") : 'Protected'}
                               </button>
                             </div>
                           </div>
@@ -4875,19 +4435,19 @@ export function CrmPage() {
                 ) : activeNav === 'corporateAccounts' ? (
                   <>
                     <div className={`grid grid-cols-[minmax(0,1.4fr)_120px_130px_120px_90px_110px] gap-4 border-b px-5 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
-                      <div>Company</div>
-                      <div>Company ID</div>
-                      <div>Service</div>
-                      <div>Status</div>
-                      <div>Users</div>
-                      <div className="text-right">Requests</div>
+                      <div>{opsText("Company")}</div>
+                      <div>{opsText("Company ID")}</div>
+                      <div>{opsText("Service")}</div>
+                      <div>{opsText("Status")}</div>
+                      <div>{opsText("Users")}</div>
+                      <div className="text-right">{opsText("Requests")}</div>
                     </div>
 
                     {pageCorporateCompanies.length === 0 ? (
                       <div className="p-10 text-center">
                         <Building2 className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                        <div className="mt-4 text-lg font-semibold">No company accounts yet</div>
-                        <p className={`mt-2 text-sm ${styles.muted}`}>Create the company first, then add CTM users who can submit travel requests for that account.</p>
+                        <div className="mt-4 text-lg font-semibold">{opsText("No company accounts yet")}</div>
+                        <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("Create the company first, then add CTM users who can submit travel requests for that account.")}</p>
                       </div>
                     ) : (
                       pageCorporateCompanies.map((company) => {
@@ -4919,7 +4479,7 @@ export function CrmPage() {
                             <div className={`flex items-center text-sm font-semibold ${styles.soft}`}>{company.accountCode}</div>
                             <div className="flex items-center">
                               <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${company.serviceLevel === 'prestige_corporate' ? styles.type.luxury : styles.type.corporate}`}>
-                                {corporateCompanyServiceLabels[company.serviceLevel]}
+                                {opsText(corporateCompanyServiceLabels[company.serviceLevel])}
                               </span>
                             </div>
                             <div className="flex items-center">
@@ -4930,7 +4490,7 @@ export function CrmPage() {
                                     ? 'bg-sky-500/12 text-sky-300 ring-sky-400/20'
                                     : 'bg-slate-500/12 text-slate-300 ring-slate-400/20'
                               }`}>
-                                {corporateCompanyStatusLabels[company.status]}
+                                {opsText(corporateCompanyStatusLabels[company.status])}
                               </span>
                             </div>
                             <div className={`flex items-center text-sm ${styles.soft}`}>{company.userCount}</div>
@@ -4943,18 +4503,18 @@ export function CrmPage() {
                 ) : activeNav === 'clients' ? (
                   <>
                     <div className={`grid grid-cols-[1.5fr_1fr_1fr_110px_84px] gap-4 border-b px-5 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
-                      <div>Client</div>
-                      <div>Segment</div>
-                      <div>Primary Contact</div>
-                      <div>Open Requests</div>
-                      <div className="text-right">Updated</div>
+                      <div>{opsText("Client")}</div>
+                      <div>{opsText("Segment")}</div>
+                      <div>{opsText("Primary Contact")}</div>
+                      <div>{opsText("Open Requests")}</div>
+                      <div className="text-right">{opsText("Updated")}</div>
                     </div>
 
                     {pageClients.length === 0 ? (
                       <div className="p-10 text-center">
                         <Users className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                        <div className="mt-4 text-lg font-semibold">No registered clients yet</div>
-                        <p className={`mt-2 text-sm ${styles.muted}`}>Register clients from a selected request or add one manually.</p>
+                        <div className="mt-4 text-lg font-semibold">{opsText("No registered clients yet")}</div>
+                        <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("Register clients from a selected request or add one manually.")}</p>
                       </div>
                     ) : (
                       pageClients.map((client) => {
@@ -4984,7 +4544,7 @@ export function CrmPage() {
                             </div>
                             <div className="flex items-center">
                               <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${styles.type[client.serviceLevel]}`}>
-                                {typeLabels[client.serviceLevel]}
+                                {opsText(typeLabels[client.serviceLevel])}
                               </span>
                             </div>
                             <div className="flex min-w-0 flex-col justify-center">
@@ -5004,19 +4564,19 @@ export function CrmPage() {
                       pageLeads.length === 0 ? (
                         <div className="p-10 text-center">
                           <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                          <div className="mt-4 text-lg font-semibold">No requests in this board</div>
-                          <p className={`mt-2 text-sm ${styles.muted}`}>Adjust filters or submit a form to create a request.</p>
+                          <div className="mt-4 text-lg font-semibold">{opsText("No requests in this board")}</div>
+                          <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("Adjust filters or submit a form to create a request.")}</p>
                         </div>
                       ) : (
                         <div>
                           <div className={`grid grid-cols-[96px_minmax(0,1.3fr)_110px_120px_100px_120px_minmax(0,1.2fr)] gap-4 border-b px-4 py-3 text-xs uppercase tracking-[0.12em] ${styles.tableHead}`}>
-                            <div>Request</div>
-                            <div>Client / Trip</div>
-                            <div>Status</div>
-                            <div>Owner</div>
-                            <div>Travel date</div>
-                            <div>Urgency</div>
-                            <div>Bottleneck</div>
+                            <div>{opsText("Request")}</div>
+                            <div>{opsText("Client / Trip")}</div>
+                            <div>{opsText("Status")}</div>
+                            <div>{opsText("Owner")}</div>
+                            <div>{opsText("Travel date")}</div>
+                            <div>{opsText("Urgency")}</div>
+                            <div>{opsText("Bottleneck")}</div>
                           </div>
                           {pageLeads.map((lead) => {
                             const priority = fallbackPriority(lead);
@@ -5039,22 +4599,22 @@ export function CrmPage() {
                                 </div>
                                 <div className="min-w-0">
                                   <div className="truncate text-sm font-semibold">{lead.name}</div>
-                                  <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || 'Destination pending'} - {typeLabels[lead.serviceKey]}</div>
+                                  <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || opsText("Destination pending")} - {opsText(typeLabels[lead.serviceKey])}</div>
                                 </div>
                                 <div className="flex items-center">
                                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
-                                    {leadLifecycleLabel(lead)}
+                                    {opsText(leadLifecycleLabel(lead))}
                                   </span>
                                 </div>
                                 <div className="flex min-w-0 items-center">
                                   <span className="truncate text-sm font-medium">{rowOwner}</span>
                                 </div>
                                 <div className="flex min-w-0 flex-col justify-center">
-                                  <span className="truncate text-sm font-medium">{lead.dates || 'Pending'}</span>
+                                  <span className="truncate text-sm font-medium">{lead.dates || opsText("Pending")}</span>
                                 </div>
                                 <div className="flex items-center">
                                   <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.priority[priority]}`}>
-                                    {priorityLabels[priority]}
+                                    {opsText(priorityLabels[priority])}
                                   </span>
                                 </div>
                                 <div className="min-w-0">
@@ -5068,8 +4628,8 @@ export function CrmPage() {
                     ) : pageLeads.length === 0 ? (
                       <div className="p-10 text-center">
                         <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                        <div className="mt-4 text-lg font-semibold">{activeNav === 'leisureStudio' ? 'No leisure trips in this inbox' : activeNav === 'corporateDesk' ? 'No corporate trips in this inbox' : 'No requests in this queue'}</div>
-                        <p className={`mt-2 text-sm ${styles.muted}`}>{activeNav === 'leisureStudio' ? 'Adjust the stage lens or add a leisure request to start working.' : activeNav === 'corporateDesk' ? 'Adjust the stage lens or wait for CTM requests to arrive.' : 'Adjust filters or submit a form to create a request.'}</p>
+                        <div className="mt-4 text-lg font-semibold">{activeNav === 'leisureStudio' ? 'No leisure trips in this inbox' : activeNav === 'corporateDesk' ? 'No corporate trips in this inbox' : opsText("No requests in this queue")}</div>
+                        <p className={`mt-2 text-sm ${styles.muted}`}>{activeNav === 'leisureStudio' ? 'Adjust the stage lens or add a leisure request to start working.' : activeNav === 'corporateDesk' ? 'Adjust the stage lens or wait for CTM requests to arrive.' : opsText("Adjust filters or submit a form to create a request.")}</p>
                       </div>
                     ) : (
                       leadSections.map((section) => (
@@ -5078,7 +4638,7 @@ export function CrmPage() {
                             {activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? (
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <div className="text-sm font-semibold">{section.title}</div>
+                                  <div className="text-sm font-semibold">{opsText(section.title)}</div>
                                   <span className={`rounded-full px-2 py-0.5 text-[11px] ${styles.buttonGhost}`}>{section.leads.length}</span>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -5107,7 +4667,7 @@ export function CrmPage() {
                                         statusFilter === filter.key ? `${styles.buttonActive} border-transparent` : `${styles.buttonGhost} border-white/10`
                                       }`}
                                     >
-                                      {filter.label}
+                                      {opsText(filter.label)}
                                     </button>
                                   ))}
                                 </div>
@@ -5115,22 +4675,22 @@ export function CrmPage() {
                             ) : (
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
-                                  <div className="text-sm font-semibold">{section.title}</div>
-                                  <div className={`mt-1 text-xs ${styles.muted}`}>{section.subtitle}</div>
+                                  <div className="text-sm font-semibold">{opsText(section.title)}</div>
+                                  <div className={`mt-1 text-xs ${styles.muted}`}>{opsText(section.subtitle)}</div>
                                 </div>
-                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{section.leads.length} in view</span>
+                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{section.leads.length} {opsText("in view")}</span>
                               </div>
                             )}
                           </div>
                           {activeNav === 'corporateDesk' ? (
                             <div className={`hidden grid-cols-[minmax(190px,1.1fr)_minmax(150px,0.8fr)_minmax(130px,0.75fr)_minmax(150px,0.85fr)_minmax(180px,1fr)_minmax(140px,0.75fr)_100px] gap-4 border-b px-4 py-3 text-xs uppercase tracking-[0.12em] xl:grid ${styles.tableHead}`}>
-                              <div>Company</div>
-                              <div>Trip owner</div>
-                              <div>Travel date</div>
-                              <div>Current stage</div>
-                              <div>Bottleneck</div>
-                              <div>Responsible</div>
-                              <div>Urgency</div>
+                              <div>{opsText("Company")}</div>
+                              <div>{opsText("Trip owner")}</div>
+                              <div>{opsText("Travel date")}</div>
+                              <div>{opsText("Current stage")}</div>
+                              <div>{opsText("Bottleneck")}</div>
+                              <div>{opsText("Responsible")}</div>
+                              <div>{opsText("Urgency")}</div>
                             </div>
                           ) : null}
                           <div className={activeNav === 'leisureStudio' || activeNav === 'corporateDesk' ? 'grid' : 'grid gap-3 p-4'}>
@@ -5163,29 +4723,29 @@ export function CrmPage() {
                                       <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.requestedServices || 'Department pending'}</div>
                                     </div>
                                     <div className="min-w-0">
-                                      <div className="truncate text-sm font-medium">{lead.dates || 'Dates pending'}</div>
-                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || 'Destination pending'}</div>
+                                      <div className="truncate text-sm font-medium">{lead.dates || opsText("Dates pending")}</div>
+                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || opsText("Destination pending")}</div>
                                     </div>
                                     <div className="min-w-0">
                                       <div className="flex items-center gap-2">
                                         <span className={`inline-block h-2.5 w-2.5 rounded-full ${rowBriefing?.canApprove ? 'bg-sky-400' : 'bg-[#d9b46f]'}`} />
                                         <div className="truncate text-sm font-semibold">{rowTaskLabel}</div>
                                       </div>
-                                      <div className={`mt-1 text-[11px] ${styles.muted}`}>{leadLifecycleLabel(lead)}</div>
+                                      <div className={`mt-1 text-[11px] ${styles.muted}`}>{opsText(leadLifecycleLabel(lead))}</div>
                                     </div>
                                     <div className="min-w-0">
                                       <div className="truncate text-sm font-medium">
                                         {rowBottleneck}
                                       </div>
-                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.departureCity || 'Origin pending'} to {lead.destination || 'Destination pending'}</div>
+                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.departureCity || opsText("Origin pending")} {opsText("to")}{' '}{lead.destination || opsText("Destination pending")}</div>
                                     </div>
                                     <div className="min-w-0">
                                       <div className="truncate text-sm font-medium">{leadOwner(lead)}</div>
-                                      <div className={`mt-1 text-xs ${styles.muted}`}>Current owner</div>
+                                      <div className={`mt-1 text-xs ${styles.muted}`}>{opsText("Current owner")}</div>
                                     </div>
                                     <div className="flex items-center gap-2">
                                       <AlertTriangle className={`h-4 w-4 ${priority === 'urgent' || priority === 'high' ? 'text-red-400' : priority === 'normal' ? 'text-sky-300' : 'text-slate-400'}`} />
-                                      <span className={`rounded-full px-2 py-0.5 text-[11px] ring-1 ${styles.priority[priority]}`}>{priorityLabels[priority]}</span>
+                                      <span className={`rounded-full px-2 py-0.5 text-[11px] ring-1 ${styles.priority[priority]}`}>{opsText(priorityLabels[priority])}</span>
                                     </div>
                                   </button>
                                 ) : activeNav === 'leisureStudio' ? (
@@ -5205,65 +4765,28 @@ export function CrmPage() {
                                         <span className={`inline-block h-2.5 w-2.5 rounded-full ${lead.serviceKey === 'luxury' ? 'bg-[#d4af37]' : 'bg-emerald-400'}`} />
                                         <div className="truncate text-sm font-semibold">{lead.name}</div>
                                       </div>
-                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || 'Destination pending'}</div>
-                                      <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{lead.destination || 'Destination pending'} - {lead.dates || 'Dates pending'}</div>
+                                      <div className={`mt-1 truncate text-xs ${styles.muted}`}>{lead.destination || opsText("Destination pending")}</div>
+                                      <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{lead.destination || opsText("Destination pending")} - {lead.dates || opsText("Dates pending")}</div>
                                     </div>
                                     <div className="flex flex-col items-end justify-center gap-1">
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] ring-1 ${styles.type[lead.serviceKey]}`}>{typeLabels[lead.serviceKey]}</span>
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] ring-1 ${styles.type[lead.serviceKey]}`}>{opsText(typeLabels[lead.serviceKey])}</span>
                                       <span className={`inline-flex items-center gap-1 text-[10px] ${priority === 'urgent' || priority === 'high' ? 'text-red-300' : priority === 'normal' ? styles.soft : styles.muted}`}>
                                         <span className={`${priority === 'urgent' || priority === 'high' ? 'text-red-400' : priority === 'normal' ? 'text-sky-300' : 'text-slate-400'}`}>⚑</span>
-                                        {priorityLabels[priority]}
+                                        {opsText(priorityLabels[priority])}
                                       </span>
                                     </div>
                                   </button>
                                 ) : (
-                                <button
+                                <RequestQueueCard
                                   key={lead.id}
-                                  type="button"
-                                  onClick={() => {
+                                  lead={lead}
+                                  isSelected={isSelected}
+                                  styles={styles}
+                                  onSelect={() => {
                                     setSelectedLeadId(lead.id);
                                     setDetailTab('overview');
                                   }}
-                                  className={`rounded-xl border p-4 text-left transition ${isSelected ? styles.rowActive : styles.row}`}
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <div className="flex min-w-0 items-center gap-3">
-                                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#7a5a08] text-sm font-semibold text-white">
-                                          {initials(lead.name)}
-                                        </span>
-                                        <div className="min-w-0">
-                                          <div className="truncate text-sm font-semibold">{lead.name}</div>
-                                          <div className={`mt-1 truncate text-xs ${styles.muted}`}>
-                                            {leadSegment(lead)} · {lead.destination || 'Destination pending'}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
-                                      {typeLabels[lead.serviceKey]}
-                                    </span>
-                                  </div>
-                                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                                    <div>
-                                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Travel dates</div>
-                                      <div className="mt-1 text-sm font-medium">{lead.dates || 'Dates pending'}</div>
-                                      <div className={`mt-1 text-xs ${styles.muted}`}>{lead.travelers || 'Travelers pending'}</div>
-                                    </div>
-                                    <div>
-                                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Budget</div>
-                                      <div className="mt-1 text-sm font-medium">{lead.budget || 'Budget pending'}</div>
-                                      <div className={`mt-1 text-xs ${styles.muted}`}>Received {formatDate(lead.createdAt)}</div>
-                                    </div>
-                                  </div>
-                                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.priority[priority]}`}>
-                                      <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${styles.attention[attentionLevel(lead)]}`} />
-                                      {priorityLabels[priority]}
-                                    </span>
-                                    <span className={`text-xs ${styles.muted}`}>Blocker: {leadPrimaryBlocker(lead)}</span>
-                                  </div>
-                                </button>
+                                />
                                 )
                               );
                             })}
@@ -5280,7 +4803,7 @@ export function CrmPage() {
                   <form onSubmit={submitCorporateCompany} className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <div className={`text-xs uppercase tracking-[0.16em] ${styles.muted}`}>{isCreatingCorporateCompany ? 'New company' : 'Company profile'}</div>
+                        <div className={`text-xs uppercase tracking-[0.16em] ${styles.muted}`}>{isCreatingCorporateCompany ? opsText("New company") : 'Company profile'}</div>
                         <h3 className="mt-1 text-lg font-semibold">{isCreatingCorporateCompany ? 'Create corporate account' : selectedCorporateCompany?.name ?? 'Select a company'}</h3>
                       </div>
                       {!isCreatingCorporateCompany && selectedCorporateCompany ? (
@@ -5290,106 +4813,106 @@ export function CrmPage() {
 
                     <div className="mt-5 grid gap-3 md:grid-cols-2">
                       <label className="text-sm font-medium">
-                        <span className={styles.muted}>Company name</span>
+                        <span className={styles.muted}>{opsText("Company name")}</span>
                         <input value={corporateCompanyForm.name} onChange={(event) => updateCorporateCompanyField('name', event.target.value)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
                       </label>
                       <label className="text-sm font-medium">
-                        <span className={styles.muted}>Company ID</span>
+                        <span className={styles.muted}>{opsText("Company ID")}</span>
                         <input value={corporateCompanyForm.accountCode} onChange={(event) => updateCorporateCompanyField('accountCode', event.target.value.toUpperCase())} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm uppercase outline-none ${styles.input}`} placeholder="DPMCOMPANY" />
                       </label>
                       <label className="text-sm font-medium">
-                        <span className={styles.muted}>Legal name</span>
+                        <span className={styles.muted}>{opsText("Legal name")}</span>
                         <input value={corporateCompanyForm.legalName} onChange={(event) => updateCorporateCompanyField('legalName', event.target.value)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
                       </label>
                       <label className="text-sm font-medium">
-                        <span className={styles.muted}>Billing email</span>
+                        <span className={styles.muted}>{opsText("Billing email")}</span>
                         <input value={corporateCompanyForm.billingEmail} onChange={(event) => updateCorporateCompanyField('billingEmail', event.target.value)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
                       </label>
                       <label className="text-sm font-medium">
-                        <span className={styles.muted}>Industry</span>
+                        <span className={styles.muted}>{opsText("Industry")}</span>
                         <input value={corporateCompanyForm.industry} onChange={(event) => updateCorporateCompanyField('industry', event.target.value)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
                       </label>
                       <label className="text-sm font-medium">
-                        <span className={styles.muted}>Country</span>
+                        <span className={styles.muted}>{opsText("Country")}</span>
                         <input value={corporateCompanyForm.country} onChange={(event) => updateCorporateCompanyField('country', event.target.value)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`} />
                       </label>
                       <label className="text-sm font-medium">
-                        <span className={styles.muted}>Service level</span>
+                        <span className={styles.muted}>{opsText("Service level")}</span>
                         <select value={corporateCompanyForm.serviceLevel} onChange={(event) => updateCorporateCompanyField('serviceLevel', event.target.value as CorporateCompanyServiceLevel)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}>
-                          {corporateCompanyServiceLevels.map((level) => <option key={level} value={level}>{corporateCompanyServiceLabels[level]}</option>)}
+                          {corporateCompanyServiceLevels.map((level) => <option key={level} value={level}>{opsText(corporateCompanyServiceLabels[level])}</option>)}
                         </select>
                       </label>
                       <label className="text-sm font-medium">
-                        <span className={styles.muted}>Status</span>
+                        <span className={styles.muted}>{opsText("Status")}</span>
                         <select value={corporateCompanyForm.status} onChange={(event) => updateCorporateCompanyField('status', event.target.value as CorporateCompanyAccountStatus)} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}>
-                          {corporateCompanyStatuses.map((status) => <option key={status} value={status}>{corporateCompanyStatusLabels[status]}</option>)}
+                          {corporateCompanyStatuses.map((status) => <option key={status} value={status}>{opsText(corporateCompanyStatusLabels[status])}</option>)}
                         </select>
                       </label>
                       <label className="text-sm font-medium">
-                        <span className={styles.muted}>Currency</span>
+                        <span className={styles.muted}>{opsText("Currency")}</span>
                         <input value={corporateCompanyForm.defaultCurrency} onChange={(event) => updateCorporateCompanyField('defaultCurrency', event.target.value.toUpperCase())} className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm uppercase outline-none ${styles.input}`} maxLength={3} />
                       </label>
                       <label className="text-sm font-medium md:col-span-2">
-                        <span className={styles.muted}>Notes</span>
+                        <span className={styles.muted}>{opsText("Notes")}</span>
                         <textarea value={corporateCompanyForm.notes} onChange={(event) => updateCorporateCompanyField('notes', event.target.value)} className={`mt-2 min-h-24 w-full rounded-lg border px-3 py-3 text-sm outline-none ${styles.input}`} />
                       </label>
                     </div>
                     <button type="submit" disabled={isSavingCorporateCompany || !canManageUsers(crmSession?.user)} className="mt-4 inline-flex h-11 items-center gap-2 rounded-lg bg-[#253f49] px-4 text-sm font-medium text-white transition hover:bg-[#34545f] disabled:cursor-not-allowed disabled:opacity-45">
                       <Building2 className="h-4 w-4" />
-                      {isSavingCorporateCompany ? 'Saving...' : isCreatingCorporateCompany ? 'Create Company' : 'Save Company'}
+                      {isSavingCorporateCompany ? opsText("Saving...") : isCreatingCorporateCompany ? 'Create Company' : 'Save Company'}
                     </button>
                   </form>
 
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <div className={`text-xs uppercase tracking-[0.16em] ${styles.muted}`}>CTM users</div>
+                        <div className={`text-xs uppercase tracking-[0.16em] ${styles.muted}`}>{opsText("CTM users")}</div>
                         <h3 className="mt-1 text-lg font-semibold">{editingCorporateUserId ? 'Edit user access' : 'Add user to company'}</h3>
                       </div>
                       {editingCorporateUserId ? (
-                        <button type="button" onClick={() => { setEditingCorporateUserId(null); setCorporateCompanyUserForm(emptyCorporateCompanyUserForm(selectedCorporateCompany?.id ?? '')); }} className={`h-9 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>New user</button>
+                        <button type="button" onClick={() => { setEditingCorporateUserId(null); setCorporateCompanyUserForm(emptyCorporateCompanyUserForm(selectedCorporateCompany?.id ?? '')); }} className={`h-9 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>{opsText("New user")}</button>
                       ) : null}
                     </div>
 
                     <form onSubmit={submitCorporateCompanyUser} className="mt-4 grid gap-3">
                       <div className="grid grid-cols-2 gap-3">
-                        <input value={corporateCompanyUserForm.firstName} onChange={(event) => updateCorporateCompanyUserField('firstName', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="First name" />
-                        <input value={corporateCompanyUserForm.lastName} onChange={(event) => updateCorporateCompanyUserField('lastName', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Last name" />
+                        <input value={corporateCompanyUserForm.firstName} onChange={(event) => updateCorporateCompanyUserField('firstName', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={opsText("First name")} />
+                        <input value={corporateCompanyUserForm.lastName} onChange={(event) => updateCorporateCompanyUserField('lastName', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={opsText("Last name")} />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
-                        <input value={corporateCompanyUserForm.username} onChange={(event) => updateCorporateCompanyUserField('username', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Username inside company" />
+                        <input value={corporateCompanyUserForm.username} onChange={(event) => updateCorporateCompanyUserField('username', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={opsText("Username inside company")} />
                         <input value={corporateCompanyUserForm.password} onChange={(event) => updateCorporateCompanyUserField('password', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={editingCorporateUserId ? 'New password optional' : 'Temp password'} type="password" />
                       </div>
                       <input value={corporateCompanyUserForm.email} onChange={(event) => updateCorporateCompanyUserField('email', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Email" />
                       <div className="grid grid-cols-2 gap-3">
-                        <input value={corporateCompanyUserForm.department} onChange={(event) => updateCorporateCompanyUserField('department', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Department" />
-                        <input value={corporateCompanyUserForm.jobTitle} onChange={(event) => updateCorporateCompanyUserField('jobTitle', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Job title" />
+                        <input value={corporateCompanyUserForm.department} onChange={(event) => updateCorporateCompanyUserField('department', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={opsText("Department")} />
+                        <input value={corporateCompanyUserForm.jobTitle} onChange={(event) => updateCorporateCompanyUserField('jobTitle', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={opsText("Job title")} />
                       </div>
-                      <input value={corporateCompanyUserForm.phone} onChange={(event) => updateCorporateCompanyUserField('phone', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder="Phone" />
+                      <input value={corporateCompanyUserForm.phone} onChange={(event) => updateCorporateCompanyUserField('phone', event.target.value)} className={`h-11 rounded-lg border px-3 text-sm outline-none ${styles.input}`} placeholder={opsText("Phone")} />
                       <div className={`rounded-lg border p-3 ${styles.panelSoft}`}>
-                        <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>Access roles</div>
+                        <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Access roles")}</div>
                         <div className="mt-3 grid gap-2 sm:grid-cols-2">
                           {corporateCompanyUserRoles.map((role) => (
                             <label key={role} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${styles.buttonGhost}`}>
                               <input type="checkbox" checked={corporateCompanyUserForm.accessRoles.includes(role)} onChange={() => toggleCorporateCompanyUserRole(role)} className="h-4 w-4" />
-                              <span>{corporateCompanyUserRoleLabels[role]}</span>
+                              <span>{opsText(corporateCompanyUserRoleLabels[role])}</span>
                             </label>
                           ))}
                         </div>
                       </div>
                       <label className={`flex items-center justify-between rounded-lg border px-3 py-3 text-sm ${styles.panelSoft}`}>
-                        <span>Active user</span>
+                        <span>{opsText("Active user")}</span>
                         <input type="checkbox" checked={corporateCompanyUserForm.isActive} onChange={(event) => updateCorporateCompanyUserField('isActive', event.target.checked)} className="h-4 w-4" />
                       </label>
                       <button type="submit" disabled={isSavingCorporateCompanyUser || !selectedCorporateCompany || !canManageUsers(crmSession?.user)} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#253f49] px-4 text-sm font-medium text-white transition hover:bg-[#34545f] disabled:cursor-not-allowed disabled:opacity-45">
                         <Users className="h-4 w-4" />
-                        {isSavingCorporateCompanyUser ? 'Saving...' : editingCorporateUserId ? 'Save User' : 'Create CTM User'}
+                        {isSavingCorporateCompanyUser ? opsText("Saving...") : editingCorporateUserId ? 'Save User' : 'Create CTM User'}
                       </button>
                     </form>
 
                     <div className="mt-5 grid gap-2">
                       {selectedCorporateCompanyUsers.length === 0 ? (
-                        <div className={`rounded-lg border p-4 text-sm ${styles.panelSoft}`}>No CTM users created for this company yet.</div>
+                        <div className={`rounded-lg border p-4 text-sm ${styles.panelSoft}`}>{opsText("No CTM users created for this company yet.")}</div>
                       ) : selectedCorporateCompanyUsers.map((user) => (
                         <button key={user.id} type="button" onClick={() => editCorporateCompanyUser(user)} className={`rounded-lg border px-4 py-3 text-left transition ${editingCorporateUserId === user.id ? styles.rowActive : styles.row}`}>
                           <div className="flex items-center justify-between gap-3">
@@ -5399,7 +4922,7 @@ export function CrmPage() {
                             </div>
                             <div className="flex flex-wrap justify-end gap-1">
                               {(user.accessRoles.length > 0 ? user.accessRoles : [user.role]).map((role) => (
-                                <span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${styles.type.corporate}`}>{corporateCompanyUserRoleLabels[role]}</span>
+                                <span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${styles.type.corporate}`}>{opsText(corporateCompanyUserRoleLabels[role])}</span>
                               ))}
                             </div>
                           </div>
@@ -5426,10 +4949,9 @@ export function CrmPage() {
                     className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 transition disabled:opacity-45 ${styles.buttonGhost}`}
                   >
                     <ChevronLeft className="h-4 w-4" />
-                    Previous
-                  </button>
+                    {opsText("Previous")}</button>
                   <span>
-                    Page {safePage} / {totalPages}
+                    {opsText("Page")}{' '}{safePage} / {totalPages}
                   </span>
                   <button
                     type="button"
@@ -5437,8 +4959,7 @@ export function CrmPage() {
                     disabled={safePage === totalPages}
                     className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 transition disabled:opacity-45 ${styles.buttonGhost}`}
                   >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
+                    {opsText("Next")}<ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
               </div>
@@ -5460,9 +4981,8 @@ export function CrmPage() {
                 className={`inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
               >
                 <ChevronLeft className="h-4 w-4" />
-                Back to inbox
-              </button>
-              <div className={`text-sm ${styles.muted}`}>Focused working area</div>
+                {opsText("Back to inbox")}</button>
+              <div className={`text-sm ${styles.muted}`}>{opsText("Focused working area")}</div>
             </div>
           ) : null}
           {activeNav === 'settings' ? (
@@ -5473,24 +4993,24 @@ export function CrmPage() {
                     <Shield className="h-5 w-5" />
                   </span>
                   <div>
-                    <div className="text-lg font-semibold">Access Policy</div>
-                    <p className={`mt-1 text-sm ${styles.muted}`}>Admins can manage everyone. Managers can maintain agent and viewer accounts only.</p>
+                    <div className="text-lg font-semibold">{opsText("Access Policy")}</div>
+                    <p className={`mt-1 text-sm ${styles.muted}`}>{opsText("Admins can manage everyone. Managers can maintain agent and viewer accounts only.")}</p>
                   </div>
                 </div>
                 <div className={`mt-4 rounded-lg border px-4 py-4 text-sm ${styles.panelSoft}`}>
-                  <div className="font-medium">Current session</div>
+                  <div className="font-medium">{opsText("Current session")}</div>
                   <div className={`mt-2 ${styles.soft}`}>{crmSession.user.first_name || crmSession.user.last_name ? `${crmSession.user.first_name ?? ''} ${crmSession.user.last_name ?? ''}`.trim() : crmSession.user.username}</div>
-                  <div className={`mt-1 text-xs ${styles.muted}`}>{crmRoleLabels[(crmSession.user.role === 'admin' || crmSession.user.role === 'manager' || crmSession.user.role === 'agent' || crmSession.user.role === 'viewer' ? crmSession.user.role : 'viewer') as keyof typeof crmRoleLabels]}</div>
+                  <div className={`mt-1 text-xs ${styles.muted}`}>{opsText(crmRoleLabels[(crmSession.user.role === 'admin' || crmSession.user.role === 'manager' || crmSession.user.role === 'agent' || crmSession.user.role === 'viewer' ? crmSession.user.role : 'viewer') as keyof typeof crmRoleLabels])}</div>
                 </div>
               </div>
 
               <div className={`rounded-xl border p-5 ${styles.panel}`}>
-                <div className="font-semibold">Role Guide</div>
+                <div className="font-semibold">{opsText("Role Guide")}</div>
                 <div className="mt-4 grid gap-3">
                   {(Object.keys(crmRoleLabels) as Array<keyof typeof crmRoleLabels>).map((role) => (
                     <div key={role} className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium">{crmRoleLabels[role]}</div>
+                        <div className="font-medium">{opsText(crmRoleLabels[role])}</div>
                         <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ${role === 'admin' || role === 'manager' ? styles.type.corporate : role === 'agent' ? styles.type.classic : styles.priority.low}`}>
                           {role}
                         </span>
@@ -5502,19 +5022,19 @@ export function CrmPage() {
               </div>
 
               <div className={`rounded-xl border p-5 ${styles.panel}`}>
-                <div className="font-semibold">Recommended Setup</div>
+                <div className="font-semibold">{opsText("Recommended Setup")}</div>
                 <div className="mt-4 grid gap-3 text-sm">
                   <div className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
-                    <div className="font-medium">Admin / Manager</div>
-                    <p className={`mt-2 leading-6 ${styles.muted}`}>Admins own access control. Managers supervise operations but should not modify protected leadership accounts.</p>
+                    <div className="font-medium">{opsText("Admin / Manager")}</div>
+                    <p className={`mt-2 leading-6 ${styles.muted}`}>{opsText("Admins own access control. Managers supervise operations but should not modify protected leadership accounts.")}</p>
                   </div>
                   <div className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
-                    <div className="font-medium">Agent</div>
-                    <p className={`mt-2 leading-6 ${styles.muted}`}>Use for day-to-day request handling, client registration, and workflow execution.</p>
+                    <div className="font-medium">{opsText("Agent")}</div>
+                    <p className={`mt-2 leading-6 ${styles.muted}`}>{opsText("Use for day-to-day request handling, client registration, and workflow execution.")}</p>
                   </div>
                   <div className={`rounded-lg border px-4 py-3 ${styles.panelSoft}`}>
-                    <div className="font-medium">Viewer</div>
-                    <p className={`mt-2 leading-6 ${styles.muted}`}>Use for oversight roles that need visibility without operational edit permissions.</p>
+                    <div className="font-medium">{opsText("Viewer")}</div>
+                    <p className={`mt-2 leading-6 ${styles.muted}`}>{opsText("Use for oversight roles that need visibility without operational edit permissions.")}</p>
                   </div>
                 </div>
               </div>
@@ -5531,7 +5051,7 @@ export function CrmPage() {
                       <div className="flex items-center gap-2">
                         <h2 className="truncate text-lg font-semibold">{clientLabel(selectedClient)}</h2>
                         <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${styles.type[selectedClient.serviceLevel]}`}>
-                          {typeLabels[selectedClient.serviceLevel]}
+                          {opsText(typeLabels[selectedClient.serviceLevel])}
                         </span>
                       </div>
                       <p className={`mt-1 text-sm ${styles.muted}`}>{clientSegment(selectedClient)} - {selectedClient.owner || 'Owner pending'}</p>
@@ -5542,42 +5062,42 @@ export function CrmPage() {
                 <div className={`rounded-xl border p-5 ${styles.panel}`}>
                   <div className="grid grid-cols-2 gap-5">
                     <div>
-                      <div className={`text-sm ${styles.muted}`}>Primary Email</div>
+                      <div className={`text-sm ${styles.muted}`}>{opsText("Primary Email")}</div>
                       <div className="mt-1 font-semibold">{selectedClient.email || '-'}</div>
                     </div>
                     <div>
-                      <div className={`text-sm ${styles.muted}`}>Phone</div>
+                      <div className={`text-sm ${styles.muted}`}>{opsText("Phone")}</div>
                       <div className="mt-1 font-semibold">{selectedClient.phone || '-'}</div>
                     </div>
                     <div>
-                      <div className={`text-sm ${styles.muted}`}>Preferred Contact</div>
+                      <div className={`text-sm ${styles.muted}`}>{opsText("Preferred Contact")}</div>
                       <div className="mt-1 font-semibold">{selectedClient.preferredContact || '-'}</div>
                     </div>
                     <div>
-                      <div className={`text-sm ${styles.muted}`}>Open Requests</div>
+                      <div className={`text-sm ${styles.muted}`}>{opsText("Open Requests")}</div>
                       <div className="mt-1 font-semibold">{selectedClient.activeRequestCount}</div>
                     </div>
                   </div>
 
                   <label className="mt-5 block">
-                    <span className="font-semibold">Client Notes</span>
+                    <span className="font-semibold">{opsText("Client Notes")}</span>
                     <textarea
                       value={selectedClient.notes || ''}
                       onChange={(event) => refreshClient(selectedClient.id, { notes: event.target.value })}
                       className={`mt-3 min-h-24 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
-                      placeholder="Relationship notes, preferences, commercial context..."
+                      placeholder={opsText("Relationship notes, preferences, commercial context...")}
                     />
                   </label>
                 </div>
 
                 <div className={`rounded-xl border p-5 ${styles.panel}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="font-semibold">Related Requests</div>
-                    <span className={`text-sm ${styles.muted}`}>{selectedClientLeads.length} linked</span>
+                    <div className="font-semibold">{opsText("Related Requests")}</div>
+                    <span className={`text-sm ${styles.muted}`}>{selectedClientLeads.length} {opsText("linked")}</span>
                   </div>
                   <div className="mt-4 grid gap-3">
                     {selectedClientLeads.length === 0 ? (
-                      <div className={`rounded-lg border p-4 text-sm ${styles.panelSoft}`}>No requests linked to this client yet.</div>
+                      <div className={`rounded-lg border p-4 text-sm ${styles.panelSoft}`}>{opsText("No requests linked to this client yet.")}</div>
                     ) : (
                       selectedClientLeads.map((lead) => (
                         <button
@@ -5593,10 +5113,10 @@ export function CrmPage() {
                           <div className="flex items-center justify-between gap-3">
                             <div className="font-medium">{lead.destination || lead.service}</div>
                             <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[lead.serviceKey]}`}>
-                              {typeLabels[lead.serviceKey]}
+                              {opsText(typeLabels[lead.serviceKey])}
                             </span>
                           </div>
-                          <div className={`mt-2 text-sm ${styles.muted}`}>{lead.dates || 'Dates pending'} - {leadLifecycleLabel(lead)}</div>
+                          <div className={`mt-2 text-sm ${styles.muted}`}>{lead.dates || opsText("Dates pending")} - {opsText(leadLifecycleLabel(lead))}</div>
                         </button>
                       ))
                     )}
@@ -5606,8 +5126,8 @@ export function CrmPage() {
             ) : (
               <div className="p-8 text-center">
                 <Users className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                <div className="mt-4 text-lg font-semibold">Select a client</div>
-                <p className={`mt-2 text-sm ${styles.muted}`}>Registered client context appears here.</p>
+                <div className="mt-4 text-lg font-semibold">{opsText("Select a client")}</div>
+                <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("Registered client context appears here.")}</p>
               </div>
             )
           ) : activeNav === 'command' ? (
@@ -5622,37 +5142,37 @@ export function CrmPage() {
                       <div className="flex items-center gap-2">
                         <h2 className="truncate text-lg font-semibold">{selectedLead.name}</h2>
                         <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
-                          {typeLabels[selectedLead.serviceKey]}
+                          {opsText(typeLabels[selectedLead.serviceKey])}
                         </span>
                       </div>
-                      <p className={`mt-1 text-sm ${styles.muted}`}>{leadSegment(selectedLead)} · {selectedLead.destination || 'Destination pending'}</p>
-                      <p className={`mt-1 text-xs uppercase tracking-[0.16em] ${styles.muted}`}>Manager decision board</p>
+                      <p className={`mt-1 text-sm ${styles.muted}`}>{opsText(leadSegment(selectedLead))} · {selectedLead.destination || opsText("Destination pending")}</p>
+                      <p className={`mt-1 text-xs uppercase tracking-[0.16em] ${styles.muted}`}>{opsText("Manager decision board")}</p>
                     </div>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadLifecycleLabel(selectedLead)}</span>
+                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{opsText(leadLifecycleLabel(selectedLead))}</span>
                 </div>
 
                 <div className={`rounded-xl border p-4 ${styles.panel}`}>
-                  <div className="font-semibold">Status report</div>
+                  <div className="font-semibold">{opsText("Status report")}</div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current status</div>
-                      <div className="mt-1 text-sm font-semibold">{leadLifecycleLabel(selectedLead)}</div>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Current status")}</div>
+                      <div className="mt-1 text-sm font-semibold">{opsText(leadLifecycleLabel(selectedLead))}</div>
                     </div>
                     <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current owner</div>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Current owner")}</div>
                       <div className="mt-1 text-sm font-semibold">{managerMeta?.owner || leadOwner(selectedLead)}</div>
                     </div>
                     <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Travel date</div>
-                      <div className="mt-1 text-sm font-semibold">{selectedLead.dates || 'Dates pending'}</div>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Travel date")}</div>
+                      <div className="mt-1 text-sm font-semibold">{selectedLead.dates || opsText("Dates pending")}</div>
                     </div>
                     <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Urgency</div>
-                      <div className="mt-1 text-sm font-semibold">{priorityLabels[fallbackPriority(selectedLead)]}</div>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Urgency")}</div>
+                      <div className="mt-1 text-sm font-semibold">{opsText(priorityLabels[fallbackPriority(selectedLead)])}</div>
                     </div>
                     <div className={`rounded-lg border px-3 py-3 sm:col-span-2 ${styles.panelSoft}`}>
-                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Bottleneck</div>
+                      <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Bottleneck")}</div>
                       <div className="mt-1 text-sm font-semibold">{selectedPrimaryBlocker}</div>
                     </div>
                   </div>
@@ -5660,7 +5180,7 @@ export function CrmPage() {
 
                 <div className={`rounded-xl border p-4 ${styles.panel}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="font-semibold">Value-chain progress</div>
+                    <div className="font-semibold">{opsText("Value-chain progress")}</div>
                     <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedWorkflowState?.responsibleOwner || managerMeta?.task || selectedProcess?.primaryAction || 'Review request'}</span>
                   </div>
                   {(() => {
@@ -5678,7 +5198,7 @@ export function CrmPage() {
                     return (
                       <div className="mt-4 grid gap-3">
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Stage roadmap</div>
+                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Stage roadmap")}</div>
                           <div className="mt-3 grid grid-cols-4 gap-x-2 gap-y-3">
                             {steps.map((step) => {
                               const isDone = step.state === 'done';
@@ -5703,7 +5223,7 @@ export function CrmPage() {
                                     <StageIcon className="h-4 w-4" />
                                   </span>
                                   <div className={`mt-1 max-w-full text-[11px] leading-4 ${isCurrent ? styles.soft : styles.muted}`}>
-                                    {step.label}
+                                    {opsText(step.label)}
                                   </div>
                                 </div>
                               );
@@ -5713,14 +5233,13 @@ export function CrmPage() {
 
                         {currentStage === 'closed' ? (
                           <div className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-3 text-sm text-red-200">
-                            Request closed. Capture the reason and decide whether it should return to nurture.
-                          </div>
+                            {opsText("Request closed. Capture the reason and decide whether it should return to nurture.")}</div>
                         ) : currentStep ? (
                           <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                             <div className="flex items-center justify-between gap-3">
                               <div>
-                                <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current stage</div>
-                                <div className="mt-1 text-sm font-semibold">{currentStep.label}</div>
+                                <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Current stage")}</div>
+                                <div className="mt-1 text-sm font-semibold">{opsText(currentStep.label)}</div>
                               </div>
                               <span
                                 className={`rounded-full px-2 py-0.5 text-[11px] ${
@@ -5729,21 +5248,39 @@ export function CrmPage() {
                                     : 'bg-sky-500/15 text-sky-300'
                                 }`}
                               >
-                                {selectedWorkflowState?.blockers.length || currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance' ? 'Current blocker' : 'In progress'}
+                                {selectedWorkflowState?.blockers.length || currentStage === 'awaiting_approval' || currentStage === 'awaiting_payment_finance' ? 'Current blocker' : opsText("In progress")}
                               </span>
                             </div>
                             <div className={`mt-3 text-sm leading-6 ${styles.soft}`}>
                               {selectedWorkflowState?.blockers[0]?.detail || selectedProcess?.stageGate || 'Current operating checkpoint.'}
                             </div>
                             <div className={`mt-3 border-t pt-3 text-sm leading-6 ${styles.muted}`}>
-                              <span className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Next move</span>
+                              <span className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Next move")}</span>
                               <div className={`mt-1 ${styles.soft}`}>{selectedNextAction || 'No active process note yet.'}</div>
                             </div>
                             {selectedWorkflowState?.blockers.length ? (
                               <div className="mt-3 grid gap-2">
                                 {selectedWorkflowState.blockers.map((blocker) => (
                                   <div key={blocker.key} className="rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs text-red-100">
-                                    <span className="font-semibold">{blocker.label}:</span> {blocker.detail}
+                                    <span className="font-semibold">{opsText("Blocker —")}{' '}{opsText(blocker.label)}:</span> {blocker.detail}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                            {selectedWorkflowState?.checklist.some((item) => !item.ready && item.severity === 'missing_info') ? (
+                              <div className="mt-3 grid gap-2">
+                                {selectedWorkflowState.checklist.filter((item) => !item.ready && item.severity === 'missing_info').map((item) => (
+                                  <div key={item.key} className="rounded-lg border border-amber-300/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                                    <span className="font-semibold">{opsText("Missing info —")}{' '}{opsText(item.label)}:</span> {item.detail}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                            {selectedWorkflowState?.checklist.some((item) => !item.ready && item.severity === 'advisory') ? (
+                              <div className="mt-3 grid gap-2">
+                                {selectedWorkflowState.checklist.filter((item) => !item.ready && item.severity === 'advisory').map((item) => (
+                                  <div key={item.key} className="rounded-lg border border-sky-300/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+                                    <span className="font-semibold">{opsText("Suggestion —")}{' '}{opsText(item.label)}:</span> {item.detail}
                                   </div>
                                 ))}
                               </div>
@@ -5751,7 +5288,8 @@ export function CrmPage() {
                             <button
                               type="button"
                               onClick={() => advanceLeadLifecycle(selectedLead)}
-                              disabled={!canAdvance}
+                              disabled={!canAdvance || !canAdvanceWorkflow}
+                              title={canAdvanceWorkflow ? undefined : 'Your role cannot advance the workflow'}
                               className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               <CheckSquare className="h-4 w-4" />
@@ -5767,8 +5305,8 @@ export function CrmPage() {
                 <div className={`rounded-xl border p-4 ${styles.panel}`}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="font-semibold">Workflow reminders</div>
-                      <div className={`mt-1 text-xs ${styles.muted}`}>{selectedWorkflowReminders.length} pending for this request</div>
+                      <div className="font-semibold">{opsText("Workflow reminders")}</div>
+                      <div className={`mt-1 text-xs ${styles.muted}`}>{selectedWorkflowReminders.length} {opsText("pending for this request")}</div>
                     </div>
                     <button
                       type="button"
@@ -5782,8 +5320,7 @@ export function CrmPage() {
                       }`}
                     >
                       <Bell className="h-4 w-4" />
-                      Generate
-                    </button>
+                      {opsText("Generate")}</button>
                   </div>
                   <div className="mt-3 grid gap-2">
                     {selectedWorkflowReminders.length > 0 ? selectedWorkflowReminders.slice(0, 4).map((reminder) => (
@@ -5791,7 +5328,7 @@ export function CrmPage() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold">{reminder.title}</div>
-                            <div className={`mt-1 text-xs ${styles.muted}`}>{reminder.assignedTo || 'Unassigned'} - due {formatDate(reminder.dueAt)}</div>
+                            <div className={`mt-1 text-xs ${styles.muted}`}>{reminder.assignedToName || reminder.assignedTo || opsText("Unassigned")} {opsText("- due")}{' '}{formatDate(reminder.dueAt)}</div>
                           </div>
                           <span className={`rounded-full px-2 py-0.5 text-[10px] ${reminder.reminderType === 'blocker' ? 'bg-red-500/15 text-red-200' : styles.buttonGhost}`}>
                             {reminder.reminderType.replace('_', ' ')}
@@ -5800,15 +5337,13 @@ export function CrmPage() {
                         {reminder.message ? <div className={`mt-2 line-clamp-2 text-xs ${styles.soft}`}>{reminder.message}</div> : null}
                         <div className="mt-3 flex gap-2">
                           <button type="button" onClick={() => completeWorkflowReminder(reminder)} className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                            Complete
-                          </button>
+                            {opsText("Complete")}</button>
                           <button type="button" onClick={() => cancelWorkflowReminder(reminder)} className={`h-8 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>
-                            Cancel
-                          </button>
+                            {opsText("Cancel")}</button>
                         </div>
                       </div>
                     )) : (
-                      <div className={`rounded-lg border p-3 text-sm ${styles.panelSoft}`}>No pending backend reminders for this request.</div>
+                      <div className={`rounded-lg border p-3 text-sm ${styles.panelSoft}`}>{opsText("No pending backend reminders for this request.")}</div>
                     )}
                   </div>
                 </div>
@@ -5816,8 +5351,8 @@ export function CrmPage() {
             ) : (
               <div className="p-8 text-center">
                 <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                <div className="mt-4 text-lg font-semibold">Select a request</div>
-                <p className={`mt-2 text-sm ${styles.muted}`}>Manager decision context appears here.</p>
+                <div className="mt-4 text-lg font-semibold">{opsText("Select a request")}</div>
+                <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("Manager decision context appears here.")}</p>
               </div>
             )
           ) : activeNav === 'corporateDesk' ? (
@@ -5877,10 +5412,10 @@ export function CrmPage() {
                     <div className={`rounded-xl border p-5 ${selectedBriefingReturned ? 'border-amber-400/25 bg-amber-500/10' : styles.panel}`}>
                       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                         <div className="min-w-0">
-                          <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">Trip Owner Approval</div>
+                          <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">{opsText("Trip Owner Approval")}</div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             <h2 className="text-2xl font-semibold">{selectedBriefingReturned ? 'Briefing changes requested' : 'Waiting for briefing approval'}</h2>
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>CTM owner gate</span>
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>{opsText("CTM owner gate")}</span>
                             <span className={`rounded-full px-2.5 py-1 text-xs ${selectedBriefingApprovalPending ? 'bg-sky-500/15 text-sky-200' : selectedBriefingReturned ? 'bg-amber-500/15 text-amber-100' : styles.buttonGhost}`}>
                               {selectedBriefingApproval?.status || 'Not submitted'}
                             </span>
@@ -5897,8 +5432,7 @@ export function CrmPage() {
                           className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
                         >
                           <ClipboardCheck className="h-4 w-4" />
-                          Revise briefing
-                        </button>
+                          {opsText("Revise briefing")}</button>
                       </div>
                     </div>
                   ) : null}
@@ -5906,20 +5440,20 @@ export function CrmPage() {
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="min-w-0">
-                        <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">Selected request</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">{opsText("Selected request")}</div>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <h2 className="text-2xl font-semibold">{selectedLead.name}</h2>
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>Corporate</span>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type.corporate}`}>{opsText("Corporate")}</span>
                           <span className={`rounded-full px-2.5 py-1 text-xs ${crmCorporateStageClass(activeCorporateWorkflowStage.state)}`}>
-                            {activeCorporateWorkflowStage.label}
+                            {opsText(activeCorporateWorkflowStage.label)}
                           </span>
                         </div>
                         <div className={`mt-2 text-sm ${styles.muted}`}>
-                          {selectedLead.departureCity || 'Origin pending'} to {selectedLead.destination || 'Destination pending'} - {selectedLead.dates || 'Dates pending'}
+                          {selectedLead.departureCity || opsText("Origin pending")} {opsText("to")}{' '}{selectedLead.destination || opsText("Destination pending")} - {selectedLead.dates || opsText("Dates pending")}
                         </div>
                       </div>
                       <div className="min-w-[220px] text-left xl:text-right">
-                        <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Progress</div>
+                        <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Progress")}</div>
                         <div className="mt-1 text-lg font-semibold">{corporateWorkflowProgress}%</div>
                         <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
                           <div className="h-full rounded-full bg-[#d9b46f]" style={{ width: `${corporateWorkflowProgress}%` }} />
@@ -5945,7 +5479,7 @@ export function CrmPage() {
                             <span className={`grid h-9 w-9 place-items-center rounded-full border transition group-hover:scale-105 ${crmCorporateStageDotClass(stage.state, selected)}`}>
                               <Icon className="h-4 w-4" />
                             </span>
-                            <span className={`mt-1 max-w-full truncate text-[10px] font-medium ${selected ? 'crm-accent-text' : styles.muted}`}>{stage.label}</span>
+                            <span className={`mt-1 max-w-full truncate text-[10px] font-medium ${selected ? 'crm-accent-text' : styles.muted}`}>{opsText(stage.label)}</span>
                           </button>
                         );
                       })}
@@ -5956,28 +5490,28 @@ export function CrmPage() {
                     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                         <div className={`rounded-lg border px-3 py-3 ${crmCorporateStageClass(activeCorporateWorkflowStage.state)}`}>
-                          <div className="text-[10px] uppercase tracking-[0.14em] opacity-75">Current stage</div>
-                          <div className="mt-1 truncate text-sm font-semibold">{activeCorporateWorkflowStage.label}</div>
+                          <div className="text-[10px] uppercase tracking-[0.14em] opacity-75">{opsText("Current stage")}</div>
+                          <div className="mt-1 truncate text-sm font-semibold">{opsText(activeCorporateWorkflowStage.label)}</div>
                         </div>
                         <div className={`rounded-lg border px-3 py-3 ${selectedCorporateWorkflowStage.state === 'blocked' ? crmCorporateStageClass('blocked') : styles.panelSoft}`}>
-                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Bottleneck</div>
+                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Bottleneck")}</div>
                           <div className="mt-1 truncate text-sm font-semibold">{selectedPrimaryBlocker}</div>
                         </div>
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Next action</div>
+                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Next action")}</div>
                           <div className="mt-1 line-clamp-2 text-sm font-semibold">{selectedCtmTrip ? selectedCtmNextAction : selectedNextAction}</div>
                         </div>
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Owner / client status</div>
+                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Owner / client status")}</div>
                           <div className="mt-1 truncate text-sm font-semibold">{selectedBriefingApproval?.status || selectedCtmTrip?.status || 'Not submitted'}</div>
                           <div className={`mt-1 truncate text-xs ${styles.muted}`}>{managerMeta?.owner || leadOwner(selectedLead)}</div>
                         </div>
                         <div className={`rounded-lg border px-3 py-3 md:col-span-2 xl:col-span-4 ${styles.panelSoft}`}>
-                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Selected checkpoint</div>
+                          <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Selected checkpoint")}</div>
                           <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-semibold">{selectedCorporateWorkflowStage.label}</span>
+                            <span className="text-sm font-semibold">{opsText(selectedCorporateWorkflowStage.label)}</span>
                             <span className={`rounded-full px-2.5 py-1 text-[11px] ${crmCorporateStageClass(selectedCorporateWorkflowStage.state)}`}>
-                              {crmCorporateStageToneLabel(selectedCorporateWorkflowStage.state)}
+                              {opsText(crmCorporateStageToneLabel(selectedCorporateWorkflowStage.state))}
                             </span>
                           </div>
                           <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedCorporateWorkflowStage.detail}</p>
@@ -5985,18 +5519,18 @@ export function CrmPage() {
                       </div>
 
                       <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                        <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Lifecycle timeline</div>
+                        <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Lifecycle timeline")}</div>
                         <div className="mt-3 grid gap-3">
                           {recentCorporateTimeline.length > 0 ? recentCorporateTimeline.map((item) => (
                             <div key={item.id} className="flex gap-2">
                               <span className={`mt-1 h-2 w-2 rounded-full ${item.tone === 'done' ? 'bg-emerald-400' : item.tone === 'current' ? 'bg-sky-400' : item.tone === 'closed' ? 'bg-red-400' : 'bg-white/30'}`} />
                               <div className="min-w-0">
-                                <div className="truncate text-xs font-semibold">{item.label}</div>
+                                <div className="truncate text-xs font-semibold">{opsText(item.label)}</div>
                                 <div className={`truncate text-[11px] ${styles.muted}`}>{item.meta}</div>
                               </div>
                             </div>
                           )) : (
-                            <div className={`text-xs ${styles.muted}`}>No workflow timeline yet.</div>
+                            <div className={`text-xs ${styles.muted}`}>{opsText("No workflow timeline yet.")}</div>
                           )}
                         </div>
                       </div>
@@ -6006,16 +5540,16 @@ export function CrmPage() {
                   <div className={`rounded-xl border p-5 ${styles.panel}`}>
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
-                        <div className="font-semibold">{!selectedCorporateBriefReady ? 'Briefing workspace' : !selectedBriefingOwnerApproved ? 'Owner approval follow-up' : displayCorporateLabel}</div>
+                        <div className="font-semibold">{!selectedCorporateBriefReady ? opsText("Briefing workspace") : !selectedBriefingOwnerApproved ? opsText("Owner approval follow-up") : displayCorporateLabel}</div>
                         <div className={`mt-1 text-sm ${styles.muted}`}>
                           {!selectedCorporateBriefReady
-                            ? 'Complete the structured corporate brief before trip design, quote, booking, billing, or travel pack outputs.'
+                            ? opsText("Complete the structured corporate brief before trip design, quote, booking, billing, or travel pack outputs.")
                             : !selectedBriefingOwnerApproved
-                              ? 'Track the trip owner decision in CTM before starting trip design.'
-                              : selectedNextAction || 'Build the itinerary draft before commercial pricing starts.'}
+                              ? opsText("Track the trip owner decision in CTM before starting trip design.")
+                              : selectedNextAction || opsText("Build the itinerary draft before commercial pricing starts.")}
                         </div>
                       </div>
-                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{activeCorporateWorkflowStage.label}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{opsText(activeCorporateWorkflowStage.label)}</span>
                     </div>
 
                     {!selectedCorporateBriefReady ? renderBriefingGate() : !selectedBriefingOwnerApproved ? (
@@ -6023,7 +5557,7 @@ export function CrmPage() {
                         <div className={`rounded-lg border p-5 ${selectedBriefingReturned ? 'border-amber-400/25 bg-amber-500/10' : styles.panelSoft}`}>
                           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                             <div className="min-w-0">
-                              <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">Trip owner decision</div>
+                              <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">{opsText("Trip owner decision")}</div>
                               <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <div className="text-xl font-semibold">{selectedBriefingReturned ? 'Briefing changes requested' : 'Waiting for owner approval'}</div>
                                 <span className={`rounded-full px-2.5 py-1 text-xs ${selectedBriefingApprovalPending ? 'bg-sky-500/15 text-sky-200' : selectedBriefingReturned ? 'bg-amber-500/15 text-amber-100' : styles.buttonGhost}`}>
@@ -6042,7 +5576,7 @@ export function CrmPage() {
                               className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}
                             >
                               <ClipboardCheck className="h-4 w-4" />
-                              {selectedBriefingReturned ? 'Revise briefing' : 'Open briefing'}
+                              {selectedBriefingReturned ? opsText("Revise briefing") : 'Open briefing'}
                             </button>
                           </div>
                         </div>
@@ -6051,7 +5585,7 @@ export function CrmPage() {
                     ) : detailTab === 'itinerary' ? renderCorporateTripDesignWorkspace() : detailTab === 'history' ? (
                       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
                         <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="font-semibold">Fulfilment timeline</div>
+                          <div className="font-semibold">{opsText("Fulfilment timeline")}</div>
                           <div className="mt-4 grid gap-4">
                             {selectedHistory.map((item) => (
                               <div key={`${item.label}-${item.meta}`} className="flex gap-3">
@@ -6067,7 +5601,7 @@ export function CrmPage() {
                                   }`}
                                 />
                                 <div>
-                                  <div className="font-medium">{item.label}</div>
+                                  <div className="font-medium">{opsText(item.label)}</div>
                                   <div className={`text-sm ${styles.muted}`}>{item.meta}</div>
                                 </div>
                               </div>
@@ -6075,10 +5609,9 @@ export function CrmPage() {
                           </div>
                         </div>
                         <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="font-semibold">Post-trip account intelligence</div>
+                          <div className="font-semibold">{opsText("Post-trip account intelligence")}</div>
                           <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
-                            Capture route performance, traveler changes, invoice friction, preferred suppliers, and repeat patterns so the next CTM request starts cleaner.
-                          </p>
+                            {opsText("Capture route performance, traveler changes, invoice friction, preferred suppliers, and repeat patterns so the next CTM request starts cleaner.")}</p>
                         </div>
                       </div>
                     ) : (
@@ -6086,20 +5619,20 @@ export function CrmPage() {
                         <div className="grid gap-3 md:grid-cols-3">
                           {readinessCards.map((card) => (
                             <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                              <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                              <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                               <div className="mt-2 font-semibold">{card.value}</div>
-                              {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                              {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                             </div>
                           ))}
                         </div>
                         {detailTab === 'documents' ? (
                           <label className="block">
-                            <span className="font-semibold">Internal readiness notes</span>
+                            <span className="font-semibold">{opsText("Internal readiness notes")}</span>
                             <textarea
                               value={selectedLead.internalNotes || ''}
                               onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
                               className={`mt-3 min-h-28 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
-                              placeholder="Visa status, missing traveler data, invoice dependencies..."
+                              placeholder={opsText("Visa status, missing traveler data, invoice dependencies...")}
                             />
                           </label>
                         ) : null}
@@ -6111,8 +5644,8 @@ export function CrmPage() {
             })() : (
               <div className="p-8 text-center">
                 <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                <div className="mt-4 text-lg font-semibold">Select a corporate task</div>
-                <p className={`mt-2 text-sm ${styles.muted}`}>Choose a request from the inbox to open its focused working area.</p>
+                <div className="mt-4 text-lg font-semibold">{opsText("Select a corporate task")}</div>
+                <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("Choose a request from the inbox to open its focused working area.")}</p>
               </div>
             )
           ) : activeNav === 'leisureStudio' ? (
@@ -6144,23 +5677,23 @@ export function CrmPage() {
                         <div className="min-w-0">
                           <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">DPM Leisure Studio</div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <h2 className="text-2xl font-semibold">{selectedLead.destination || 'Destination pending'}</h2>
+                            <h2 className="text-2xl font-semibold">{selectedLead.destination || opsText("Destination pending")}</h2>
                             <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
-                              {typeLabels[selectedLead.serviceKey]}
+                              {opsText(typeLabels[selectedLead.serviceKey])}
                             </span>
-                            <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{leadLifecycleLabel(selectedLead)}</span>
+                            <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{opsText(leadLifecycleLabel(selectedLead))}</span>
                           </div>
                           <div className={`mt-2 text-sm ${styles.muted}`}>
-                            {selectedLead.name} · {selectedLead.tripType || selectedLead.service} · {selectedLead.dates || 'Dates pending'}
+                            {selectedLead.name} · {selectedLead.tripType || selectedLead.service} · {selectedLead.dates || opsText("Dates pending")}
                           </div>
                           <div className={`mt-2 text-sm ${styles.soft}`}>
-                            {selectedLead.serviceKey === 'luxury' ? 'High-touch leisure design with premium service framing.' : 'Balanced leisure design focused on clarity, fit, and smooth delivery.'}
+                            {selectedLead.serviceKey === 'luxury' ? 'High-touch leisure design with premium service framing.' : opsText("Balanced leisure design focused on clarity, fit, and smooth delivery.")}
                           </div>
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             {selectedQuote ? (
                               <>
                                 <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedQuote.quoteNumber} v{selectedQuote.version}</span>
-                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{quoteStatusLabels[selectedQuote.status]}</span>
+                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{opsText(quoteStatusLabels[selectedQuote.status])}</span>
                               </>
                             ) : (
                               <button
@@ -6168,14 +5701,14 @@ export function CrmPage() {
                                 onClick={() => createDraftQuoteForLead(selectedLead)}
                                 className={`inline-flex h-8 items-center rounded-lg px-3 text-xs ${styles.buttonGhost}`}
                               >
-                                Create draft quote
-                              </button>
+                                {opsText("Create draft quote")}</button>
                             )}
                           </div>
                           <button
                             type="button"
                             onClick={() => advanceLeadLifecycle(selectedLead)}
-                            disabled={!nextStage}
+                            disabled={!nextStage || !canAdvanceWorkflow}
+                            title={canAdvanceWorkflow ? undefined : 'Your role cannot advance the workflow'}
                             className="mt-4 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                           >
                             <CheckSquare className="h-4 w-4" />
@@ -6185,15 +5718,15 @@ export function CrmPage() {
 
                         <div className="grid grid-cols-3 gap-2 text-right">
                           <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
-                            <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Budget</div>
-                            <div className="mt-1 text-sm font-semibold">{selectedLead.budget || 'Pending'}</div>
+                            <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>{opsText("Budget")}</div>
+                            <div className="mt-1 text-sm font-semibold">{selectedLead.budget || opsText("Pending")}</div>
                           </div>
                           <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
-                            <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Sell</div>
+                            <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>{opsText("Sell")}</div>
                             <div className="mt-1 text-sm font-semibold">${pricing.sell.toLocaleString()}</div>
                           </div>
                           <div className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
-                            <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>Margin</div>
+                            <div className={`text-[10px] uppercase tracking-[0.16em] ${styles.muted}`}>{opsText("Margin")}</div>
                             <div className="mt-1 text-sm font-semibold">{marginPercent}%</div>
                           </div>
                         </div>
@@ -6201,22 +5734,22 @@ export function CrmPage() {
 
                       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Travel mood</div>
+                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Travel mood")}</div>
                           <div className="mt-1 text-sm font-semibold">{selectedLead.urgency || 'Planned trip'}</div>
                           <div className={`mt-1 text-xs ${styles.muted}`}>{selectedLead.preferredContact || 'Contact preference pending'}</div>
                         </div>
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Travelers</div>
-                          <div className="mt-1 text-sm font-semibold">{selectedLead.travelers || 'Pending'}</div>
-                          <div className={`mt-1 text-xs ${styles.muted}`}>{selectedLead.departureCity || 'Origin pending'}</div>
+                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Travelers")}</div>
+                          <div className="mt-1 text-sm font-semibold">{selectedLead.travelers || opsText("Pending")}</div>
+                          <div className={`mt-1 text-xs ${styles.muted}`}>{selectedLead.departureCity || opsText("Origin pending")}</div>
                         </div>
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current owner</div>
+                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Current owner")}</div>
                           <div className="mt-1 text-sm font-semibold">{selectedWorkflowState?.responsibleOwner || leadOwner(selectedLead)}</div>
-                          <div className={`mt-1 text-xs ${styles.muted}`}>Studio work owner</div>
+                          <div className={`mt-1 text-xs ${styles.muted}`}>{opsText("Studio work owner")}</div>
                         </div>
                         <div className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>Current stage</div>
+                          <div className={`text-[11px] uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Current stage")}</div>
                           <div className="mt-1 text-sm font-semibold">{selectedWorkflowState?.currentStageLabel || currentWorkbenchLabel}</div>
                           <div className={`mt-1 text-xs ${styles.muted}`}>{selectedPrimaryBlocker}</div>
                         </div>
@@ -6225,7 +5758,7 @@ export function CrmPage() {
 
                     <div className={`rounded-xl border p-5 ${styles.panel}`}>
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-semibold">Leisure value chain</div>
+                        <div className="font-semibold">{opsText("Leisure value chain")}</div>
                         <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{currentWorkbenchLabel}</span>
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 min-[1900px]:grid-cols-8">
@@ -6260,9 +5793,9 @@ export function CrmPage() {
                                   <Icon className="h-4 w-4" />
                                 </span>
                                 <div className="min-w-0">
-                                  <div className="truncate text-sm font-medium">{label}</div>
+                                  <div className="truncate text-sm font-medium">{opsText(label)}</div>
                                   <div className={`mt-0.5 text-[11px] ${isCurrent ? styles.soft : styles.muted}`}>
-                                    {isDone ? 'Done' : isCurrent ? 'Live' : 'Upcoming'}
+                                    {isDone ? opsText("Done") : isCurrent ? opsText("Live") : opsText("Upcoming")}
                                   </div>
                                 </div>
                               </div>
@@ -6289,22 +5822,22 @@ export function CrmPage() {
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
-                                  <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">Trip Design</div>
+                                  <div className="text-[11px] uppercase tracking-[0.18em] crm-accent-text">{opsText("Trip Design")}</div>
                                   <div className="mt-2 text-xl font-semibold">{selectedItinerary?.title || selectedLead.destination || 'Route pending'}</div>
                                   <div className={`mt-1 text-sm ${styles.muted}`}>
-                                    {selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : selectedLead.dates || 'Dates pending'} - {selectedLead.travelers || 'Travelers pending'}
+                                    {selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : selectedLead.dates || opsText("Dates pending")} - {selectedLead.travelers || opsText("Travelers pending")}
                                   </div>
                                 </div>
                                 <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
-                                  {selectedItinerary ? itineraryStatusLabels[selectedItinerary.status] : 'Local design draft'}
+                                  {selectedItinerary ? opsText(itineraryStatusLabels[selectedItinerary.status]) : 'Local design draft'}
                                 </span>
                               </div>
                               <div className="mt-4 grid gap-3 md:grid-cols-4">
                                 {selectedItinerarySummary.map((card) => (
                                   <div key={card.label} className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
-                                    <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{card.label}</div>
+                                    <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText(card.label)}</div>
                                     <div className="mt-1 text-sm font-semibold">{card.value}</div>
-                                    {card.meta ? <div className={`mt-1 line-clamp-2 text-xs ${styles.muted}`}>{card.meta}</div> : null}
+                                    {card.meta ? <div className={`mt-1 line-clamp-2 text-xs ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                                   </div>
                                 ))}
                               </div>
@@ -6312,12 +5845,12 @@ export function CrmPage() {
 
                             <div className={`overflow-hidden rounded-xl border ${styles.panelSoft}`}>
                               <div className={`grid grid-cols-[70px_minmax(160px,1fr)_120px_minmax(180px,1.2fr)_minmax(160px,1fr)_110px] gap-3 border-b px-4 py-3 text-xs uppercase tracking-[0.14em] ${styles.tableHead}`}>
-                                <div>Stop</div>
-                                <div>City</div>
-                                <div>Nights</div>
-                                <div>Stay</div>
-                                <div>Room</div>
-                                <div>Status</div>
+                                <div>{opsText("Stop")}</div>
+                                <div>{opsText("City")}</div>
+                                <div>{opsText("Nights")}</div>
+                                <div>{opsText("Stay")}</div>
+                                <div>{opsText("Room")}</div>
+                                <div>{opsText("Status")}</div>
                               </div>
                               {selectedItineraryStops.map((stop, index) => (
                                 <div key={`${stop.city}-${index}`} className={`grid grid-cols-[70px_minmax(160px,1fr)_120px_minmax(180px,1.2fr)_minmax(160px,1fr)_110px] gap-3 border-b px-4 py-3 text-sm ${styles.panel}`}>
@@ -6345,7 +5878,7 @@ export function CrmPage() {
                                       disabled={quoteHasLine(`${stop.city} stay - ${selectedItinerary?.stops[index]?.accommodations[0]?.name || stop.stay}`)}
                                       className={`mt-2 block h-7 rounded-lg px-2 text-[10px] disabled:cursor-not-allowed disabled:opacity-45 ${styles.buttonGhost}`}
                                     >
-                                      {quoteHasLine(`${stop.city} stay - ${selectedItinerary?.stops[index]?.accommodations[0]?.name || stop.stay}`) ? 'Linked' : 'Quote'}
+                                      {quoteHasLine(`${stop.city} stay - ${selectedItinerary?.stops[index]?.accommodations[0]?.name || stop.stay}`) ? 'Linked' : opsText("Quote")}
                                     </button>
                                   </div>
                                 </div>
@@ -6355,17 +5888,17 @@ export function CrmPage() {
                             <div className="grid gap-4 lg:grid-cols-2">
                               <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
                                 <div className="flex items-center justify-between gap-3">
-                                  <div className="font-semibold">Movement plan</div>
-                                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedTransportSegments.length || selectedItineraryStops.length} segments</span>
+                                  <div className="font-semibold">{opsText("Movement plan")}</div>
+                                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedTransportSegments.length || selectedItineraryStops.length} {opsText("segments")}</span>
                                 </div>
                                 <div className="mt-4 grid gap-3">
                                   {selectedTransportSegments.length > 0 ? (
                                     selectedTransportSegments.map((segment) => (
                                       <div key={segment.id} className={`rounded-lg border p-3 ${styles.panel}`}>
                                         <div className="flex items-center justify-between gap-3">
-                                          <div className="font-medium">{segment.fromCity} to {segment.toCity}</div>
+                                          <div className="font-medium">{segment.fromCity} {opsText("to")}{' '}{segment.toCity}</div>
                                           <div className="shrink-0 text-right">
-                                            <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{itineraryBookingStatusLabels[segment.bookingStatus]}</span>
+                                            <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{opsText(itineraryBookingStatusLabels[segment.bookingStatus])}</span>
                                             <button
                                               type="button"
                                               onClick={() =>
@@ -6379,11 +5912,11 @@ export function CrmPage() {
                                               disabled={quoteHasLine(`${segment.mode} - ${segment.fromCity} to ${segment.toCity}`)}
                                               className={`mt-2 block h-7 rounded-lg px-2 text-[10px] disabled:cursor-not-allowed disabled:opacity-45 ${styles.buttonGhost}`}
                                             >
-                                              {quoteHasLine(`${segment.mode} - ${segment.fromCity} to ${segment.toCity}`) ? 'Linked' : 'Quote'}
+                                              {quoteHasLine(`${segment.mode} - ${segment.fromCity} to ${segment.toCity}`) ? 'Linked' : opsText("Quote")}
                                             </button>
                                           </div>
                                         </div>
-                                        <div className={`mt-2 text-xs ${styles.muted}`}>{segment.mode} - {segment.supplier || 'Supplier pending'}</div>
+                                        <div className={`mt-2 text-xs ${styles.muted}`}>{segment.mode} - {segment.supplier || opsText("Supplier pending")}</div>
                                         <div className={`mt-1 text-xs ${styles.muted}`}>{segment.reference || 'Reference pending'}</div>
                                       </div>
                                     ))
@@ -6391,7 +5924,7 @@ export function CrmPage() {
                                     selectedItineraryStops.map((stop, index) => (
                                       <div key={`${stop.city}-movement`} className={`rounded-lg border p-3 ${styles.panel}`}>
                                         <div className="flex items-center justify-between gap-3">
-                                          <div className="font-medium">{index === 0 ? selectedLead.departureCity || 'Origin' : selectedItineraryStops[index - 1]?.city} to {stop.city}</div>
+                                          <div className="font-medium">{index === 0 ? selectedLead.departureCity || opsText("Origin") : selectedItineraryStops[index - 1]?.city} {opsText("to")}{' '}{stop.city}</div>
                                           <button
                                             type="button"
                                             onClick={() =>
@@ -6404,10 +5937,10 @@ export function CrmPage() {
                                             disabled={quoteHasLine(`movement - ${index === 0 ? selectedLead.departureCity || 'Origin' : selectedItineraryStops[index - 1]?.city} to ${stop.city}`)}
                                             className={`h-7 rounded-lg px-2 text-[10px] disabled:cursor-not-allowed disabled:opacity-45 ${styles.buttonGhost}`}
                                           >
-                                            {quoteHasLine(`movement - ${index === 0 ? selectedLead.departureCity || 'Origin' : selectedItineraryStops[index - 1]?.city} to ${stop.city}`) ? 'Linked' : 'Quote'}
+                                            {quoteHasLine(`movement - ${index === 0 ? selectedLead.departureCity || 'Origin' : selectedItineraryStops[index - 1]?.city} to ${stop.city}`) ? 'Linked' : opsText("Quote")}
                                           </button>
                                         </div>
-                                        <div className={`mt-2 text-xs ${styles.muted}`}>Movement method and supplier pending.</div>
+                                        <div className={`mt-2 text-xs ${styles.muted}`}>{opsText("Movement method and supplier pending.")}</div>
                                       </div>
                                     ))
                                   )}
@@ -6416,8 +5949,8 @@ export function CrmPage() {
 
                               <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
                                 <div className="flex items-center justify-between gap-3">
-                                  <div className="font-semibold">Experiences</div>
-                                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedItineraryExperiences.length} planned</span>
+                                  <div className="font-semibold">{opsText("Experiences")}</div>
+                                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedItineraryExperiences.length} {opsText("planned")}</span>
                                 </div>
                                 <div className="mt-4 grid gap-3">
                                   {selectedItineraryExperiences.map((experience) => (
@@ -6439,7 +5972,7 @@ export function CrmPage() {
                                             disabled={quoteHasLine(`experience - ${experience.title}`)}
                                             className={`mt-2 block h-7 rounded-lg px-2 text-[10px] disabled:cursor-not-allowed disabled:opacity-45 ${styles.buttonGhost}`}
                                           >
-                                            {quoteHasLine(`experience - ${experience.title}`) ? 'Linked' : 'Quote'}
+                                            {quoteHasLine(`experience - ${experience.title}`) ? 'Linked' : opsText("Quote")}
                                           </button>
                                         </div>
                                       </div>
@@ -6455,7 +5988,7 @@ export function CrmPage() {
                           <div className="grid content-start gap-3 xl:sticky xl:top-24">
                             <div className={`rounded-xl border p-3 ${styles.panelSoft}`}>
                               <div className="flex items-center justify-between gap-3">
-                                <div className="text-sm font-semibold">Design readiness</div>
+                                <div className="text-sm font-semibold">{opsText("Design readiness")}</div>
                                 <span className={`rounded-full px-2.5 py-1 text-[11px] ${isCostingReady ? 'bg-emerald-500/15 text-emerald-200' : 'bg-red-500/15 text-red-200'}`}>
                                   {isCostingReady ? 'Costing ready' : 'Costing gate'}
                                 </span>
@@ -6465,7 +5998,7 @@ export function CrmPage() {
                                   <div key={item.label} className={`min-w-0 rounded-lg border px-2.5 py-2 ${styles.panel}`}>
                                     <div className="flex items-center gap-1.5">
                                       <CheckSquare className={`h-3.5 w-3.5 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
-                                      <span className="truncate text-xs font-medium">{item.label}</span>
+                                      <span className="truncate text-xs font-medium">{opsText(item.label)}</span>
                                     </div>
                                     <div className={`mt-1 truncate text-[11px] ${styles.muted}`}>{item.meta}</div>
                                   </div>
@@ -6475,8 +6008,8 @@ export function CrmPage() {
 
                             <div className={`rounded-xl border p-3 ${styles.panelSoft}`}>
                               <div className="flex items-center justify-between gap-3">
-                                <div className="text-sm font-semibold">Add / edit</div>
-                                <span className={`rounded-full px-2.5 py-1 text-[11px] ${styles.buttonGhost}`}>One editor</span>
+                                <div className="text-sm font-semibold">{opsText("Add / edit")}</div>
+                                <span className={`rounded-full px-2.5 py-1 text-[11px] ${styles.buttonGhost}`}>{opsText("One editor")}</span>
                               </div>
                               <div className="mt-3 grid grid-cols-3 gap-1.5">
                                 {([
@@ -6492,7 +6025,7 @@ export function CrmPage() {
                                     onClick={() => setActiveTripDesignEditor(id)}
                                     className={`h-9 rounded-lg px-2 text-xs transition ${activeTripDesignEditor === id ? styles.buttonActive : styles.buttonGhost}`}
                                   >
-                                    {label}
+                                    {opsText(label)}
                                   </button>
                                 ))}
                               </div>
@@ -6500,11 +6033,11 @@ export function CrmPage() {
                               <div className={`mt-3 rounded-lg border p-3 ${styles.panel}`}>
                                 {activeTripDesignEditor === 'stop' ? (
                                   <div className="grid gap-2">
-                                    <div className="text-sm font-semibold">City stop</div>
-                                    <input value={tripDesignDrafts.stop.city} onChange={(event) => updateTripDesignDraft('stop', 'city', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="City" />
+                                    <div className="text-sm font-semibold">{opsText("City stop")}</div>
+                                    <input value={tripDesignDrafts.stop.city} onChange={(event) => updateTripDesignDraft('stop', 'city', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("City")} />
                                     <div className="grid grid-cols-2 gap-2">
-                                      <input value={tripDesignDrafts.stop.country} onChange={(event) => updateTripDesignDraft('stop', 'country', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Country" />
-                                      <input value={tripDesignDrafts.stop.nights} onChange={(event) => updateTripDesignDraft('stop', 'nights', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Nights" />
+                                      <input value={tripDesignDrafts.stop.country} onChange={(event) => updateTripDesignDraft('stop', 'country', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Country")} />
+                                      <input value={tripDesignDrafts.stop.nights} onChange={(event) => updateTripDesignDraft('stop', 'nights', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Nights")} />
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                       <input type="date" value={tripDesignDrafts.stop.arrivalDate} min={maxDateInput(currentDateInput(), selectedTripDateRange.startDate)} max={selectedTripDateRange.endDate ?? undefined} onChange={(event) => updateTripDesignDraft('stop', 'arrivalDate', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
@@ -6516,47 +6049,45 @@ export function CrmPage() {
                                       ))}
                                     </select>
                                     <button type="button" onClick={submitTripDesignStop} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                                      Add city
-                                    </button>
+                                      {opsText("Add city")}</button>
                                   </div>
                                 ) : null}
 
                                 {activeTripDesignEditor === 'stay' ? (
                                   <div className="grid gap-2">
-                                    <div className="text-sm font-semibold">Stay</div>
+                                    <div className="text-sm font-semibold">{opsText("Stay")}</div>
                                     <select value={tripDesignDrafts.stay.stopId || selectedItinerary?.stops[0]?.id || ''} onChange={(event) => updateTripDesignDraft('stay', 'stopId', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
-                                      <option value="">Choose stop</option>
+                                      <option value="">{opsText("Choose stop")}</option>
                                       {selectedItinerary?.stops.map((stop) => (
                                         <option key={stop.id} value={stop.id}>{stop.city}</option>
                                       ))}
                                     </select>
-                                    <input value={tripDesignDrafts.stay.name} onChange={(event) => updateTripDesignDraft('stay', 'name', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Hotel / accommodation" />
-                                    <input value={tripDesignDrafts.stay.roomType} onChange={(event) => updateTripDesignDraft('stay', 'roomType', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Room type" />
+                                    <input value={tripDesignDrafts.stay.name} onChange={(event) => updateTripDesignDraft('stay', 'name', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Hotel / accommodation")} />
+                                    <input value={tripDesignDrafts.stay.roomType} onChange={(event) => updateTripDesignDraft('stay', 'roomType', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Room type")} />
                                     <div className="grid grid-cols-2 gap-2">
                                       <input type="date" value={tripDesignDrafts.stay.checkIn} min={maxDateInput(currentDateInput(), selectedStayStop?.arrivalDate)} max={selectedStayStop?.departureDate ?? undefined} onChange={(event) => updateTripDesignDraft('stay', 'checkIn', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
                                       <input type="date" value={tripDesignDrafts.stay.checkOut} min={maxDateInput(currentDateInput(), tripDesignDrafts.stay.checkIn, selectedStayStop?.arrivalDate)} max={selectedStayStop?.departureDate ?? undefined} onChange={(event) => updateTripDesignDraft('stay', 'checkOut', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
-                                      <input value={tripDesignDrafts.stay.rooms} onChange={(event) => updateTripDesignDraft('stay', 'rooms', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Rooms" />
+                                      <input value={tripDesignDrafts.stay.rooms} onChange={(event) => updateTripDesignDraft('stay', 'rooms', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Rooms")} />
                                       <select value={tripDesignDrafts.stay.bookingStatus} onChange={(event) => updateTripDesignDraft('stay', 'bookingStatus', event.target.value as TripDesignDrafts['stay']['bookingStatus'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
                                         {Object.keys(itineraryBookingStatusLabels).map((status) => (
-                                          <option key={status} value={status}>{itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels]}</option>
+                                          <option key={status} value={status}>{opsText(itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels])}</option>
                                         ))}
                                       </select>
                                     </div>
-                                    <input value={tripDesignDrafts.stay.supplier} onChange={(event) => updateTripDesignDraft('stay', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Supplier" />
+                                    <input value={tripDesignDrafts.stay.supplier} onChange={(event) => updateTripDesignDraft('stay', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Supplier")} />
                                     <button type="button" onClick={submitTripDesignStay} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                                      Add stay
-                                    </button>
+                                      {opsText("Add stay")}</button>
                                   </div>
                                 ) : null}
 
                                 {activeTripDesignEditor === 'movement' ? (
                                   <div className="grid gap-2">
-                                    <div className="text-sm font-semibold">Movement</div>
+                                    <div className="text-sm font-semibold">{opsText("Movement")}</div>
                                     <div className="grid grid-cols-2 gap-2">
-                                      <input value={tripDesignDrafts.movement.fromCity} onChange={(event) => updateTripDesignDraft('movement', 'fromCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="From" />
-                                      <input value={tripDesignDrafts.movement.toCity} onChange={(event) => updateTripDesignDraft('movement', 'toCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="To" />
+                                      <input value={tripDesignDrafts.movement.fromCity} onChange={(event) => updateTripDesignDraft('movement', 'fromCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("From")} />
+                                      <input value={tripDesignDrafts.movement.toCity} onChange={(event) => updateTripDesignDraft('movement', 'toCity', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("To")} />
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                       <select value={tripDesignDrafts.movement.mode} onChange={(event) => updateTripDesignDraft('movement', 'mode', event.target.value as TripDesignDrafts['movement']['mode'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
@@ -6566,7 +6097,7 @@ export function CrmPage() {
                                       </select>
                                       <select value={tripDesignDrafts.movement.bookingStatus} onChange={(event) => updateTripDesignDraft('movement', 'bookingStatus', event.target.value as TripDesignDrafts['movement']['bookingStatus'])} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
                                         {Object.keys(itineraryBookingStatusLabels).map((status) => (
-                                          <option key={status} value={status}>{itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels]}</option>
+                                          <option key={status} value={status}>{opsText(itineraryBookingStatusLabels[status as keyof typeof itineraryBookingStatusLabels])}</option>
                                         ))}
                                       </select>
                                     </div>
@@ -6574,39 +6105,37 @@ export function CrmPage() {
                                       <input type="datetime-local" value={tripDesignDrafts.movement.departureAt} min={`${maxDateInput(currentDateInput(), selectedTripDateRange.startDate) ?? currentDateInput()}T00:00`} max={selectedTripDateRange.endDate ? `${selectedTripDateRange.endDate}T23:59` : undefined} onChange={(event) => updateTripDesignDraft('movement', 'departureAt', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
                                       <input type="datetime-local" value={tripDesignDrafts.movement.arrivalAt} min={tripDesignDrafts.movement.departureAt || `${maxDateInput(currentDateInput(), selectedTripDateRange.startDate) ?? currentDateInput()}T00:00`} max={selectedTripDateRange.endDate ? `${selectedTripDateRange.endDate}T23:59` : undefined} onChange={(event) => updateTripDesignDraft('movement', 'arrivalAt', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} />
                                     </div>
-                                    <input value={tripDesignDrafts.movement.supplier} onChange={(event) => updateTripDesignDraft('movement', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Supplier" />
+                                    <input value={tripDesignDrafts.movement.supplier} onChange={(event) => updateTripDesignDraft('movement', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Supplier")} />
                                     <button type="button" onClick={submitTripDesignMovement} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                                      Add movement
-                                    </button>
+                                      {opsText("Add movement")}</button>
                                   </div>
                                 ) : null}
 
                                 {activeTripDesignEditor === 'experience' ? (
                                   <div className="grid gap-2">
-                                    <div className="text-sm font-semibold">Experience</div>
+                                    <div className="text-sm font-semibold">{opsText("Experience")}</div>
                                     <select value={tripDesignDrafts.experience.stopId || selectedItinerary?.stops[0]?.id || ''} onChange={(event) => updateTripDesignDraft('experience', 'stopId', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.select}`}>
-                                      <option value="">Choose stop</option>
+                                      <option value="">{opsText("Choose stop")}</option>
                                       {selectedItinerary?.stops.map((stop) => (
                                         <option key={stop.id} value={stop.id}>{stop.city}</option>
                                       ))}
                                     </select>
-                                    <input value={tripDesignDrafts.experience.title} onChange={(event) => updateTripDesignDraft('experience', 'title', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Activity / experience" />
-                                    <input value={tripDesignDrafts.experience.category} onChange={(event) => updateTripDesignDraft('experience', 'category', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Category" />
-                                    <input value={tripDesignDrafts.experience.supplier} onChange={(event) => updateTripDesignDraft('experience', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder="Supplier" />
+                                    <input value={tripDesignDrafts.experience.title} onChange={(event) => updateTripDesignDraft('experience', 'title', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Activity / experience")} />
+                                    <input value={tripDesignDrafts.experience.category} onChange={(event) => updateTripDesignDraft('experience', 'category', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Category")} />
+                                    <input value={tripDesignDrafts.experience.supplier} onChange={(event) => updateTripDesignDraft('experience', 'supplier', event.target.value)} className={`h-9 rounded-lg border px-3 text-xs ${styles.input}`} placeholder={opsText("Supplier")} />
                                     <button type="button" onClick={submitTripDesignExperience} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                                      Add experience
-                                    </button>
+                                      {opsText("Add experience")}</button>
                                   </div>
                                 ) : null}
 
                                 {activeTripDesignEditor === 'notes' ? (
                                   <div className="grid gap-2">
-                                    <div className="text-sm font-semibold">Design notes</div>
+                                    <div className="text-sm font-semibold">{opsText("Design notes")}</div>
                                     <textarea
                                       value={selectedLead.internalNotes || ''}
                                       onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
                                       className={`h-44 w-full resize-none rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
-                                      placeholder="Capture routing logic, hotel reasons, room preferences, activity notes, and proposal angle."
+                                      placeholder={opsText("Capture routing logic, hotel reasons, room preferences, activity notes, and proposal angle.")}
                                     />
                                   </div>
                                 ) : null}
@@ -6617,11 +6146,10 @@ export function CrmPage() {
                               <div className="grid grid-cols-2 gap-2">
                                 <button type="button" onClick={() => setDetailTab('research')} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
                                   <Search className="h-4 w-4" />
-                                  Research
-                                </button>
+                                  {opsText("Research")}</button>
                                 <button type="button" onClick={openCostingWithGate} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-white ${isCostingReady ? 'bg-emerald-600' : 'bg-red-600'}`}>
                                   <FileText className="h-4 w-4" />
-                                  {isCostingReady ? 'Costing' : 'Gate'}
+                                  {isCostingReady ? opsText("Costing") : 'Gate'}
                                 </button>
                               </div>
                               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -6629,7 +6157,7 @@ export function CrmPage() {
                                   <div key={item.label} className={`rounded-lg border px-2.5 py-2 ${styles.panel}`}>
                                     <div className="flex items-center gap-1.5">
                                       <CheckSquare className={`h-3.5 w-3.5 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
-                                      <span className="truncate text-xs font-medium">{item.label}</span>
+                                      <span className="truncate text-xs font-medium">{opsText(item.label)}</span>
                                     </div>
                                   </div>
                                 ))}
@@ -6648,15 +6176,15 @@ export function CrmPage() {
                                   <div className="font-semibold">{row.service}</div>
                                   <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{row.status}</span>
                                 </div>
-                                <div className={`mt-3 text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Supplier</div>
+                                <div className={`mt-3 text-xs uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Supplier")}</div>
                                 <div className="mt-1 text-sm">{row.supplier}</div>
                                 <div className="mt-4 grid grid-cols-2 gap-2">
                                   <div className={`rounded-lg border px-3 py-2 ${styles.panel}`}>
-                                    <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Cost</div>
+                                    <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Cost")}</div>
                                     <div className="mt-1 text-sm font-semibold">${row.cost.toLocaleString()}</div>
                                   </div>
                                   <div className={`rounded-lg border px-3 py-2 ${styles.panel}`}>
-                                    <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Sell</div>
+                                    <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Sell")}</div>
                                     <div className="mt-1 text-sm font-semibold">${row.sell.toLocaleString()}</div>
                                   </div>
                                 </div>
@@ -6664,31 +6192,30 @@ export function CrmPage() {
                             ))}
                           </div>
                           <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                            <div className="font-semibold">Research focus</div>
+                            <div className="font-semibold">{opsText("Research focus")}</div>
                             <div className="mt-3 grid gap-3 md:grid-cols-3">
                               {leisureProposalCards(selectedLead).map((card) => (
                                 <div key={card.label} className={`rounded-lg border p-4 ${styles.panel}`}>
-                                  <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                                  <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                                   <div className="mt-2 font-semibold">{card.value}</div>
-                                  {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                                  {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                                 </div>
                               ))}
                             </div>
                           </div>
                           <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                              <div className="font-semibold">Supplier notes</div>
+                              <div className="font-semibold">{opsText("Supplier notes")}</div>
                               <textarea
                                 className={`mt-4 h-36 w-full resize-none rounded-xl border px-4 py-4 text-sm leading-6 outline-none transition ${styles.input}`}
                                 defaultValue={`${selectedLeisureRows[0]?.supplier || 'Supplier partner'} availability should be protected before client review. Keep hotel and transfer timing aligned with ${selectedLead.dates || 'the current travel window'}.`}
                               />
                             </div>
                             <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4">
-                              <div className="text-xs uppercase tracking-[0.18em] text-red-200">Decision alert</div>
+                              <div className="text-xs uppercase tracking-[0.18em] text-red-200">{opsText("Decision alert")}</div>
                               <div className="mt-3 text-sm font-semibold text-white">{leadPrimaryBlocker(selectedLead)}</div>
                               <p className="mt-2 text-sm leading-6 text-red-100/90">
-                                Protect the best-fit suppliers before this request moves into package comparison.
-                              </p>
+                                {opsText("Protect the best-fit suppliers before this request moves into package comparison.")}</p>
                             </div>
                           </div>
                         </div>
@@ -6699,20 +6226,20 @@ export function CrmPage() {
                           {quoteLineSaveIndicator ? <div className="flex justify-end">{quoteLineSaveIndicator}</div> : null}
                           <div className={`overflow-hidden rounded-xl border ${styles.panelSoft}`}>
                             <div className={`grid grid-cols-[130px_1.1fr_1fr_90px_110px_110px_100px] gap-3 border-b px-4 py-3 text-xs uppercase tracking-[0.14em] ${styles.tableHead}`}>
-                              <div>Category</div>
-                              <div>Description</div>
-                              <div>Supplier</div>
-                              <div>Qty</div>
-                              <div>Cost</div>
-                              <div>Sell</div>
-                              <div>Status</div>
+                              <div>{opsText("Category")}</div>
+                              <div>{opsText("Description")}</div>
+                              <div>{opsText("Supplier")}</div>
+                              <div>{opsText("Qty")}</div>
+                              <div>{opsText("Cost")}</div>
+                              <div>{opsText("Sell")}</div>
+                              <div>{opsText("Status")}</div>
                             </div>
                             {selectedQuote
                               ? selectedQuote.lines.map((line) => (
                                   <div key={line.id} className={`grid grid-cols-[130px_1.1fr_1fr_90px_110px_110px_100px] gap-3 border-b px-4 py-3 text-sm ${styles.panel}`}>
                                     <select value={line.category} onChange={(event) => saveQuoteLine(line, { category: event.target.value as QuoteLineCategory })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
                                       {quoteLineCategories.map((category) => (
-                                        <option key={category} value={category}>{quoteLineCategoryLabels[category]}</option>
+                                        <option key={category} value={category}>{opsText(quoteLineCategoryLabels[category])}</option>
                                       ))}
                                     </select>
                                     <input value={quoteLineValue(line, 'description')} onChange={(event) => scheduleQuoteLineSave(line, { description: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
@@ -6722,7 +6249,7 @@ export function CrmPage() {
                                     <input value={quoteLineValue(line, 'unitSell')} onChange={(event) => scheduleQuoteLineSave(line, { unitSell: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
                                     <select value={line.status} onChange={(event) => saveQuoteLine(line, { status: event.target.value as QuoteLineStatus })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
                                       {quoteLineStatuses.map((status) => (
-                                        <option key={status} value={status}>{quoteLineStatusLabels[status]}</option>
+                                        <option key={status} value={status}>{opsText(quoteLineStatusLabels[status])}</option>
                                       ))}
                                     </select>
                                   </div>
@@ -6740,35 +6267,34 @@ export function CrmPage() {
                               <div className={`grid grid-cols-[130px_1.1fr_1fr_90px_110px_110px_100px_auto] gap-3 px-4 py-3 text-sm ${styles.panelSoft}`}>
                                 <select value={quoteLineDraft.category} onChange={(event) => updateQuoteLineDraft('category', event.target.value as QuoteLineCategory)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
                                   {quoteLineCategories.map((category) => (
-                                    <option key={category} value={category}>{quoteLineCategoryLabels[category]}</option>
+                                    <option key={category} value={category}>{opsText(quoteLineCategoryLabels[category])}</option>
                                   ))}
                                 </select>
-                                <input value={quoteLineDraft.description} onChange={(event) => updateQuoteLineDraft('description', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="New quote line" />
-                                <input value={quoteLineDraft.supplier} onChange={(event) => updateQuoteLineDraft('supplier', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Supplier" />
+                                <input value={quoteLineDraft.description} onChange={(event) => updateQuoteLineDraft('description', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("New quote line")} />
+                                <input value={quoteLineDraft.supplier} onChange={(event) => updateQuoteLineDraft('supplier', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("Supplier")} />
                                 <input value={quoteLineDraft.quantity} onChange={(event) => updateQuoteLineDraft('quantity', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
                                 <input value={quoteLineDraft.unitCost} onChange={(event) => updateQuoteLineDraft('unitCost', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
                                 <input value={quoteLineDraft.unitSell} onChange={(event) => updateQuoteLineDraft('unitSell', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
                                 <select value={quoteLineDraft.status} onChange={(event) => updateQuoteLineDraft('status', event.target.value as QuoteLineStatus)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
                                   {quoteLineStatuses.map((status) => (
-                                    <option key={status} value={status}>{quoteLineStatusLabels[status]}</option>
+                                    <option key={status} value={status}>{opsText(quoteLineStatusLabels[status])}</option>
                                   ))}
                                 </select>
                                 <button type="button" onClick={() => submitQuoteLine(selectedQuote)} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                                  Add
-                                </button>
+                                  {opsText("Add")}</button>
                               </div>
                             ) : null}
                             <div className="grid grid-cols-3 gap-3 p-4">
                               <div className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
-                                <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Total cost</div>
+                                <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Total cost")}</div>
                                 <div className="mt-1 text-sm font-semibold">{moneyValue(pricing.cost, selectedQuote?.currency ?? 'USD')}</div>
                               </div>
                               <div className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
-                                <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Total sell</div>
+                                <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Total sell")}</div>
                                 <div className="mt-1 text-sm font-semibold">{moneyValue(pricing.sell, selectedQuote?.currency ?? 'USD')}</div>
                               </div>
                               <div className={`rounded-lg border px-3 py-3 ${styles.panel}`}>
-                                <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>Gross margin</div>
+                                <div className={`text-[10px] uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Gross margin")}</div>
                                 <div className="mt-1 text-sm font-semibold">{marginPercent}%</div>
                               </div>
                             </div>
@@ -6776,11 +6302,10 @@ export function CrmPage() {
                           <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4">
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
-                                <div className="text-xs uppercase tracking-[0.18em] text-red-200">Package gate</div>
-                                <div className="mt-3 text-sm font-semibold text-white">Do not release package until pricing is complete</div>
+                                <div className="text-xs uppercase tracking-[0.18em] text-red-200">{opsText("Package gate")}</div>
+                                <div className="mt-3 text-sm font-semibold text-white">{opsText("Do not release package until pricing is complete")}</div>
                                 <p className="mt-2 text-sm leading-6 text-red-100/90">
-                                  Use costing to pressure-test supplier, hotel, transfer, and experience sell values before the client-facing package is locked.
-                                </p>
+                                  {opsText("Use costing to pressure-test supplier, hotel, transfer, and experience sell values before the client-facing package is locked.")}</p>
                               </div>
                               <button type="button" onClick={openPackageWithGate} className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium text-white ${isPackageReady ? 'bg-emerald-600' : 'bg-red-600'}`}>
                                 <Sparkles className="h-4 w-4" />
@@ -6792,7 +6317,7 @@ export function CrmPage() {
                                 <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg border border-red-300/15 bg-black/10 px-3 py-2">
                                   <span className="flex min-w-0 items-center gap-2">
                                     <CheckSquare className={`h-4 w-4 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
-                                    <span className="text-sm font-medium text-white">{item.label}</span>
+                                    <span className="text-sm font-medium text-white">{opsText(item.label)}</span>
                                   </span>
                                   <span className="truncate text-right text-xs text-red-100/80">{item.meta}</span>
                                 </div>
@@ -6807,13 +6332,13 @@ export function CrmPage() {
                           <div className="grid gap-4">
                             {!isPackageReady ? (
                               <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4">
-                                <div className="text-xs uppercase tracking-[0.18em] text-red-200">Package not ready</div>
+                                <div className="text-xs uppercase tracking-[0.18em] text-red-200">{opsText("Package not ready")}</div>
                                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                                   {selectedPackageGateItems.map((item) => (
                                     <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg border border-red-300/15 bg-black/10 px-3 py-2">
                                       <span className="flex min-w-0 items-center gap-2">
                                         <CheckSquare className={`h-4 w-4 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
-                                        <span className="text-sm font-medium text-white">{item.label}</span>
+                                        <span className="text-sm font-medium text-white">{opsText(item.label)}</span>
                                       </span>
                                       <span className="truncate text-right text-xs text-red-100/80">{item.meta}</span>
                                     </div>
@@ -6827,23 +6352,22 @@ export function CrmPage() {
                                   <div className="font-semibold">{selectedQuote.quoteNumber} v{selectedQuote.version}</div>
                                   <div className={`mt-1 text-sm ${styles.muted}`}>{selectedQuote.notes || 'Quote package ready for client review.'}</div>
                                 </div>
-                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{quoteStatusLabels[selectedQuote.status]}</span>
+                                <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{opsText(quoteStatusLabels[selectedQuote.status])}</span>
                               </div>
                               <button type="button" onClick={() => setDetailTab('clientReview')} className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white">
                                 <Mail className="h-4 w-4" />
-                                Preview client proposal
-                              </button>
+                                {opsText("Preview client proposal")}</button>
                               <div className="mt-5 grid gap-3 md:grid-cols-3">
                                 <div className={`rounded-lg border p-4 ${styles.panel}`}>
-                                  <div className={`text-sm ${styles.muted}`}>Client sell</div>
+                                  <div className={`text-sm ${styles.muted}`}>{opsText("Client sell")}</div>
                                   <div className="mt-2 text-xl font-semibold text-emerald-300">{moneyValue(selectedQuote.subtotalSell, selectedQuote.currency)}</div>
                                 </div>
                                 <div className={`rounded-lg border p-4 ${styles.panel}`}>
-                                  <div className={`text-sm ${styles.muted}`}>Gross margin</div>
+                                  <div className={`text-sm ${styles.muted}`}>{opsText("Gross margin")}</div>
                                   <div className="mt-2 text-xl font-semibold text-fuchsia-300">{moneyValue(selectedQuote.margin, selectedQuote.currency)}</div>
                                 </div>
                                 <div className={`rounded-lg border p-4 ${styles.panel}`}>
-                                  <div className={`text-sm ${styles.muted}`}>Valid until</div>
+                                  <div className={`text-sm ${styles.muted}`}>{opsText("Valid until")}</div>
                                   <div className="mt-2 text-xl font-semibold">{selectedQuote.validUntil || 'Not set'}</div>
                                 </div>
                               </div>
@@ -6859,7 +6383,7 @@ export function CrmPage() {
                                     <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{line.status}</span>
                                   </div>
                                   <div className="mt-4 flex items-center justify-between gap-3">
-                                    <span className={styles.muted}>Sell</span>
+                                    <span className={styles.muted}>{opsText("Sell")}</span>
                                     <span className="font-semibold text-emerald-300">{moneyValue(line.totalSell, selectedQuote.currency)}</span>
                                   </div>
                                 </div>
@@ -6873,7 +6397,7 @@ export function CrmPage() {
                               <div className="flex items-start justify-between gap-3">
                                 <div>
                                   <div className="font-semibold">{option.name}</div>
-                                  <div className={`mt-1 text-xs ${styles.muted}`}>Package concept</div>
+                                  <div className={`mt-1 text-xs ${styles.muted}`}>{opsText("Package concept")}</div>
                                 </div>
                                 <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{option.fit}</span>
                               </div>
@@ -6882,7 +6406,7 @@ export function CrmPage() {
                               <div className="mt-4 grid gap-3">
                                 {leisureProposalCards(selectedLead).map((card) => (
                                   <div key={card.label} className={`rounded-lg border p-3 ${styles.panel}`}>
-                                    <div className={`text-xs ${styles.muted}`}>{card.label}</div>
+                                    <div className={`text-xs ${styles.muted}`}>{opsText(card.label)}</div>
                                     <div className="mt-1 text-sm font-semibold">{card.value}</div>
                                   </div>
                                 ))}
@@ -6899,11 +6423,10 @@ export function CrmPage() {
                             <div className={`border-b px-6 py-5 ${styles.panel}`}>
                               <div className="flex flex-wrap items-start justify-between gap-4">
                                 <div>
-                                  <div className={`text-xs uppercase tracking-[0.2em] ${styles.muted}`}>Client proposal preview</div>
+                                  <div className={`text-xs uppercase tracking-[0.2em] ${styles.muted}`}>{opsText("Client proposal preview")}</div>
                                   <h3 className="mt-2 text-2xl font-semibold">{selectedLead.destination || 'Tailored journey'}</h3>
                                   <p className={`mt-2 max-w-2xl text-sm leading-6 ${styles.soft}`}>
-                                    Prepared for {selectedLead.name}. This view removes internal cost, margin, and operational notes so the client sees only the story, inclusions, and next decision.
-                                  </p>
+                                    {opsText("Prepared for")}{' '}{selectedLead.name}{opsText(". This view removes internal cost, margin, and operational notes so the client sees only the story, inclusions, and next decision.")}</p>
                                 </div>
                                 <div className="text-right">
                                   <div className="text-lg font-semibold crm-accent-text">DPM</div>
@@ -6918,7 +6441,7 @@ export function CrmPage() {
                                   { label: 'Proposal total', value: selectedQuote ? moneyValue(selectedQuote.subtotalSell, selectedQuote.currency) : 'Quote pending' },
                                 ].map((item) => (
                                   <div key={item.label} className={`rounded-lg border p-3 ${styles.panelSoft}`}>
-                                    <div className={`text-xs ${styles.muted}`}>{item.label}</div>
+                                    <div className={`text-xs ${styles.muted}`}>{opsText(item.label)}</div>
                                     <div className="mt-1 text-sm font-semibold">{item.value}</div>
                                   </div>
                                 ))}
@@ -6928,15 +6451,15 @@ export function CrmPage() {
                             <div className="grid gap-5 p-6">
                               <section>
                                 <div className="flex items-center justify-between gap-3">
-                                  <h4 className="font-semibold">Journey flow</h4>
-                                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedItineraryStops.length || 0} stops</span>
+                                  <h4 className="font-semibold">{opsText("Journey flow")}</h4>
+                                  <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedItineraryStops.length || 0} {opsText("stops")}</span>
                                 </div>
                                 <div className="mt-3 grid gap-3">
                                   {selectedItineraryStops.length > 0 ? selectedItineraryStops.map((stop, index) => (
                                     <div key={`${stop.city}-${index}`} className={`rounded-xl border p-4 ${styles.panel}`}>
                                       <div className="flex flex-wrap items-start justify-between gap-3">
                                         <div>
-                                          <div className="text-xs font-semibold crm-accent-text">Day block {index + 1}</div>
+                                          <div className="text-xs font-semibold crm-accent-text">{opsText("Day block")}{' '}{index + 1}</div>
                                           <div className="mt-1 font-semibold">{stop.city}</div>
                                           <div className={`mt-1 text-sm ${styles.muted}`}>{stop.dates} - {stop.nights}</div>
                                         </div>
@@ -6944,38 +6467,38 @@ export function CrmPage() {
                                       </div>
                                       <div className="mt-3 grid gap-3 md:grid-cols-2">
                                         <div>
-                                          <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Stay</div>
+                                          <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Stay")}</div>
                                           <div className="mt-1 text-sm font-medium">{stop.stay}</div>
                                           <div className={`mt-1 text-xs ${styles.muted}`}>{stop.room}</div>
                                         </div>
                                         <div>
-                                          <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Experience note</div>
+                                          <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Experience note")}</div>
                                           <div className={`mt-1 text-sm leading-6 ${styles.soft}`}>{stop.note}</div>
                                         </div>
                                       </div>
                                     </div>
                                   )) : (
-                                    <div className={`rounded-xl border p-4 text-sm ${styles.panel}`}>Add city stops in Trip Design to build the client journey flow.</div>
+                                    <div className={`rounded-xl border p-4 text-sm ${styles.panel}`}>{opsText("Add city stops in Trip Design to build the client journey flow.")}</div>
                                   )}
                                 </div>
                               </section>
 
                               <section className="grid gap-4 lg:grid-cols-2">
                                 <div className={`rounded-xl border p-4 ${styles.panel}`}>
-                                  <div className="font-semibold">Movement plan</div>
+                                  <div className="font-semibold">{opsText("Movement plan")}</div>
                                   <div className="mt-3 grid gap-2">
                                     {selectedTransportSegments.length > 0 ? selectedTransportSegments.map((segment) => (
                                       <div key={segment.id} className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
-                                        <div className="text-sm font-medium">{segment.fromCity} to {segment.toCity}</div>
+                                        <div className="text-sm font-medium">{segment.fromCity} {opsText("to")}{' '}{segment.toCity}</div>
                                         <div className={`mt-1 text-xs ${styles.muted}`}>{segment.mode} - {formatDateRange(segment.departureAt, segment.arrivalAt)}</div>
                                       </div>
                                     )) : (
-                                      <div className={`text-sm ${styles.muted}`}>Movement details will appear after flights or transfers are added.</div>
+                                      <div className={`text-sm ${styles.muted}`}>{opsText("Movement details will appear after flights or transfers are added.")}</div>
                                     )}
                                   </div>
                                 </div>
                                 <div className={`rounded-xl border p-4 ${styles.panel}`}>
-                                  <div className="font-semibold">Experience highlights</div>
+                                  <div className="font-semibold">{opsText("Experience highlights")}</div>
                                   <div className="mt-3 grid gap-2">
                                     {selectedItineraryExperiences.length > 0 ? selectedItineraryExperiences.slice(0, 4).map((experience) => (
                                       <div key={`${experience.title}-${experience.timing}`} className={`rounded-lg border px-3 py-2 ${styles.panelSoft}`}>
@@ -6983,7 +6506,7 @@ export function CrmPage() {
                                         <div className={`mt-1 text-xs ${styles.muted}`}>{experience.category} - {experience.timing}</div>
                                       </div>
                                     )) : (
-                                      <div className={`text-sm ${styles.muted}`}>Add activities in Trip Design to make the proposal feel complete.</div>
+                                      <div className={`text-sm ${styles.muted}`}>{opsText("Add activities in Trip Design to make the proposal feel complete.")}</div>
                                     )}
                                   </div>
                                 </div>
@@ -6991,20 +6514,20 @@ export function CrmPage() {
 
                               <section>
                                 <div className="flex flex-wrap items-center justify-between gap-3">
-                                  <h4 className="font-semibold">Included in this proposal</h4>
+                                  <h4 className="font-semibold">{opsText("Included in this proposal")}</h4>
                                   {selectedQuote ? <span className="text-lg font-semibold text-emerald-300">{moneyValue(selectedQuote.subtotalSell, selectedQuote.currency)}</span> : null}
                                 </div>
                                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                                   {selectedClientProposalSections.length > 0 ? selectedClientProposalSections.map((section) => (
                                     <div key={section.title} className={`rounded-xl border p-4 ${styles.panel}`}>
-                                      <div className="font-semibold">{section.title}</div>
-                                      <div className={`mt-1 text-xs ${styles.muted}`}>{section.subtitle}</div>
+                                      <div className="font-semibold">{opsText(section.title)}</div>
+                                      <div className={`mt-1 text-xs ${styles.muted}`}>{opsText(section.subtitle)}</div>
                                       <div className="mt-3 grid gap-2">
                                         {section.lines.map((line) => (
                                           <div key={line.id} className="flex items-start justify-between gap-3 text-sm">
                                             <div>
                                               <div className="font-medium">{line.description}</div>
-                                              <div className={`mt-0.5 text-xs ${styles.muted}`}>{quoteLineCategoryLabels[line.category]}</div>
+                                              <div className={`mt-0.5 text-xs ${styles.muted}`}>{opsText(quoteLineCategoryLabels[line.category])}</div>
                                             </div>
                                             <div className="font-semibold text-emerald-300">{moneyValue(line.totalSell, selectedQuote?.currency ?? 'USD')}</div>
                                           </div>
@@ -7012,7 +6535,7 @@ export function CrmPage() {
                                       </div>
                                     </div>
                                   )) : (
-                                    <div className={`rounded-xl border p-4 text-sm ${styles.panel}`}>Quote lines will become client-facing inclusions after Trip Design is linked to Costing.</div>
+                                    <div className={`rounded-xl border p-4 text-sm ${styles.panel}`}>{opsText("Quote lines will become client-facing inclusions after Trip Design is linked to Costing.")}</div>
                                   )}
                                 </div>
                               </section>
@@ -7022,13 +6545,13 @@ export function CrmPage() {
                           <div className="grid content-start gap-4">
                             {!isPackageReady ? (
                               <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4">
-                                <div className="text-xs uppercase tracking-[0.18em] text-red-200">Before sending</div>
+                                <div className="text-xs uppercase tracking-[0.18em] text-red-200">{opsText("Before sending")}</div>
                                 <div className="mt-3 grid gap-2">
                                   {selectedPackageGateItems.map((item) => (
                                     <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg border border-red-300/15 bg-black/10 px-3 py-2">
                                       <span className="flex min-w-0 items-center gap-2">
                                         <CheckSquare className={`h-4 w-4 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
-                                        <span className="text-sm font-medium text-white">{item.label}</span>
+                                        <span className="text-sm font-medium text-white">{opsText(item.label)}</span>
                                       </span>
                                       <span className="truncate text-right text-xs text-red-100/80">{item.meta}</span>
                                     </div>
@@ -7039,7 +6562,7 @@ export function CrmPage() {
 
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
                               <div className="flex items-center justify-between gap-3">
-                                <div className="font-semibold">Communication composer</div>
+                                <div className="font-semibold">{opsText("Communication composer")}</div>
                                 <span className={`rounded-full px-2.5 py-1 text-xs ${isCommunicationReady ? 'bg-emerald-500/15 text-emerald-200' : 'bg-red-500/15 text-red-200'}`}>
                                   {isCommunicationReady ? 'Ready' : 'Check gates'}
                                 </span>
@@ -7047,12 +6570,12 @@ export function CrmPage() {
                               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                                 <select value={communicationDraft.kind} onChange={(event) => updateCommunicationKind(event.target.value as CommunicationKind)} className={`h-10 rounded-lg border px-3 text-sm ${styles.select}`}>
                                   {communicationKinds.map((kind) => (
-                                    <option key={kind} value={kind}>{communicationKindLabels[kind]}</option>
+                                    <option key={kind} value={kind}>{opsText(communicationKindLabels[kind])}</option>
                                   ))}
                                 </select>
                                 <select value={communicationDraft.channel} onChange={(event) => setCommunicationDraft((current) => ({ ...current, channel: event.target.value as CommunicationChannel }))} className={`h-10 rounded-lg border px-3 text-sm ${styles.select}`}>
                                   {communicationChannels.map((channel) => (
-                                    <option key={channel} value={channel}>{communicationChannelLabels[channel]}</option>
+                                    <option key={channel} value={channel}>{opsText(communicationChannelLabels[channel])}</option>
                                   ))}
                                 </select>
                               </div>
@@ -7066,23 +6589,23 @@ export function CrmPage() {
                                   <div key={item.label} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${styles.panel}`}>
                                     <span className="flex min-w-0 items-center gap-2">
                                       <CheckSquare className={`h-4 w-4 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
-                                      <span className="text-sm font-medium">{item.label}</span>
+                                      <span className="text-sm font-medium">{opsText(item.label)}</span>
                                     </span>
                                     <span className={`truncate text-right text-xs ${styles.muted}`}>{item.meta}</span>
                                   </div>
                                 ))}
                               </div>
                               <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-                                <input value={communicationDraft.followUpDue} onChange={(event) => setCommunicationDraft((current) => ({ ...current, followUpDue: event.target.value }))} className={`h-10 rounded-lg border px-3 text-sm ${styles.input}`} placeholder="Next follow-up" />
+                                <input value={communicationDraft.followUpDue} onChange={(event) => setCommunicationDraft((current) => ({ ...current, followUpDue: event.target.value }))} className={`h-10 rounded-lg border px-3 text-sm ${styles.input}`} placeholder={opsText("Next follow-up")} />
                                 <button type="button" onClick={() => saveCommunicationRecord(isCommunicationReady ? 'ready' : 'draft')} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-white ${isCommunicationReady ? 'bg-emerald-600' : 'bg-red-600'}`}>
                                   <Mail className="h-4 w-4" />
-                                  {isCommunicationReady ? 'Save ready record' : 'Save draft'}
+                                  {isCommunicationReady ? 'Save ready record' : opsText("Save draft")}
                                 </button>
                               </div>
                             </div>
 
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                              <div className="font-semibold">Send log</div>
+                              <div className="font-semibold">{opsText("Send log")}</div>
                               <div className="mt-3 grid gap-3">
                                 {selectedCommunicationLog.map((item) => (
                                   <div key={`${item.type}-${item.meta}`} className={`rounded-lg border p-3 ${styles.panel}`}>
@@ -7100,7 +6623,7 @@ export function CrmPage() {
                             </div>
 
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                              <div className="font-semibold">Client review note</div>
+                              <div className="font-semibold">{opsText("Client review note")}</div>
                               <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
                                 {selectedProcess?.nextAction || 'Keep the proposal clear, emotionally strong, and easy to choose.'}
                               </p>
@@ -7115,7 +6638,7 @@ export function CrmPage() {
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
                               <div className="flex items-start justify-between gap-3">
                                 <div>
-                                  <div className="font-semibold">Payment workflow</div>
+                                  <div className="font-semibold">{opsText("Payment workflow")}</div>
                                   <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
                                     {selectedPaymentSummary?.nextAction}
                                   </p>
@@ -7132,7 +6655,7 @@ export function CrmPage() {
                                   { label: 'Payment due', value: selectedPaymentSummary?.dueDate || 'Set due date' },
                                 ].map((item) => (
                                   <div key={item.label} className={`rounded-lg border p-3 ${styles.panel}`}>
-                                    <div className={`text-xs ${styles.muted}`}>{item.label}</div>
+                                    <div className={`text-xs ${styles.muted}`}>{opsText(item.label)}</div>
                                     <div className="mt-1 text-sm font-semibold">{item.value}</div>
                                   </div>
                                 ))}
@@ -7140,13 +6663,12 @@ export function CrmPage() {
                               <div className={`mt-4 rounded-lg border p-3 ${styles.panel}`}>
                                 <div className="flex items-center justify-between gap-3">
                                   <div>
-                                    <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Payment records</div>
+                                    <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Payment records")}</div>
                                     <div className={`mt-1 text-sm ${styles.soft}`}>{selectedPaymentRecords.length ? `${selectedPaymentRecords.length} persisted checkpoint(s)` : 'No payment record yet'}</div>
                                   </div>
-                                  <button type="button" onClick={createPaymentCheckpoint} className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>
+                                  <button type="button" onClick={createPaymentCheckpoint} disabled={!canCreatePayments} title={canCreatePayments ? undefined : 'Your role cannot create payment records'} className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs disabled:cursor-not-allowed disabled:opacity-45 ${styles.buttonGhost}`}>
                                     <Plus className="h-4 w-4" />
-                                    Add checkpoint
-                                  </button>
+                                    {opsText("Add checkpoint")}</button>
                                 </div>
                                 {selectedPaymentRecords.length ? (
                                   <div className="mt-3 grid gap-2">
@@ -7154,15 +6676,14 @@ export function CrmPage() {
                                       <div key={record.id} className={`grid gap-2 rounded-lg border px-3 py-2 text-xs ${styles.panelSoft} md:grid-cols-[1fr_auto_auto] md:items-center`}>
                                         <div>
                                           <div className="font-semibold">{record.paymentType} - {record.status}</div>
-                                          <div className={styles.muted}>{moneyValue(record.amountReceived, record.currency)} / {moneyValue(record.amountExpected, record.currency)} - due {record.dueDate || 'not set'}</div>
+                                          <div className={styles.muted}>{moneyValue(record.amountReceived, record.currency)} / {moneyValue(record.amountExpected, record.currency)} {opsText("- due")}{' '}{record.dueDate || 'not set'}</div>
                                         </div>
                                         <div className={styles.muted}>{record.proofReference || 'Proof pending'}</div>
                                         {record.status !== 'paid' ? (
-                                          <button type="button" onClick={() => markPaymentRecordPaid(record)} className="h-8 rounded-lg bg-emerald-600 px-3 font-medium text-white">
-                                            Mark paid
-                                          </button>
+                                          <button type="button" onClick={() => markPaymentRecordPaid(record)} disabled={!canVerifyPayments} title={canVerifyPayments ? undefined : 'Your role cannot verify payments'} className="h-8 rounded-lg bg-emerald-600 px-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-45">
+                                            {opsText("Mark paid")}</button>
                                         ) : (
-                                          <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-emerald-200">Cleared</span>
+                                          <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-emerald-200">{opsText("Cleared")}</span>
                                         )}
                                       </div>
                                     ))}
@@ -7170,14 +6691,12 @@ export function CrmPage() {
                                 ) : null}
                               </div>
                               <div className={`mt-4 rounded-lg border p-3 ${styles.panel}`}>
-                                <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Client instruction</div>
+                                <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Client instruction")}</div>
                                 <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
-                                  Send payment instructions only after the client approves the package. Supplier bookings should move from quoted to held/confirmed after payment proof is received.
-                                </p>
+                                  {opsText("Send payment instructions only after the client approves the package. Supplier bookings should move from quoted to held/confirmed after payment proof is received.")}</p>
                                 <button type="button" onClick={() => prepareCommunication('payment')} className={`mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs ${styles.buttonGhost}`}>
                                   <Mail className="h-4 w-4" />
-                                  Prepare payment message
-                                </button>
+                                  {opsText("Prepare payment message")}</button>
                               </div>
                             </div>
 
@@ -7185,25 +6704,24 @@ export function CrmPage() {
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                   <div className="flex items-center gap-3">
-                                    <div className="font-semibold">Booking confirmation workflow</div>
+                                    <div className="font-semibold">{opsText("Booking confirmation workflow")}</div>
                                     {quoteLineSaveIndicator}
                                   </div>
                                   <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
-                                    Each priced quote line becomes an operational booking item. Move items to Held or Confirmed as suppliers respond.
-                                  </p>
+                                    {opsText("Each priced quote line becomes an operational booking item. Move items to Held or Confirmed as suppliers respond.")}</p>
                                 </div>
                                 <div className="grid grid-cols-3 gap-2 text-center text-xs">
                                   <div className={`rounded-lg border px-3 py-2 ${styles.panel}`}>
                                     <div className="font-semibold">{selectedBookingSummary.heldOrConfirmed}/{selectedBookingSummary.total}</div>
-                                    <div className={styles.muted}>released</div>
+                                    <div className={styles.muted}>{opsText("released")}</div>
                                   </div>
                                   <div className={`rounded-lg border px-3 py-2 ${styles.panel}`}>
                                     <div className="font-semibold text-emerald-300">{selectedBookingSummary.confirmed}</div>
-                                    <div className={styles.muted}>confirmed</div>
+                                    <div className={styles.muted}>{opsText("confirmed")}</div>
                                   </div>
                                   <div className={`rounded-lg border px-3 py-2 ${styles.panel}`}>
                                     <div className="font-semibold text-red-300">{selectedBookingSummary.blocked}</div>
-                                    <div className={styles.muted}>open</div>
+                                    <div className={styles.muted}>{opsText("open")}</div>
                                   </div>
                                 </div>
                               </div>
@@ -7213,28 +6731,28 @@ export function CrmPage() {
                                     <div className="grid gap-3 lg:grid-cols-[1fr_150px_150px]">
                                       <div>
                                         <div className="font-medium">{line.description}</div>
-                                        <div className={`mt-1 text-xs ${styles.muted}`}>{quoteLineCategoryLabels[line.category]} - {line.supplier || 'Supplier pending'}</div>
+                                        <div className={`mt-1 text-xs ${styles.muted}`}>{opsText(quoteLineCategoryLabels[line.category])} - {line.supplier || opsText("Supplier pending")}</div>
                                       </div>
                                       <select value={line.status} onChange={(event) => saveQuoteLine(line, { status: event.target.value as QuoteLineStatus })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
                                         {quoteLineStatuses.map((status) => (
-                                          <option key={status} value={status}>{quoteLineStatusLabels[status]}</option>
+                                          <option key={status} value={status}>{opsText(quoteLineStatusLabels[status])}</option>
                                         ))}
                                       </select>
                                       <div className="grid grid-cols-2 gap-2">
-                                        <button type="button" onClick={() => saveQuoteLine(line, { status: 'held' })} className={`h-9 rounded-lg px-2 text-xs ${styles.buttonGhost}`}>Hold</button>
-                                        <button type="button" onClick={() => saveQuoteLine(line, { status: 'confirmed', confirmedAt: new Date().toISOString() })} className="h-9 rounded-lg bg-emerald-600 px-2 text-xs font-medium text-white">Confirm</button>
+                                        <button type="button" onClick={() => saveQuoteLine(line, { status: 'held' })} className={`h-9 rounded-lg px-2 text-xs ${styles.buttonGhost}`}>{opsText("Hold")}</button>
+                                        <button type="button" onClick={() => saveQuoteLine(line, { status: 'confirmed', confirmedAt: new Date().toISOString() })} className="h-9 rounded-lg bg-emerald-600 px-2 text-xs font-medium text-white">{opsText("Confirm")}</button>
                                       </div>
                                     </div>
                                     <div className="mt-3 grid gap-2 md:grid-cols-2">
-                                      <input value={quoteLineValue(line, 'supplier')} onChange={(event) => scheduleQuoteLineSave(line, { supplier: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Supplier" />
-                                      <input value={quoteLineValue(line, 'bookingOwner')} onChange={(event) => scheduleQuoteLineSave(line, { bookingOwner: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Booking owner" />
-                                      <input value={quoteLineValue(line, 'confirmationReference')} onChange={(event) => scheduleQuoteLineSave(line, { confirmationReference: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Confirmation reference" />
+                                      <input value={quoteLineValue(line, 'supplier')} onChange={(event) => scheduleQuoteLineSave(line, { supplier: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("Supplier")} />
+                                      <input value={quoteLineValue(line, 'bookingOwner')} onChange={(event) => scheduleQuoteLineSave(line, { bookingOwner: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("Booking owner")} />
+                                      <input value={quoteLineValue(line, 'confirmationReference')} onChange={(event) => scheduleQuoteLineSave(line, { confirmationReference: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("Confirmation reference")} />
                                       <input type="date" value={quoteLineValue(line, 'supplierDeadline') ?? ''} onChange={(event) => scheduleQuoteLineSave(line, { supplierDeadline: event.target.value || null })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
-                                      <input value={quoteLineValue(line, 'bookingNotes')} onChange={(event) => scheduleQuoteLineSave(line, { bookingNotes: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input} md:col-span-2`} placeholder="Booking note" />
+                                      <input value={quoteLineValue(line, 'bookingNotes')} onChange={(event) => scheduleQuoteLineSave(line, { bookingNotes: event.target.value })} className={`h-9 rounded-lg border px-2 text-xs ${styles.input} md:col-span-2`} placeholder={opsText("Booking note")} />
                                     </div>
                                   </div>
                                 )) : (
-                                  <div className={`rounded-lg border p-4 text-sm ${styles.panel}`}>Quote lines will become booking items after Costing is completed.</div>
+                                  <div className={`rounded-lg border p-4 text-sm ${styles.panel}`}>{opsText("Quote lines will become booking items after Costing is completed.")}</div>
                                 )}
                               </div>
                             </div>
@@ -7247,9 +6765,9 @@ export function CrmPage() {
                               { label: 'Travel Pack gate', value: selectedBookingSummary.ready && selectedPaymentSummary?.paid ? 'Can prepare final pack' : 'Do not release yet', meta: leadPrimaryBlocker(selectedLead) },
                             ].map((card) => (
                               <div key={card.label} className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                                <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                                <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                                 <div className="mt-2 font-semibold">{card.value}</div>
-                                <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div>
+                                <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div>
                               </div>
                             ))}
                           </div>
@@ -7262,15 +6780,14 @@ export function CrmPage() {
                             <div className={`border-b px-6 py-5 ${styles.panel}`}>
                               <div className="flex flex-wrap items-start justify-between gap-4">
                                 <div>
-                                  <div className={`text-xs uppercase tracking-[0.2em] ${styles.muted}`}>Travel pack output</div>
+                                  <div className={`text-xs uppercase tracking-[0.2em] ${styles.muted}`}>{opsText("Travel pack output")}</div>
                                   <h3 className="mt-2 text-2xl font-semibold">{selectedLead.destination || 'Confirmed trip'}</h3>
                                   <p className={`mt-2 max-w-2xl text-sm leading-6 ${styles.soft}`}>
-                                    Final traveler-facing handoff for {selectedLead.name}. This pack focuses on what is confirmed, how the trip moves, and who to contact during travel.
-                                  </p>
+                                    {opsText("Final traveler-facing handoff for")}{' '}{selectedLead.name}{opsText(". This pack focuses on what is confirmed, how the trip moves, and who to contact during travel.")}</p>
                                 </div>
                                 <div className="text-right">
                                   <div className="text-lg font-semibold crm-accent-text">DPM</div>
-                                  <div className={`mt-1 text-xs ${styles.muted}`}>Travel support pack</div>
+                                  <div className={`mt-1 text-xs ${styles.muted}`}>{opsText("Travel support pack")}</div>
                                 </div>
                               </div>
                               <div className="mt-5 grid gap-3 md:grid-cols-4">
@@ -7281,7 +6798,7 @@ export function CrmPage() {
                                   { label: 'Support', value: selectedLead.serviceKey === 'luxury' ? 'Concierge support' : 'DPM support' },
                                 ].map((item) => (
                                   <div key={item.label} className={`rounded-lg border p-3 ${styles.panelSoft}`}>
-                                    <div className={`text-xs ${styles.muted}`}>{item.label}</div>
+                                    <div className={`text-xs ${styles.muted}`}>{opsText(item.label)}</div>
                                     <div className="mt-1 text-sm font-semibold">{item.value}</div>
                                   </div>
                                 ))}
@@ -7291,7 +6808,7 @@ export function CrmPage() {
                             <div className="grid gap-5 p-6">
                               <section>
                                 <div className="flex flex-wrap items-center justify-between gap-3">
-                                  <h4 className="font-semibold">Confirmed itinerary</h4>
+                                  <h4 className="font-semibold">{opsText("Confirmed itinerary")}</h4>
                                   <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedItinerary?.status ? selectedItinerary.status.replace('_', ' ') : 'draft pack'}</span>
                                 </div>
                                 <div className="mt-3 grid gap-3">
@@ -7299,7 +6816,7 @@ export function CrmPage() {
                                     <div key={`${stop.city}-${index}`} className={`rounded-xl border p-4 ${styles.panel}`}>
                                       <div className="grid gap-4 md:grid-cols-[90px_1fr_1fr]">
                                         <div>
-                                          <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Stop {index + 1}</div>
+                                          <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Stop")}{' '}{index + 1}</div>
                                           <div className="mt-2 text-xl font-semibold crm-accent-text">{stop.nights}</div>
                                         </div>
                                         <div>
@@ -7308,7 +6825,7 @@ export function CrmPage() {
                                           <div className={`mt-3 text-sm leading-6 ${styles.soft}`}>{stop.note}</div>
                                         </div>
                                         <div className={`rounded-lg border p-3 ${styles.panelSoft}`}>
-                                          <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Accommodation</div>
+                                          <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Accommodation")}</div>
                                           <div className="mt-1 text-sm font-semibold">{stop.stay}</div>
                                           <div className={`mt-1 text-xs ${styles.muted}`}>{stop.room}</div>
                                           <div className="mt-3 text-xs text-emerald-300">{stop.status}</div>
@@ -7316,34 +6833,34 @@ export function CrmPage() {
                                       </div>
                                     </div>
                                   )) : (
-                                    <div className={`rounded-xl border p-4 text-sm ${styles.panel}`}>No final itinerary stops yet. Build the route in Trip Design before sending the pack.</div>
+                                    <div className={`rounded-xl border p-4 text-sm ${styles.panel}`}>{opsText("No final itinerary stops yet. Build the route in Trip Design before sending the pack.")}</div>
                                   )}
                                 </div>
                               </section>
 
                               <section className="grid gap-4 lg:grid-cols-2">
                                 <div className={`rounded-xl border p-4 ${styles.panel}`}>
-                                  <div className="font-semibold">Movement instructions</div>
+                                  <div className="font-semibold">{opsText("Movement instructions")}</div>
                                   <div className="mt-3 grid gap-2">
                                     {selectedTransportSegments.length > 0 ? selectedTransportSegments.map((segment) => (
                                       <div key={segment.id} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
                                         <div className="flex items-start justify-between gap-3">
                                           <div>
-                                            <div className="text-sm font-medium">{segment.fromCity} to {segment.toCity}</div>
+                                            <div className="text-sm font-medium">{segment.fromCity} {opsText("to")}{' '}{segment.toCity}</div>
                                             <div className={`mt-1 text-xs ${styles.muted}`}>{segment.mode} - {formatDateRange(segment.departureAt, segment.arrivalAt)}</div>
                                           </div>
-                                          <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{itineraryBookingStatusLabels[segment.bookingStatus]}</span>
+                                          <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{opsText(itineraryBookingStatusLabels[segment.bookingStatus])}</span>
                                         </div>
-                                        {segment.reference ? <div className="mt-2 text-xs crm-accent-text">Reference: {segment.reference}</div> : null}
+                                        {segment.reference ? <div className="mt-2 text-xs crm-accent-text">{opsText("Reference:")}{' '}{segment.reference}</div> : null}
                                       </div>
                                     )) : (
-                                      <div className={`text-sm ${styles.muted}`}>Movement instructions will appear when flights or transfers are added.</div>
+                                      <div className={`text-sm ${styles.muted}`}>{opsText("Movement instructions will appear when flights or transfers are added.")}</div>
                                     )}
                                   </div>
                                 </div>
 
                                 <div className={`rounded-xl border p-4 ${styles.panel}`}>
-                                  <div className="font-semibold">Experiences and timing</div>
+                                  <div className="font-semibold">{opsText("Experiences and timing")}</div>
                                   <div className="mt-3 grid gap-2">
                                     {selectedItineraryExperiences.length > 0 ? selectedItineraryExperiences.map((experience) => (
                                       <div key={`${experience.title}-${experience.timing}`} className={`rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
@@ -7357,7 +6874,7 @@ export function CrmPage() {
                                         <p className={`mt-2 text-xs leading-5 ${styles.soft}`}>{experience.note}</p>
                                       </div>
                                     )) : (
-                                      <div className={`text-sm ${styles.muted}`}>Experience timing will appear when activities are added.</div>
+                                      <div className={`text-sm ${styles.muted}`}>{opsText("Experience timing will appear when activities are added.")}</div>
                                     )}
                                   </div>
                                 </div>
@@ -7365,7 +6882,7 @@ export function CrmPage() {
 
                               <section>
                                 <div className="flex flex-wrap items-center justify-between gap-3">
-                                  <h4 className="font-semibold">Confirmations and documents</h4>
+                                  <h4 className="font-semibold">{opsText("Confirmations and documents")}</h4>
                                   <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedQuote ? selectedQuote.quoteNumber : 'Quote pending'}</span>
                                 </div>
                                 <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -7374,7 +6891,7 @@ export function CrmPage() {
                                       <div className="flex items-start justify-between gap-3">
                                         <div>
                                           <div className="font-semibold">{line.description}</div>
-                                          <div className={`mt-1 text-sm ${styles.muted}`}>{line.supplier || quoteLineCategoryLabels[line.category]}</div>
+                                          <div className={`mt-1 text-sm ${styles.muted}`}>{line.supplier || opsText(quoteLineCategoryLabels[line.category])}</div>
                                         </div>
                                         <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{line.status}</span>
                                       </div>
@@ -7384,7 +6901,7 @@ export function CrmPage() {
                                       </p>
                                     </div>
                                   )) : (
-                                    <div className={`text-sm ${styles.muted}`}>Confirmations will appear once booking items are released for this trip.</div>
+                                    <div className={`text-sm ${styles.muted}`}>{opsText("Confirmations will appear once booking items are released for this trip.")}</div>
                                   )}
                                 </div>
                               </section>
@@ -7394,7 +6911,7 @@ export function CrmPage() {
                           <div className="grid content-start gap-4">
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
                               <div className="flex items-center justify-between gap-3">
-                                <div className="font-semibold">Pack readiness</div>
+                                <div className="font-semibold">{opsText("Pack readiness")}</div>
                                 <span className={`rounded-full px-2.5 py-1 text-xs ${isTravelPackReady ? 'bg-emerald-500/15 text-emerald-200' : 'bg-red-500/15 text-red-200'}`}>
                                   {isTravelPackReady ? 'Ready' : 'Needs work'}
                                 </span>
@@ -7404,7 +6921,7 @@ export function CrmPage() {
                                   <div key={item.label} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${styles.panel}`}>
                                     <span className="flex min-w-0 items-center gap-2">
                                       <CheckSquare className={`h-4 w-4 ${item.ready ? 'text-emerald-300' : 'text-red-300'}`} />
-                                      <span className="text-sm font-medium">{item.label}</span>
+                                      <span className="text-sm font-medium">{opsText(item.label)}</span>
                                     </span>
                                     <span className={`truncate text-right text-xs ${styles.muted}`}>{item.meta}</span>
                                   </div>
@@ -7413,7 +6930,7 @@ export function CrmPage() {
                             </div>
 
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                              <div className="font-semibold">Traveler support card</div>
+                              <div className="font-semibold">{opsText("Traveler support card")}</div>
                               <div className="mt-4 grid gap-3">
                                 {[
                                   { label: 'Primary DPM contact', value: crmSession?.user.first_name || crmSession?.user.username || 'DPM Travel Desk' },
@@ -7422,7 +6939,7 @@ export function CrmPage() {
                                   { label: 'Final note', value: selectedLead.serviceKey === 'luxury' ? 'Confirm special requests before departure.' : 'Keep movement instructions simple and clear.' },
                                 ].map((item) => (
                                   <div key={item.label} className={`rounded-lg border p-3 ${styles.panel}`}>
-                                    <div className={`text-xs ${styles.muted}`}>{item.label}</div>
+                                    <div className={`text-xs ${styles.muted}`}>{opsText(item.label)}</div>
                                     <div className="mt-1 text-sm font-semibold">{item.value}</div>
                                   </div>
                                 ))}
@@ -7430,7 +6947,7 @@ export function CrmPage() {
                             </div>
 
                             <div className={`rounded-xl border p-4 ${styles.panelSoft}`}>
-                              <div className="font-semibold">Output actions</div>
+                              <div className="font-semibold">{opsText("Output actions")}</div>
                               <div className="mt-4 grid gap-2">
                                 <button type="button" className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-white ${isTravelPackReady ? 'bg-emerald-600' : 'bg-red-600'}`}>
                                   <Download className="h-4 w-4" />
@@ -7438,12 +6955,10 @@ export function CrmPage() {
                                 </button>
                                 <button type="button" onClick={() => prepareCommunication('travel_pack')} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
                                   <Mail className="h-4 w-4" />
-                                  Prepare send message
-                                </button>
+                                  {opsText("Prepare send message")}</button>
                               </div>
                               <p className={`mt-4 text-sm leading-6 ${styles.soft}`}>
-                                Final confirmations, documents, and traveler-facing instructions should be coherent before the travel pack is sent.
-                              </p>
+                                {opsText("Final confirmations, documents, and traveler-facing instructions should be coherent before the travel pack is sent.")}</p>
                             </div>
                           </div>
                         </div>
@@ -7454,8 +6969,8 @@ export function CrmPage() {
             })() : (
               <div className="p-8 text-center">
                 <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
-                <div className="mt-4 text-lg font-semibold">Select a leisure request</div>
-                <p className={`mt-2 text-sm ${styles.muted}`}>Leisure Studio workbench appears here.</p>
+                <div className="mt-4 text-lg font-semibold">{opsText("Select a leisure request")}</div>
+                <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("Leisure Studio workbench appears here.")}</p>
               </div>
             )
           ) : selectedLead ? (
@@ -7469,11 +6984,11 @@ export function CrmPage() {
                     <div className="flex items-center gap-2">
                       <h2 className="truncate text-lg font-semibold">{selectedLead.name}</h2>
                       <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${styles.type[selectedLead.serviceKey]}`}>
-                        {typeLabels[selectedLead.serviceKey]}
+                        {opsText(typeLabels[selectedLead.serviceKey])}
                       </span>
                     </div>
-                    <p className={`mt-1 text-sm ${styles.muted}`}>{leadSegment(selectedLead)} - {selectedLead.destination || 'Destination pending'}</p>
-                    <p className={`mt-1 text-xs uppercase tracking-[0.16em] ${styles.muted}`}>{leadFlowTitle(selectedLead)}</p>
+                    <p className={`mt-1 text-sm ${styles.muted}`}>{opsText(leadSegment(selectedLead))} - {selectedLead.destination || opsText("Destination pending")}</p>
+                    <p className={`mt-1 text-xs uppercase tracking-[0.16em] ${styles.muted}`}>{opsText(leadFlowTitle(selectedLead))}</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -7491,7 +7006,7 @@ export function CrmPage() {
 
               <div className={`rounded-xl border p-5 ${styles.panel}`}>
                 <div className={`mb-5 rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                  <div className="text-xs uppercase tracking-[0.14em] crm-accent-text">{leadFlowTitle(selectedLead)}</div>
+                  <div className="text-xs uppercase tracking-[0.14em] crm-accent-text">{opsText(leadFlowTitle(selectedLead))}</div>
                   <div className={`mt-2 text-sm leading-6 ${styles.soft}`}>{leadFlowDescription(selectedLead)}</div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-3">
@@ -7505,42 +7020,41 @@ export function CrmPage() {
                         }`}>
                           <CheckSquare className="h-4 w-4" />
                         </span>
-                        <span className={`mt-2 block truncate text-xs ${isDone ? styles.soft : styles.muted}`}>{label}</span>
+                        <span className={`mt-2 block truncate text-xs ${isDone ? styles.soft : styles.muted}`}>{opsText(label)}</span>
                       </div>
                     );
                   })}
                 </div>
                 {selectedLead.status === 'lost' ? (
                   <div className="mt-4 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-                    Request closed. Capture the reason and decide if it should return to nurture.
-                  </div>
+                    {opsText("Request closed. Capture the reason and decide if it should return to nurture.")}</div>
                 ) : null}
 
                 <div className="mt-6 grid grid-cols-2 gap-5">
                   <div>
-                    <div className={`text-sm ${styles.muted}`}>Travel Dates</div>
-                    <div className="mt-1 font-semibold">{selectedLead.dates || 'Dates pending'}</div>
-                    <div className={`mt-1 text-sm ${styles.muted}`}>{selectedLead.travelers || 'Travelers pending'}</div>
+                    <div className={`text-sm ${styles.muted}`}>{opsText("Travel Dates")}</div>
+                    <div className="mt-1 font-semibold">{selectedLead.dates || opsText("Dates pending")}</div>
+                    <div className={`mt-1 text-sm ${styles.muted}`}>{selectedLead.travelers || opsText("Travelers pending")}</div>
                   </div>
                   <div>
-                    <div className={`text-sm ${styles.muted}`}>Budget</div>
-                    <div className="mt-1 font-semibold">{selectedLead.budget || 'Budget pending'}</div>
+                    <div className={`text-sm ${styles.muted}`}>{opsText("Budget")}</div>
+                    <div className="mt-1 font-semibold">{selectedLead.budget || opsText("Budget pending")}</div>
                     <div className={`mt-1 text-sm ${styles.muted}`}>USD</div>
                   </div>
                   <div>
-                    <div className={`text-sm ${styles.muted}`}>Owner</div>
+                    <div className={`text-sm ${styles.muted}`}>{opsText("Owner")}</div>
                     <div className="mt-1 font-semibold">{leadOwner(selectedLead)}</div>
                   </div>
                   <div>
-                    <div className={`text-sm ${styles.muted}`}>Form</div>
+                    <div className={`text-sm ${styles.muted}`}>{opsText("Form")}</div>
                     <div className="mt-1 font-semibold">{selectedLead.service}</div>
-                    <div className={`mt-1 text-xs ${styles.muted}`}>{leadLifecycleLabel(selectedLead)}</div>
+                    <div className={`mt-1 text-xs ${styles.muted}`}>{opsText(leadLifecycleLabel(selectedLead))}</div>
                   </div>
                 </div>
 
                 {selectedProcess ? (
                   <div className={`mt-5 rounded-lg border px-3 py-3 ${styles.panelSoft}`}>
-                    <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>Next operating step</div>
+                    <div className={`text-xs uppercase tracking-[0.14em] ${styles.muted}`}>{opsText("Next operating step")}</div>
                     <div className="mt-2 text-sm font-semibold">{selectedProcess.primaryAction}</div>
                     <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedProcess.nextAction}</p>
                     <div className={`mt-3 text-xs ${styles.muted}`}>{selectedProcess.stageGate}</div>
@@ -7549,12 +7063,13 @@ export function CrmPage() {
               </div>
 
               <div className={`rounded-xl border p-4 ${styles.panel}`}>
-                <div className="mb-3 font-semibold">Quick Actions</div>
+                <div className="mb-3 font-semibold">{opsText("Quick Actions")}</div>
                 <div className="grid grid-cols-3 gap-3">
                   <button
                     type="button"
                     onClick={() => advanceLeadLifecycle(selectedLead)}
-                    disabled={!nextLifecycleStage(selectedLead)}
+                    disabled={!nextLifecycleStage(selectedLead) || !canAdvanceWorkflow}
+                    title={canAdvanceWorkflow ? undefined : 'Your role cannot advance the workflow'}
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <Phone className="h-4 w-4" />
@@ -7566,8 +7081,7 @@ export function CrmPage() {
                   </a>
                   <button type="button" className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm ${styles.buttonGhost}`}>
                     <FileText className="h-4 w-4" />
-                    Note
-                  </button>
+                    {opsText("Note")}</button>
                 </div>
               </div>
 
@@ -7579,7 +7093,7 @@ export function CrmPage() {
                     onClick={() => setDetailTab(tab)}
                     className={`h-10 rounded-lg px-4 text-sm capitalize ${detailTab === tab ? styles.buttonActive : styles.buttonGhost}`}
                   >
-                    {detailTabLabel(tab)}
+                    {opsText(detailTabLabel(tab))}
                     {(tab === 'approvals' || tab === 'proposal') ? <span className="ml-2 rounded-full bg-red-500 px-1.5 py-0.5 text-xs text-white">{selectedTasks.length}</span> : null}
                   </button>
                 ))}
@@ -7588,33 +7102,32 @@ export function CrmPage() {
               <div className={`rounded-xl border p-5 ${styles.panel}`}>
                 {detailTab === 'overview' ? (
                   <div>
-                    <div className="font-semibold">Client Information</div>
+                    <div className="font-semibold">{opsText("Client Information")}</div>
                     <div className={`mt-4 grid grid-cols-3 gap-4 border-y py-4 ${styles.tableHead}`}>
                       <div>
                         <div className={`text-xs ${styles.muted}`}>Email</div>
                         <div className="mt-1 text-sm">{selectedLead.email || '-'}</div>
                       </div>
                       <div>
-                        <div className={`text-xs ${styles.muted}`}>Phone</div>
+                        <div className={`text-xs ${styles.muted}`}>{opsText("Phone")}</div>
                         <div className="mt-1 text-sm">{selectedLead.whatsapp || '-'}</div>
                       </div>
                       <div>
-                        <div className={`text-xs ${styles.muted}`}>Preferred</div>
+                        <div className={`text-xs ${styles.muted}`}>{opsText("Preferred")}</div>
                         <div className="mt-1 text-sm">{selectedLead.preferredContact || '-'}</div>
                       </div>
                     </div>
 
                     <div className="mt-5">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-semibold">Client Record</div>
+                        <div className="font-semibold">{opsText("Client Record")}</div>
                         {!selectedLead.clientId && canManageClients(crmSession?.user) ? (
                           <button
                             type="button"
                             onClick={() => openClientRegistrationFromLead(selectedLead)}
                             className={`inline-flex h-8 items-center rounded-lg px-3 text-xs ${styles.buttonGhost}`}
                           >
-                            Convert to client
-                          </button>
+                            {opsText("Convert to client")}</button>
                         ) : null}
                       </div>
                       <div className={`mt-3 rounded-lg border px-3 py-3 text-sm ${styles.panelSoft}`}>
@@ -7630,19 +7143,19 @@ export function CrmPage() {
                             {selectedLead.clientName || 'Open linked client'}
                           </button>
                         ) : (
-                          <span className={styles.muted}>This request is not linked to a registered client yet.</span>
+                          <span className={styles.muted}>{opsText("This request is not linked to a registered client yet.")}</span>
                         )}
                       </div>
                     </div>
 
                     <div className="mt-5">
-                      <div className="font-semibold">Request Summary</div>
+                      <div className="font-semibold">{opsText("Request Summary")}</div>
                       <p className={`mt-3 whitespace-pre-line text-sm leading-6 ${styles.soft}`}>{selectedLead.notes || 'No extra client notes yet.'}</p>
                       <ExperienceSnapshot lead={selectedLead} />
                     </div>
 
                     <div className="mt-5">
-                      <div className="font-semibold">Preferences</div>
+                      <div className="font-semibold">{opsText("Preferences")}</div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {(selectedLead.requestedServices || 'Services pending')
                           .split(',')
@@ -7657,12 +7170,12 @@ export function CrmPage() {
                     </div>
 
                     <label className="mt-5 block">
-                      <span className="font-semibold">Internal Notes</span>
+                      <span className="font-semibold">{opsText("Internal Notes")}</span>
                       <textarea
                         value={selectedLead.internalNotes || ''}
                         onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
                         className={`mt-3 min-h-24 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
-                        placeholder="Concierge notes, follow-up context, preferences..."
+                        placeholder={opsText("Concierge notes, follow-up context, preferences...")}
                       />
                     </label>
                   </div>
@@ -7673,15 +7186,15 @@ export function CrmPage() {
                 {detailTab === 'proposal' ? (
                   <div className="grid gap-3">
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className="font-semibold">Proposal direction</div>
+                      <div className="font-semibold">{opsText("Proposal direction")}</div>
                       <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedProcess?.nextAction}</p>
                     </div>
                     <div className="grid gap-3 md:grid-cols-3">
                       {leisureProposalCards(selectedLead).map((card) => (
                         <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                           <div className="mt-2 font-semibold">{card.value}</div>
-                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                         </div>
                       ))}
                     </div>
@@ -7702,7 +7215,7 @@ export function CrmPage() {
                 {detailTab === 'payments' ? (
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className="font-semibold">Payment posture</div>
+                      <div className="font-semibold">{opsText("Payment posture")}</div>
                       <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
                         {selectedLead.status === 'won' || selectedLead.status === 'execution' || selectedLead.status === 'completed'
                           ? 'Client approval is secured. Track payment confirmation before or alongside supplier fulfilment.'
@@ -7710,15 +7223,15 @@ export function CrmPage() {
                       </p>
                     </div>
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className={`text-sm ${styles.muted}`}>Budget band</div>
-                      <div className="mt-2 text-lg font-semibold">{selectedLead.budget || 'Budget pending'}</div>
-                      <div className={`mt-2 text-sm ${styles.muted}`}>Preferred contact: {selectedLead.preferredContact || 'Not captured yet'}</div>
+                      <div className={`text-sm ${styles.muted}`}>{opsText("Budget band")}</div>
+                      <div className="mt-2 text-lg font-semibold">{selectedLead.budget || opsText("Budget pending")}</div>
+                      <div className={`mt-2 text-sm ${styles.muted}`}>{opsText("Preferred contact:")}{' '}{selectedLead.preferredContact || 'Not captured yet'}</div>
                     </div>
                     {leisurePaymentCards(selectedLead).map((card) => (
                       <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                        <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                        <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                         <div className="mt-2 font-semibold">{card.value}</div>
-                        {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                        {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                       </div>
                     ))}
                   </div>
@@ -7727,24 +7240,23 @@ export function CrmPage() {
                 {detailTab === 'travelPack' ? (
                   <div className="grid gap-4">
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className="font-semibold">Travel pack readiness</div>
+                      <div className="font-semibold">{opsText("Travel pack readiness")}</div>
                       <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
-                        Use this stage for itinerary polish, service confirmations, and final client communication before departure.
-                      </p>
+                        {opsText("Use this stage for itinerary polish, service confirmations, and final client communication before departure.")}</p>
                     </div>
                     <div className="grid gap-3 md:grid-cols-3">
                       {leisureTravelPackCards(selectedLead).map((card) => (
                         <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                           <div className="mt-2 font-semibold">{card.value}</div>
-                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                         </div>
                       ))}
                     </div>
                     <div className="grid gap-3">
                       {selectedHistory.map((item) => (
                         <div key={`${item.label}-${item.meta}`} className={`rounded-lg border p-3 ${styles.panelSoft}`}>
-                          <div className="font-medium">{item.label}</div>
+                          <div className="font-medium">{opsText(item.label)}</div>
                           <div className={`mt-1 text-sm ${styles.muted}`}>{item.meta}</div>
                         </div>
                       ))}
@@ -7757,13 +7269,12 @@ export function CrmPage() {
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <div className="font-semibold">Trip processing workspace</div>
+                          <div className="font-semibold">{opsText("Trip processing workspace")}</div>
                           <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
-                            Use this dedicated itinerary lane to shape the full trip: routing, hotel count, room type, activities, and the operating notes that make the proposal bookable.
-                          </p>
+                            {opsText("Use this dedicated itinerary lane to shape the full trip: routing, hotel count, room type, activities, and the operating notes that make the proposal bookable.")}</p>
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
-                          {selectedItinerary ? itineraryStatusLabels[selectedItinerary.status] : 'Draft workspace'}
+                          {selectedItinerary ? opsText(itineraryStatusLabels[selectedItinerary.status]) : 'Draft workspace'}
                         </span>
                       </div>
                     </div>
@@ -7771,16 +7282,16 @@ export function CrmPage() {
                     <div className="grid gap-3 lg:grid-cols-4">
                       {selectedItinerarySummary.map((card) => (
                         <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                           <div className="mt-2 font-semibold">{card.value}</div>
-                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                         </div>
                       ))}
                     </div>
 
                     <div className={`rounded-lg border p-4 ${styles.panel}`}>
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="font-semibold">Route and stay plan</div>
+                        <div className="font-semibold">{opsText("Route and stay plan")}</div>
                         <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>
                           {selectedItinerary ? formatDateRange(selectedItinerary.startDate, selectedItinerary.endDate) : `${selectedItineraryStops.length} cities / stays`}
                         </span>
@@ -7790,7 +7301,7 @@ export function CrmPage() {
                           <div key={`${stop.city}-${index}`} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
-                                <div className="text-xs uppercase tracking-[0.14em] crm-accent-text">Stop {index + 1}</div>
+                                <div className="text-xs uppercase tracking-[0.14em] crm-accent-text">{opsText("Stop")}{' '}{index + 1}</div>
                                 <div className="mt-2 text-lg font-semibold">{stop.city}</div>
                                 <div className={`mt-1 text-sm ${styles.muted}`}>{stop.nights} - {stop.stay}</div>
                                 {stop.dates ? <div className={`mt-1 text-xs ${styles.muted}`}>{stop.dates}</div> : null}
@@ -7799,11 +7310,11 @@ export function CrmPage() {
                             </div>
                             <div className="mt-4 grid gap-4 md:grid-cols-2">
                               <div>
-                                <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>Room setup</div>
+                                <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Room setup")}</div>
                                 <div className="mt-1 text-sm font-medium">{stop.room}</div>
                               </div>
                               <div>
-                                <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>Operational note</div>
+                                <div className={`text-xs uppercase tracking-[0.12em] ${styles.muted}`}>{opsText("Operational note")}</div>
                                 <div className="mt-1 text-sm font-medium">{stop.note}</div>
                               </div>
                             </div>
@@ -7814,7 +7325,7 @@ export function CrmPage() {
 
                     <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
                       <div className={`rounded-lg border p-4 ${styles.panel}`}>
-                        <div className="font-semibold">Activities and experiences</div>
+                        <div className="font-semibold">{opsText("Activities and experiences")}</div>
                         <div className="mt-4 grid gap-3">
                           {selectedItineraryExperiences.map((experience) => (
                             <div key={experience.title} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
@@ -7831,25 +7342,25 @@ export function CrmPage() {
 
                       <div className="grid gap-4">
                         <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="font-semibold">Hotel count and room control</div>
+                          <div className="font-semibold">{opsText("Hotel count and room control")}</div>
                           <div className="mt-3 text-sm leading-6">
                             <div className={`flex items-center justify-between gap-3 ${styles.soft}`}>
-                              <span>Planned hotel stays</span>
+                              <span>{opsText("Planned hotel stays")}</span>
                               <span className="font-semibold">{selectedItinerary ? selectedItinerary.stops.reduce((count, stop) => count + stop.accommodations.length, 0) : selectedItineraryStops.length}</span>
                             </div>
                             <div className={`mt-2 flex items-center justify-between gap-3 ${styles.soft}`}>
-                              <span>Traveler setup</span>
-                              <span className="font-semibold">{selectedLead.travelers || 'Pending'}</span>
+                              <span>{opsText("Traveler setup")}</span>
+                              <span className="font-semibold">{selectedLead.travelers || opsText("Pending")}</span>
                             </div>
                             <div className={`mt-2 flex items-center justify-between gap-3 ${styles.soft}`}>
-                              <span>Room brief</span>
+                              <span>{opsText("Room brief")}</span>
                               <span className="font-semibold">{isCorporateLead(selectedLead) ? 'Executive allocation' : selectedLead.serviceKey === 'luxury' ? 'Suite-led' : 'Double / twin mix'}</span>
                             </div>
                           </div>
                         </div>
 
                         <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className="font-semibold">Itinerary processing note</div>
+                          <div className="font-semibold">{opsText("Itinerary processing note")}</div>
                           <p className={`mt-3 text-sm leading-6 ${styles.soft}`}>
                             {selectedItinerary?.notes || 'Use this space to control routing, hotel count, room types, transfers, and experiences directly from the trip workspace.'}
                           </p>
@@ -7866,24 +7377,23 @@ export function CrmPage() {
                 {detailTab === 'travelers' ? (
                   <div className="grid gap-4">
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className="font-semibold">Traveler coordination</div>
+                      <div className="font-semibold">{opsText("Traveler coordination")}</div>
                       <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
-                        Corporate movement should keep traveler count, route coordination, and readiness visible before booking is released.
-                      </p>
+                        {opsText("Corporate movement should keep traveler count, route coordination, and readiness visible before booking is released.")}</p>
                     </div>
                     <div className="grid gap-3">
                       <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                        <div className={`text-sm ${styles.muted}`}>Traveler scope</div>
+                        <div className={`text-sm ${styles.muted}`}>{opsText("Traveler scope")}</div>
                         <div className="mt-2 text-lg font-semibold">{selectedLead.travelers || 'Traveler list pending'}</div>
-                        <div className={`mt-2 text-sm ${styles.muted}`}>{selectedLead.departureCity || 'Departure city pending'} - {selectedLead.destination || 'Destination pending'}</div>
+                        <div className={`mt-2 text-sm ${styles.muted}`}>{selectedLead.departureCity || 'Departure city pending'} - {selectedLead.destination || opsText("Destination pending")}</div>
                       </div>
                     </div>
                     <div className="grid gap-3 md:grid-cols-3">
                       {corporateTravelerCards(selectedLead).map((card) => (
                         <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                           <div className="mt-2 font-semibold">{card.value}</div>
-                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                         </div>
                       ))}
                     </div>
@@ -7893,21 +7403,21 @@ export function CrmPage() {
                 {detailTab === 'approvals' ? (
                   <div className="grid gap-3">
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className="font-semibold">Approval posture</div>
+                      <div className="font-semibold">{opsText("Approval posture")}</div>
                       <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>{selectedProcess?.stageGate}</p>
                     </div>
                     {selectedQuote ? (
                       <div className="grid gap-3 md:grid-cols-3">
                         {selectedQuote.approvals.map((approval) => (
                           <div key={approval.id} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                            <div className={`text-sm ${styles.muted}`}>Quote approval</div>
+                            <div className={`text-sm ${styles.muted}`}>{opsText("Quote approval")}</div>
                             <div className="mt-2 font-semibold">{approval.approverName}</div>
-                            <div className={`mt-2 text-sm ${styles.muted}`}>{quoteApprovalLabels[approval.decision]}</div>
+                            <div className={`mt-2 text-sm ${styles.muted}`}>{opsText(quoteApprovalLabels[approval.decision])}</div>
                           </div>
                         ))}
                         <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className={`text-sm ${styles.muted}`}>Quote status</div>
-                          <div className="mt-2 font-semibold">{quoteStatusLabels[selectedQuote.status]}</div>
+                          <div className={`text-sm ${styles.muted}`}>{opsText("Quote status")}</div>
+                          <div className="mt-2 font-semibold">{opsText(quoteStatusLabels[selectedQuote.status])}</div>
                           <div className={`mt-2 text-sm ${styles.muted}`}>{selectedQuote.quoteNumber}</div>
                         </div>
                       </div>
@@ -7915,9 +7425,9 @@ export function CrmPage() {
                     <div className="grid gap-3 md:grid-cols-3">
                       {corporateApprovalCards(selectedLead).map((card) => (
                         <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                           <div className="mt-2 font-semibold">{card.value}</div>
-                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                         </div>
                       ))}
                     </div>
@@ -7938,13 +7448,12 @@ export function CrmPage() {
                 {detailTab === 'finance' ? (
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className="font-semibold">Finance clearance</div>
+                      <div className="font-semibold">{opsText("Finance clearance")}</div>
                       <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
-                        Use this lane for PO, invoice approval, or account-credit coordination before booking is released.
-                      </p>
+                        {opsText("Use this lane for PO, invoice approval, or account-credit coordination before booking is released.")}</p>
                     </div>
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className={`text-sm ${styles.muted}`}>CTM source request</div>
+                      <div className={`text-sm ${styles.muted}`}>{opsText("CTM source request")}</div>
                       <select
                         value={selectedCtmTrip?.id ?? ''}
                         onChange={(event) => linkCtmRequestToLead(event.target.value)}
@@ -7953,7 +7462,7 @@ export function CrmPage() {
                         {ctmTripRequests.length > 0 ? ctmTripRequests.map((trip) => (
                           <option key={trip.id} value={trip.id}>{trip.id} - {trip.route}</option>
                         )) : (
-                          <option value="">No CTM requests loaded</option>
+                          <option value="">{opsText("No CTM requests loaded")}</option>
                         )}
                       </select>
                       <div className={`mt-2 text-xs ${styles.muted}`}>
@@ -7964,76 +7473,71 @@ export function CrmPage() {
                       <div className={`rounded-lg border p-4 md:col-span-2 ${styles.panelSoft}`}>
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <div className="font-semibold">CTM shared commercial output</div>
-                            <div className={`mt-1 text-sm ${styles.muted}`}>DPM controls these outputs in CRM. CTM users only see the shared state.</div>
+                            <div className="font-semibold">{opsText("CTM shared commercial output")}</div>
+                            <div className={`mt-1 text-sm ${styles.muted}`}>{opsText("DPM controls these outputs in CRM. CTM users only see the shared state.")}</div>
                           </div>
                           <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{selectedCtmTrip.id}</span>
                         </div>
                         <div className="mt-4 grid gap-4 xl:grid-cols-4">
                           <div className={`rounded-lg border p-3 ${styles.panel}`}>
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-sm font-semibold">Quote</div>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.quote ? corporateQuoteStatusLabels[selectedCtmTrip.quote.status] : 'Not created'}</span>
+                              <div className="text-sm font-semibold">{opsText("Quote")}</div>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.quote ? opsText(corporateQuoteStatusLabels[selectedCtmTrip.quote.status]) : 'Not created'}</span>
                             </div>
                             {!selectedCorporateBriefReady ? (
                               <div className="mt-3 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
                                 <div className="flex items-center gap-2 font-semibold">
                                   <Lock className="h-3.5 w-3.5" />
-                                  Corporate brief required
-                                </div>
-                                <div className="mt-1 opacity-80">Complete and save the corporate brief before preparing or sending the CTM quote.</div>
+                                  {opsText("Corporate brief required")}</div>
+                                <div className="mt-1 opacity-80">{opsText("Complete and save the corporate brief before preparing or sending the CTM quote.")}</div>
                                 <button type="button" onClick={() => setDetailTab('brief')} className="mt-2 rounded-md bg-amber-400/15 px-2 py-1 text-[11px] font-semibold text-amber-50">
-                                  Open brief
-                                </button>
+                                  {opsText("Open brief")}</button>
                               </div>
                             ) : null}
                             {selectedCtmFinalCostGate ? (
                               <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${ctmSignalToneClass(selectedCtmFinalCostGate.tone)}`}>
                                 <div className="flex items-center gap-2 font-semibold">
                                   {selectedCtmFinalCostGate.ready ? <CheckSquare className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-                                  {selectedCtmFinalCostGate.label}
+                                  {opsText(selectedCtmFinalCostGate.label)}
                                 </div>
                                 <div className="mt-1 opacity-75">{selectedCtmFinalCostGate.detail}</div>
                               </div>
                             ) : null}
                             <div className="mt-3 grid grid-cols-[1fr_74px] gap-2">
-                              <input value={corporateOutputDraft.quoteAmount} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.input}`} placeholder="Amount" />
+                              <input value={corporateOutputDraft.quoteAmount} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.input}`} placeholder={opsText("Amount")} />
                               <input value={corporateOutputDraft.quoteCurrency} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.input}`} placeholder="USD" />
                             </div>
                             <div className="mt-2 grid grid-cols-[1fr_1fr] gap-2">
                               <input type="date" value={corporateOutputDraft.quoteValidUntil} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteValidUntil', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.input}`} />
                               <select value={corporateOutputDraft.quoteStatus} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteStatus', event.target.value as CorporateQuoteStatus)} className={`h-9 rounded-lg border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.select}`}>
-                                {corporateQuoteStatuses.map((status) => <option key={status} value={status}>{corporateQuoteStatusLabels[status]}</option>)}
+                                {corporateQuoteStatuses.map((status) => <option key={status} value={status}>{opsText(corporateQuoteStatusLabels[status])}</option>)}
                               </select>
                             </div>
-                            <textarea value={corporateOutputDraft.quoteNotes} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteNotes', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.input}`} placeholder="Quote note visible to CTM when shared" />
+                            <textarea value={corporateOutputDraft.quoteNotes} disabled={!selectedCorporateBriefReady} onChange={(event) => updateCorporateOutputDraft('quoteNotes', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-55 ${styles.input}`} placeholder={opsText("Quote note visible to CTM when shared")} />
                             <div className="mt-3 grid grid-cols-2 gap-2">
                               <button type="button" disabled={isSavingCorporateOutput || !selectedCorporateBriefReady} onClick={() => saveCorporateQuoteOutput('draft')} className={`h-9 rounded-lg border px-3 text-xs font-medium ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-50`}>
-                                Save draft
-                              </button>
-                              <button type="button" disabled={isSavingCorporateOutput || !selectedCorporateBriefReady} onClick={() => saveCorporateQuoteOutput('sent')} className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
-                                Send to CTM
-                              </button>
+                                {opsText("Save draft")}</button>
+                              <button type="button" disabled={isSavingCorporateOutput || !selectedCorporateBriefReady || !canSendQuotes} title={canSendQuotes ? undefined : 'Your role cannot send quotes'} onClick={() => saveCorporateQuoteOutput('sent')} className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                                {opsText("Send to CTM")}</button>
                             </div>
                             <button type="button" disabled={isSavingCorporateOutput || !selectedCorporateBriefReady} onClick={() => saveCorporateQuoteOutput()} className={`mt-2 h-9 w-full rounded-lg border px-3 text-xs font-medium ${styles.buttonGhost} disabled:cursor-not-allowed disabled:opacity-50`}>
-                              Save selected status
-                            </button>
+                              {opsText("Save selected status")}</button>
                           </div>
 
                           <div className={`rounded-lg border p-3 ${styles.panel}`}>
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-sm font-semibold">Booking</div>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.booking ? corporateBookingStatusLabels[selectedCtmTrip.booking.status] : 'Not created'}</span>
+                              <div className="text-sm font-semibold">{opsText("Booking")}</div>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.booking ? opsText(corporateBookingStatusLabels[selectedCtmTrip.booking.status]) : 'Not created'}</span>
                             </div>
-                            <input value={corporateOutputDraft.bookingReference} onChange={(event) => updateCorporateOutputDraft('bookingReference', event.target.value)} className={`mt-3 h-9 w-full rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Booking reference" />
+                            <input value={corporateOutputDraft.bookingReference} onChange={(event) => updateCorporateOutputDraft('bookingReference', event.target.value)} className={`mt-3 h-9 w-full rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("Booking reference")} />
                             <div className="mt-2 grid grid-cols-[1fr_74px] gap-2">
-                              <input value={corporateOutputDraft.bookingTotalCost} onChange={(event) => updateCorporateOutputDraft('bookingTotalCost', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Total cost" />
+                              <input value={corporateOutputDraft.bookingTotalCost} onChange={(event) => updateCorporateOutputDraft('bookingTotalCost', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("Total cost")} />
                               <input value={corporateOutputDraft.bookingCurrency} onChange={(event) => updateCorporateOutputDraft('bookingCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="USD" />
                             </div>
                             <select value={corporateOutputDraft.bookingStatus} onChange={(event) => updateCorporateOutputDraft('bookingStatus', event.target.value as CorporateBookingStatus)} className={`mt-2 h-9 w-full rounded-lg border px-2 text-xs ${styles.select}`}>
-                              {corporateBookingStatuses.map((status) => <option key={status} value={status}>{corporateBookingStatusLabels[status]}</option>)}
+                              {corporateBookingStatuses.map((status) => <option key={status} value={status}>{opsText(corporateBookingStatusLabels[status])}</option>)}
                             </select>
-                            <textarea value={corporateOutputDraft.bookingSupplierSummary} onChange={(event) => updateCorporateOutputDraft('bookingSupplierSummary', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder="Flights, hotels, transfers, supplier holds" />
+                            <textarea value={corporateOutputDraft.bookingSupplierSummary} onChange={(event) => updateCorporateOutputDraft('bookingSupplierSummary', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder={opsText("Flights, hotels, transfers, supplier holds")} />
                             <button type="button" disabled={isSavingCorporateOutput} onClick={saveCorporateBookingOutput} className="mt-3 h-9 w-full rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
                               {selectedCtmTrip.booking ? 'Update booking' : 'Create booking'}
                             </button>
@@ -8041,20 +7545,20 @@ export function CrmPage() {
 
                           <div className={`rounded-lg border p-3 ${styles.panel}`}>
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-sm font-semibold">Invoice</div>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.invoice ? corporateInvoiceStatusLabels[selectedCtmTrip.invoice.status] : 'Not created'}</span>
+                              <div className="text-sm font-semibold">{opsText("Invoice")}</div>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.invoice ? opsText(corporateInvoiceStatusLabels[selectedCtmTrip.invoice.status]) : 'Not created'}</span>
                             </div>
                             <div className="mt-3 grid grid-cols-[1fr_74px] gap-2">
-                              <input value={corporateOutputDraft.invoiceAmount} onChange={(event) => updateCorporateOutputDraft('invoiceAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Amount" />
+                              <input value={corporateOutputDraft.invoiceAmount} onChange={(event) => updateCorporateOutputDraft('invoiceAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("Amount")} />
                               <input value={corporateOutputDraft.invoiceCurrency} onChange={(event) => updateCorporateOutputDraft('invoiceCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="USD" />
                             </div>
                             <div className="mt-2 grid grid-cols-[1fr_1fr] gap-2">
                               <input type="date" value={corporateOutputDraft.invoiceDueDate} onChange={(event) => updateCorporateOutputDraft('invoiceDueDate', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
                               <select value={corporateOutputDraft.invoiceStatus} onChange={(event) => updateCorporateOutputDraft('invoiceStatus', event.target.value as CorporateInvoiceStatus)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
-                                {corporateInvoiceStatuses.map((status) => <option key={status} value={status}>{corporateInvoiceStatusLabels[status]}</option>)}
+                                {corporateInvoiceStatuses.map((status) => <option key={status} value={status}>{opsText(corporateInvoiceStatusLabels[status])}</option>)}
                               </select>
                             </div>
-                            <textarea value={corporateOutputDraft.invoiceNotes} onChange={(event) => updateCorporateOutputDraft('invoiceNotes', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder="PO, due date, billing instructions" />
+                            <textarea value={corporateOutputDraft.invoiceNotes} onChange={(event) => updateCorporateOutputDraft('invoiceNotes', event.target.value)} className={`mt-2 h-20 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder={opsText("PO, due date, billing instructions")} />
                             <button type="button" disabled={isSavingCorporateOutput} onClick={saveCorporateInvoiceOutput} className="mt-3 h-9 w-full rounded-lg bg-amber-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
                               {selectedCtmTrip.invoice ? 'Update invoice' : 'Create invoice'}
                             </button>
@@ -8062,63 +7566,62 @@ export function CrmPage() {
 
                           <div className={`rounded-lg border p-3 ${styles.panel}`}>
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-sm font-semibold">Payment</div>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.payments.length} records</span>
+                              <div className="text-sm font-semibold">{opsText("Payment")}</div>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${styles.buttonGhost}`}>{selectedCtmTrip.payments.length} {opsText("records")}</span>
                             </div>
                             <div className="mt-3 grid grid-cols-[1fr_74px] gap-2">
-                              <input value={corporateOutputDraft.paymentAmount} onChange={(event) => updateCorporateOutputDraft('paymentAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Amount" />
+                              <input value={corporateOutputDraft.paymentAmount} onChange={(event) => updateCorporateOutputDraft('paymentAmount', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("Amount")} />
                               <input value={corporateOutputDraft.paymentCurrency} onChange={(event) => updateCorporateOutputDraft('paymentCurrency', event.target.value.toUpperCase())} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="USD" />
                             </div>
                             <div className="mt-2 grid grid-cols-[1fr_1fr] gap-2">
                               <select value={corporateOutputDraft.paymentMethod} onChange={(event) => updateCorporateOutputDraft('paymentMethod', event.target.value as CorporatePaymentMethod)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
-                                {corporatePaymentMethods.map((method) => <option key={method} value={method}>{corporatePaymentMethodLabels[method]}</option>)}
+                                {corporatePaymentMethods.map((method) => <option key={method} value={method}>{opsText(corporatePaymentMethodLabels[method])}</option>)}
                               </select>
                               <select value={corporateOutputDraft.paymentStatus} onChange={(event) => updateCorporateOutputDraft('paymentStatus', event.target.value as CorporatePaymentStatus)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
-                                {corporatePaymentStatuses.map((status) => <option key={status} value={status}>{corporatePaymentStatusLabels[status]}</option>)}
+                                {corporatePaymentStatuses.map((status) => <option key={status} value={status}>{opsText(corporatePaymentStatusLabels[status])}</option>)}
                               </select>
                             </div>
-                            <input value={corporateOutputDraft.paymentReference} onChange={(event) => updateCorporateOutputDraft('paymentReference', event.target.value)} className={`mt-2 h-9 w-full rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Payment reference" />
-                            <textarea value={corporateOutputDraft.paymentNotes} onChange={(event) => updateCorporateOutputDraft('paymentNotes', event.target.value)} className={`mt-2 h-14 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder="Payment note" />
+                            <input value={corporateOutputDraft.paymentReference} onChange={(event) => updateCorporateOutputDraft('paymentReference', event.target.value)} className={`mt-2 h-9 w-full rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("Payment reference")} />
+                            <textarea value={corporateOutputDraft.paymentNotes} onChange={(event) => updateCorporateOutputDraft('paymentNotes', event.target.value)} className={`mt-2 h-14 w-full resize-none rounded-lg border px-2 py-2 text-xs ${styles.input}`} placeholder={opsText("Payment note")} />
                             <button type="button" disabled={isSavingCorporateOutput || !selectedCtmTrip.invoice} onClick={recordCorporatePaymentOutput} className="mt-3 h-9 w-full rounded-lg bg-fuchsia-600 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
-                              Record payment
-                            </button>
+                              {opsText("Record payment")}</button>
                           </div>
                         </div>
                       </div>
                     ) : null}
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className={`text-sm ${styles.muted}`}>Commercial shape</div>
+                      <div className={`text-sm ${styles.muted}`}>{opsText("Commercial shape")}</div>
                       <div className="mt-2 text-lg font-semibold">{selectedQuote ? moneyValue(selectedQuote.subtotalSell, selectedQuote.currency) : selectedLead.budget || 'Policy-based / budget pending'}</div>
                       <div className={`mt-2 text-sm ${styles.muted}`}>{selectedQuote ? `${selectedQuote.quoteNumber} - ${quoteStatusLabels[selectedQuote.status]}` : selectedLead.requestedServices || 'Service scope pending'}</div>
                     </div>
                     {selectedQuote ? (
                       <>
                         <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className={`text-sm ${styles.muted}`}>Quote cost</div>
+                          <div className={`text-sm ${styles.muted}`}>{opsText("Quote cost")}</div>
                           <div className="mt-2 font-semibold">{moneyValue(selectedQuote.subtotalCost, selectedQuote.currency)}</div>
-                          <div className={`mt-2 text-sm ${styles.muted}`}>Supplier-side estimate</div>
+                          <div className={`mt-2 text-sm ${styles.muted}`}>{opsText("Supplier-side estimate")}</div>
                         </div>
                         <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className={`text-sm ${styles.muted}`}>Quote margin</div>
+                          <div className={`text-sm ${styles.muted}`}>{opsText("Quote margin")}</div>
                           <div className="mt-2 font-semibold text-fuchsia-300">{moneyValue(selectedQuote.margin, selectedQuote.currency)}</div>
-                          <div className={`mt-2 text-sm ${styles.muted}`}>Before invoice release</div>
+                          <div className={`mt-2 text-sm ${styles.muted}`}>{opsText("Before invoice release")}</div>
                         </div>
                       </>
                     ) : null}
                     {corporateFinanceCards(selectedLead).map((card) => (
                       <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                        <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                        <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                         <div className="mt-2 font-semibold">{card.value}</div>
-                        {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                        {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                       </div>
                     ))}
                     <div className={`rounded-lg border p-4 md:col-span-2 ${styles.panelSoft}`}>
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <div className="font-semibold">Quote release snapshot</div>
+                          <div className="font-semibold">{opsText("Quote release snapshot")}</div>
                           {quoteLineSaveIndicator}
                         </div>
-                        {selectedQuote ? <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{quoteStatusLabels[selectedQuote.status]}</span> : null}
+                        {selectedQuote ? <span className={`rounded-full px-2.5 py-1 text-xs ${styles.buttonGhost}`}>{opsText(quoteStatusLabels[selectedQuote.status])}</span> : null}
                       </div>
                       <div className="mt-4 grid gap-3">
                         {selectedQuote ? selectedQuote.lines.map((line) => (
@@ -8126,17 +7629,17 @@ export function CrmPage() {
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
                                 <input value={quoteLineValue(line, 'description')} onChange={(event) => scheduleQuoteLineSave(line, { description: event.target.value })} className={`h-9 rounded-lg border px-2 text-sm font-medium ${styles.input}`} />
-                                <input value={quoteLineValue(line, 'supplier')} onChange={(event) => scheduleQuoteLineSave(line, { supplier: event.target.value })} className={`mt-2 h-9 rounded-lg border px-2 text-sm ${styles.input}`} placeholder="Supplier" />
+                                <input value={quoteLineValue(line, 'supplier')} onChange={(event) => scheduleQuoteLineSave(line, { supplier: event.target.value })} className={`mt-2 h-9 rounded-lg border px-2 text-sm ${styles.input}`} placeholder={opsText("Supplier")} />
                               </div>
                               <div className="grid grid-cols-2 gap-2 text-right">
                                 <select value={line.status} onChange={(event) => saveQuoteLine(line, { status: event.target.value as QuoteLineStatus })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
                                   {quoteLineStatuses.map((status) => (
-                                    <option key={status} value={status}>{quoteLineStatusLabels[status]}</option>
+                                    <option key={status} value={status}>{opsText(quoteLineStatusLabels[status])}</option>
                                   ))}
                                 </select>
                                 <select value={line.category} onChange={(event) => saveQuoteLine(line, { category: event.target.value as QuoteLineCategory })} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
                                   {quoteLineCategories.map((category) => (
-                                    <option key={category} value={category}>{quoteLineCategoryLabels[category]}</option>
+                                    <option key={category} value={category}>{opsText(quoteLineCategoryLabels[category])}</option>
                                   ))}
                                 </select>
                               </div>
@@ -8149,29 +7652,28 @@ export function CrmPage() {
                             </div>
                           </div>
                         )) : (
-                          <div className={`rounded-lg border p-4 text-sm ${styles.panel}`}>Quote lines will appear here once a quote is drafted for this request.</div>
+                          <div className={`rounded-lg border p-4 text-sm ${styles.panel}`}>{opsText("Quote lines will appear here once a quote is drafted for this request.")}</div>
                         )}
                         {selectedQuote ? (
                           <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
                             <div className="grid gap-3 md:grid-cols-[130px_1fr_1fr_90px_110px_110px_100px_auto]">
                               <select value={quoteLineDraft.category} onChange={(event) => updateQuoteLineDraft('category', event.target.value as QuoteLineCategory)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
                                 {quoteLineCategories.map((category) => (
-                                  <option key={category} value={category}>{quoteLineCategoryLabels[category]}</option>
+                                  <option key={category} value={category}>{opsText(quoteLineCategoryLabels[category])}</option>
                                 ))}
                               </select>
-                              <input value={quoteLineDraft.description} onChange={(event) => updateQuoteLineDraft('description', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="New quote line" />
-                              <input value={quoteLineDraft.supplier} onChange={(event) => updateQuoteLineDraft('supplier', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder="Supplier" />
+                              <input value={quoteLineDraft.description} onChange={(event) => updateQuoteLineDraft('description', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("New quote line")} />
+                              <input value={quoteLineDraft.supplier} onChange={(event) => updateQuoteLineDraft('supplier', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} placeholder={opsText("Supplier")} />
                               <input value={quoteLineDraft.quantity} onChange={(event) => updateQuoteLineDraft('quantity', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
                               <input value={quoteLineDraft.unitCost} onChange={(event) => updateQuoteLineDraft('unitCost', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
                               <input value={quoteLineDraft.unitSell} onChange={(event) => updateQuoteLineDraft('unitSell', event.target.value)} className={`h-9 rounded-lg border px-2 text-xs ${styles.input}`} />
                               <select value={quoteLineDraft.status} onChange={(event) => updateQuoteLineDraft('status', event.target.value as QuoteLineStatus)} className={`h-9 rounded-lg border px-2 text-xs ${styles.select}`}>
                                 {quoteLineStatuses.map((status) => (
-                                  <option key={status} value={status}>{quoteLineStatusLabels[status]}</option>
+                                  <option key={status} value={status}>{opsText(quoteLineStatusLabels[status])}</option>
                                 ))}
                               </select>
                               <button type="button" onClick={() => submitQuoteLine(selectedQuote)} className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white">
-                                Add
-                              </button>
+                                {opsText("Add")}</button>
                             </div>
                           </div>
                         ) : null}
@@ -8183,27 +7685,26 @@ export function CrmPage() {
                 {detailTab === 'documents' ? (
                   <div className="grid gap-4">
                     <div className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                      <div className="font-semibold">Documents and readiness</div>
+                      <div className="font-semibold">{opsText("Documents and readiness")}</div>
                       <p className={`mt-2 text-sm leading-6 ${styles.soft}`}>
-                        Keep approvals, traveler documentation, and operational notes aligned before fulfilment starts.
-                      </p>
+                        {opsText("Keep approvals, traveler documentation, and operational notes aligned before fulfilment starts.")}</p>
                     </div>
                     <div className="grid gap-3 md:grid-cols-3">
                       {corporateDocumentCards(selectedLead).map((card) => (
                         <div key={card.label} className={`rounded-lg border p-4 ${styles.panelSoft}`}>
-                          <div className={`text-sm ${styles.muted}`}>{card.label}</div>
+                          <div className={`text-sm ${styles.muted}`}>{opsText(card.label)}</div>
                           <div className="mt-2 font-semibold">{card.value}</div>
-                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{card.meta}</div> : null}
+                          {card.meta ? <div className={`mt-2 text-sm leading-6 ${styles.muted}`}>{opsText(card.meta)}</div> : null}
                         </div>
                       ))}
                     </div>
                     <label className="block">
-                      <span className="font-semibold">Internal readiness notes</span>
+                      <span className="font-semibold">{opsText("Internal readiness notes")}</span>
                       <textarea
                         value={selectedLead.internalNotes || ''}
                         onChange={(event) => refreshLead(selectedLead.id, { internalNotes: event.target.value })}
                         className={`mt-3 min-h-24 w-full resize-y rounded-lg border px-3 py-3 text-sm leading-6 outline-none transition ${styles.input}`}
-                        placeholder="Visa status, missing traveler data, invoice dependencies..."
+                        placeholder={opsText("Visa status, missing traveler data, invoice dependencies...")}
                       />
                     </label>
                   </div>
@@ -8225,7 +7726,7 @@ export function CrmPage() {
                           }`}
                         />
                         <div>
-                          <div className="font-medium">{item.label}</div>
+                          <div className="font-medium">{opsText(item.label)}</div>
                           <div className={`text-sm ${styles.muted}`}>{item.meta}</div>
                         </div>
                       </div>
@@ -8233,7 +7734,7 @@ export function CrmPage() {
                     <div className="flex gap-3">
                       <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[#d4af37]" />
                       <div>
-                        <div className="font-medium">Email status</div>
+                        <div className="font-medium">{opsText("Email status")}</div>
                         <div className={`text-sm ${styles.muted}`}>{selectedLead.emailStatus}</div>
                       </div>
                     </div>
@@ -8244,13 +7745,14 @@ export function CrmPage() {
           ) : (
             <div className="p-8 text-center">
               <Inbox className={`mx-auto h-10 w-10 ${styles.muted}`} />
-              <div className="mt-4 text-lg font-semibold">Select a request</div>
-              <p className={`mt-2 text-sm ${styles.muted}`}>Lead context appears here.</p>
+              <div className="mt-4 text-lg font-semibold">{opsText("Select a request")}</div>
+              <p className={`mt-2 text-sm ${styles.muted}`}>{opsText("Lead context appears here.")}</p>
             </div>
           )}
         </aside>
         ) : null}
           </div>
+          )}
         </section>
       </div>
       {showManualRequest ? (
@@ -8258,15 +7760,15 @@ export function CrmPage() {
           <form onSubmit={submitManualRequest} className={`w-full max-w-2xl rounded-xl border p-5 shadow-2xl ${styles.panel}`}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className={`text-xs uppercase tracking-[0.18em] ${styles.muted}`}>Phone intake</div>
-                <h2 className="mt-1 text-xl font-semibold">New leisure request from phone call</h2>
-                <p className={`mt-1 text-sm ${styles.muted}`}>Capture the essentials for Classic or Luxury now and qualify the request later. Corporate requests should come from CTM.</p>
+                <div className={`text-xs uppercase tracking-[0.18em] ${styles.muted}`}>{opsText("Phone intake")}</div>
+                <h2 className="mt-1 text-xl font-semibold">{opsText("New leisure request from phone call")}</h2>
+                <p className={`mt-1 text-sm ${styles.muted}`}>{opsText("Capture the essentials for Classic or Luxury now and qualify the request later. Corporate requests should come from CTM.")}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowManualRequest(false)}
                 className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${styles.buttonGhost}`}
-                aria-label="Close phone request form"
+                aria-label={opsText("Close phone request form")}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -8274,29 +7776,26 @@ export function CrmPage() {
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="text-sm font-medium">
-                Client / company
-                <input
+                {opsText("Client / company")}<input
                   value={manualRequest.name}
                   onChange={(event) => updateManualField('name', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
-                  placeholder="Name heard on call"
+                  placeholder={opsText("Name heard on call")}
                   required
                 />
               </label>
               <label className="text-sm font-medium">
-                Segment
-                <select
+                {opsText("Segment")}<select
                   value={manualRequest.serviceKey}
                   onChange={(event) => updateManualField('serviceKey', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}
                 >
-                  <option value="classic">Classic</option>
-                  <option value="luxury">Luxury</option>
+                  <option value="classic">{opsText("Classic")}</option>
+                  <option value="luxury">{opsText("Luxury")}</option>
                 </select>
               </label>
               <label className="text-sm font-medium">
-                Phone / WhatsApp
-                <input
+                {opsText("Phone / WhatsApp")}<input
                   value={manualRequest.phone}
                   onChange={(event) => updateManualField('phone', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
@@ -8314,26 +7813,23 @@ export function CrmPage() {
                 />
               </label>
               <label className="text-sm font-medium">
-                Destination
-                <input
+                {opsText("Destination")}<input
                   value={manualRequest.destination}
                   onChange={(event) => updateManualField('destination', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
-                  placeholder="Where do they want to go?"
+                  placeholder={opsText("Where do they want to go?")}
                 />
               </label>
               <label className="text-sm font-medium">
-                Departure city
-                <input
+                {opsText("Departure city")}<input
                   value={manualRequest.departureCity}
                   onChange={(event) => updateManualField('departureCity', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
-                  placeholder="Where from?"
+                  placeholder={opsText("Where from?")}
                 />
               </label>
               <label className="text-sm font-medium">
-                Departure date
-                <input
+                {opsText("Departure date")}<input
                   value={manualRequest.startDate}
                   onChange={(event) => updateManualField('startDate', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
@@ -8342,8 +7838,7 @@ export function CrmPage() {
                 />
               </label>
               <label className="text-sm font-medium">
-                Return date
-                <input
+                {opsText("Return date")}<input
                   value={manualRequest.endDate}
                   onChange={(event) => updateManualField('endDate', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
@@ -8352,40 +7847,35 @@ export function CrmPage() {
                 />
               </label>
               <label className="text-sm font-medium">
-                Travelers
-                <input
+                {opsText("Travelers")}<input
                   value={manualRequest.travelers}
                   onChange={(event) => updateManualField('travelers', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
-                  placeholder="2 travelers, executive team..."
+                  placeholder={opsText("2 travelers, executive team...")}
                 />
               </label>
               <label className="text-sm font-medium">
-                Budget
-                <input
+                {opsText("Budget")}<input
                   value={manualRequest.budget}
                   onChange={(event) => updateManualField('budget', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
-                  placeholder="If mentioned"
+                  placeholder={opsText("If mentioned")}
                 />
               </label>
             </div>
             <label className="mt-4 block text-sm font-medium">
-              Call notes
-              <textarea
+              {opsText("Call notes")}<textarea
                 value={manualRequest.notes}
                 onChange={(event) => updateManualField('notes', event.target.value)}
                 className={`mt-2 min-h-24 w-full rounded-lg border px-3 py-3 text-sm outline-none ${styles.input}`}
-                placeholder="Capture what was said on the call..."
+                placeholder={opsText("Capture what was said on the call...")}
               />
             </label>
             <div className="mt-5 flex justify-end gap-3">
               <button type="button" onClick={() => setShowManualRequest(false)} className={`rounded-lg px-4 py-2 text-sm ${styles.buttonGhost}`}>
-                Cancel
-              </button>
+                {opsText("Cancel")}</button>
               <button type="submit" className="rounded-lg bg-[#253f49] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#34545f]">
-                Create leisure request
-              </button>
+                {opsText("Create leisure request")}</button>
             </div>
           </form>
         </div>
@@ -8395,7 +7885,7 @@ export function CrmPage() {
           <form onSubmit={submitClientRegistration} className={`w-full max-w-2xl rounded-xl border p-5 shadow-2xl ${styles.panel}`}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className={`text-xs uppercase tracking-[0.18em] ${styles.muted}`}>Client registration</div>
+                <div className={`text-xs uppercase tracking-[0.18em] ${styles.muted}`}>{opsText("Client registration")}</div>
                 <h2 className="mt-1 text-xl font-semibold">{selectedLead ? 'Convert request to client' : 'Create CRM client record'}</h2>
                 <p className={`mt-1 text-sm ${styles.muted}`}>
                   {selectedLead ? 'Turn this request into a reusable client record and link future requests cleanly.' : 'Register a reusable client profile and link it to future requests.'}
@@ -8405,7 +7895,7 @@ export function CrmPage() {
                 type="button"
                 onClick={() => setShowClientRegistration(false)}
                 className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${styles.buttonGhost}`}
-                aria-label="Close client registration form"
+                aria-label={opsText("Close client registration form")}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -8415,10 +7905,9 @@ export function CrmPage() {
               <div className={`mt-5 rounded-xl border px-4 py-4 ${styles.panelSoft}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold">Existing client found</div>
+                    <div className="text-sm font-semibold">{opsText("Existing client found")}</div>
                     <p className={`mt-1 text-sm ${styles.muted}`}>
-                      {clientLabel(potentialClientMatch)} already exists with matching contact details. Saving will link this request to that client instead of creating a duplicate record.
-                    </p>
+                      {clientLabel(potentialClientMatch)} {opsText("already exists with matching contact details. Saving will link this request to that client instead of creating a duplicate record.")}</p>
                   </div>
                   <button
                     type="button"
@@ -8429,16 +7918,14 @@ export function CrmPage() {
                     }}
                     className={`inline-flex h-9 items-center rounded-lg px-3 text-xs ${styles.buttonGhost}`}
                   >
-                    Open existing client
-                  </button>
+                    {opsText("Open existing client")}</button>
                 </div>
               </div>
             ) : null}
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="text-sm font-medium">
-                Client name
-                <input
+                {opsText("Client name")}<input
                   value={clientForm.name}
                   onChange={(event) => updateClientField('name', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
@@ -8446,34 +7933,31 @@ export function CrmPage() {
                 />
               </label>
               <label className="text-sm font-medium">
-                Client type
-                <select
+                {opsText("Client type")}<select
                   value={clientForm.clientType}
                   onChange={(event) => updateClientField('clientType', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}
                 >
-                  <option value="private">Private</option>
-                  <option value="corporate">Corporate</option>
+                  <option value="private">{opsText("Private")}</option>
+                  <option value="corporate">{opsText("Corporate")}</option>
                 </select>
               </label>
               <label className="text-sm font-medium">
-                Company name
-                <input
+                {opsText("Company name")}<input
                   value={clientForm.companyName}
                   onChange={(event) => updateClientField('companyName', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
                 />
               </label>
               <label className="text-sm font-medium">
-                Service level
-                <select
+                {opsText("Service level")}<select
                   value={clientForm.serviceLevel}
                   onChange={(event) => updateClientField('serviceLevel', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}
                 >
-                  <option value="classic">Classic</option>
-                  <option value="luxury">Luxury</option>
-                  <option value="corporate">Corporate</option>
+                  <option value="classic">{opsText("Classic")}</option>
+                  <option value="luxury">{opsText("Luxury")}</option>
+                  <option value="corporate">{opsText("Corporate")}</option>
                 </select>
               </label>
               <label className="text-sm font-medium">
@@ -8486,24 +7970,21 @@ export function CrmPage() {
                 />
               </label>
               <label className="text-sm font-medium">
-                Phone
-                <input
+                {opsText("Phone")}<input
                   value={clientForm.phone}
                   onChange={(event) => updateClientField('phone', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
                 />
               </label>
               <label className="text-sm font-medium">
-                Preferred contact
-                <input
+                {opsText("Preferred contact")}<input
                   value={clientForm.preferredContact}
                   onChange={(event) => updateClientField('preferredContact', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
                 />
               </label>
               <label className="text-sm font-medium">
-                Owner
-                <input
+                {opsText("Owner")}<input
                   value={clientForm.owner}
                   onChange={(event) => updateClientField('owner', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
@@ -8512,8 +7993,7 @@ export function CrmPage() {
             </div>
 
             <label className="mt-4 block text-sm font-medium">
-              Notes
-              <textarea
+              {opsText("Notes")}<textarea
                 value={clientForm.notes}
                 onChange={(event) => updateClientField('notes', event.target.value)}
                 className={`mt-2 min-h-24 w-full rounded-lg border px-3 py-3 text-sm outline-none ${styles.input}`}
@@ -8521,10 +8001,9 @@ export function CrmPage() {
             </label>
             <div className="mt-5 flex justify-end gap-3">
               <button type="button" onClick={() => setShowClientRegistration(false)} className={`rounded-lg px-4 py-2 text-sm ${styles.buttonGhost}`}>
-                Cancel
-              </button>
+                {opsText("Cancel")}</button>
               <button type="submit" className="rounded-lg bg-[#253f49] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#34545f]">
-                {potentialClientMatch ? 'Link existing client' : selectedLead ? 'Convert to client' : 'Save client'}
+                {potentialClientMatch ? 'Link existing client' : selectedLead ? opsText("Convert to client") : 'Save client'}
               </button>
             </div>
           </form>
@@ -8535,9 +8014,9 @@ export function CrmPage() {
           <form onSubmit={submitUserManagement} className={`w-full max-w-2xl rounded-xl border p-5 shadow-2xl ${styles.panel}`}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className={`text-xs uppercase tracking-[0.18em] ${styles.muted}`}>CRM access</div>
+                <div className={`text-xs uppercase tracking-[0.18em] ${styles.muted}`}>{opsText("CRM access")}</div>
                 <h2 className="mt-1 text-xl font-semibold">{editingUserId ? 'Update CRM user' : 'Create CRM user'}</h2>
-                <p className={`mt-1 text-sm ${styles.muted}`}>Set credentials, active status, and role-based CRM access.</p>
+                <p className={`mt-1 text-sm ${styles.muted}`}>{opsText("Set credentials, active status, and role-based CRM access.")}</p>
               </div>
               <button
                 type="button"
@@ -8547,7 +8026,7 @@ export function CrmPage() {
                   setUserForm(emptyUserForm());
                 }}
                 className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${styles.buttonGhost}`}
-                aria-label="Close CRM user form"
+                aria-label={opsText("Close CRM user form")}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -8555,24 +8034,21 @@ export function CrmPage() {
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="text-sm font-medium">
-                First name
-                <input
+                {opsText("First name")}<input
                   value={userForm.first_name}
                   onChange={(event) => updateUserField('first_name', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
                 />
               </label>
               <label className="text-sm font-medium">
-                Last name
-                <input
+                {opsText("Last name")}<input
                   value={userForm.last_name}
                   onChange={(event) => updateUserField('last_name', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
                 />
               </label>
               <label className="text-sm font-medium">
-                Username
-                <input
+                {opsText("Username")}<input
                   value={userForm.username}
                   onChange={(event) => updateUserField('username', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
@@ -8590,22 +8066,20 @@ export function CrmPage() {
                 />
               </label>
               <label className="text-sm font-medium">
-                Role
-                <select
+                {opsText("Role")}<select
                   value={userForm.role}
                   onChange={(event) => updateUserField('role', event.target.value as UserFormState['role'])}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.select}`}
                 >
                   {manageableRoleOptions.map((role) => (
                     <option key={role} value={role}>
-                      {crmRoleLabels[role]}
+                      {opsText(crmRoleLabels[role])}
                     </option>
                   ))}
                 </select>
               </label>
               <label className="text-sm font-medium">
-                Password
-                <input
+                {opsText("Password")}<input
                   value={userForm.password}
                   onChange={(event) => updateUserField('password', event.target.value)}
                   className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${styles.input}`}
@@ -8624,8 +8098,8 @@ export function CrmPage() {
                 className="h-4 w-4 rounded border-white/20"
               />
               <span>
-                <span className="font-medium">Active CRM account</span>
-                <span className={`mt-1 block ${styles.muted}`}>Inactive users keep their record but cannot sign in.</span>
+                <span className="font-medium">{opsText("Active CRM account")}</span>
+                <span className={`mt-1 block ${styles.muted}`}>{opsText("Inactive users keep their record but cannot sign in.")}</span>
               </span>
             </label>
 
@@ -8639,8 +8113,7 @@ export function CrmPage() {
                 }}
                 className={`rounded-lg px-4 py-2 text-sm ${styles.buttonGhost}`}
               >
-                Cancel
-              </button>
+                {opsText("Cancel")}</button>
               <button type="submit" className="rounded-lg bg-[#253f49] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#34545f]">
                 {editingUserId ? 'Save user' : 'Create user'}
               </button>

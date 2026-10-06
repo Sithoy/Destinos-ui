@@ -7,7 +7,7 @@ from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceB
 class ClientAdmin(admin.ModelAdmin):
     list_display = ("name", "client_type", "service_level", "owner", "email", "updated_at")
     list_filter = ("client_type", "service_level")
-    search_fields = ("name", "company_name", "email", "phone", "notes", "owner")
+    search_fields = ("name", "company_name", "email", "phone", "notes", "owner_label", "owner__username", "owner__first_name", "owner__last_name")
     readonly_fields = ("id", "created_at", "updated_at")
     fieldsets = (
         ("Client", {"fields": ("id", "name", "client_type", "company_name", "service_level", "owner")}),
@@ -19,14 +19,14 @@ class ClientAdmin(admin.ModelAdmin):
 
 @admin.register(Lead)
 class LeadAdmin(admin.ModelAdmin):
-    list_display = ("name", "client", "service_key", "destination", "status", "lifecycle_stage", "priority", "created_at")
+    list_display = ("name", "client", "service_key", "destination", "status", "lifecycle_stage", "priority", "owner", "created_at")
     list_filter = ("service_key", "status", "lifecycle_stage", "priority", "email_status")
     search_fields = ("name", "email", "whatsapp", "destination", "notes", "internal_notes", "client__name", "client__company_name")
     readonly_fields = ("id", "created_at", "updated_at", "experience_snapshot")
     fieldsets = (
         ("Client", {"fields": ("id", "name", "contact", "email", "whatsapp", "preferred_contact")}),
         ("Request", {"fields": ("client", "service", "service_key", "requested_services", "trip_type", "departure_city", "destination", "dates", "travelers", "budget", "urgency", "experience_snapshot")}),
-        ("Workflow", {"fields": ("status", "lifecycle_stage", "priority", "email_status", "notes", "internal_notes")}),
+        ("Workflow", {"fields": ("status", "lifecycle_stage", "priority", "email_status", "owner", "notes", "internal_notes")}),
         ("System", {"fields": ("created_at", "updated_at")}),
     )
 

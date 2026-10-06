@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group, User
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -11,40 +12,187 @@ from .models import AccommodationBlock, Client, CommunicationRecord, ExperienceB
 CRM_GROUP_ROLE_MAP = {
     "crm_admin": "admin",
     "crm_manager": "manager",
+    "crm_team_manager": "team_manager",
     "crm_agent": "agent",
+    "crm_consultant": "consultant",
+    "crm_operations": "operations",
+    "crm_finance": "finance",
     "crm_viewer": "viewer",
+    "crm_auditor": "auditor",
     "client": "client",
 }
 
 CRM_ROLE_GROUP_MAP = {role: group for group, role in CRM_GROUP_ROLE_MAP.items()}
+
+# Legacy role names kept for backward compatibility; the legacy "agent" role
+# is treated as consultant-equivalent everywhere below.
 CRM_ALLOWED_ROLES = {"admin", "manager", "agent", "viewer"}
+
+# Responsibility-based role sets. Groups are combinable, so a user's
+# effective responsibility set is the union of every CRM group they hold.
+# Roles allowed to open the CRM at all (viewer/auditor are read-only).
+CRM_ACCESS_ROLES = {"admin", "manager", "team_manager", "agent", "consultant", "operations", "finance", "viewer", "auditor"}
+# Roles with read/write API access.
+CRM_WRITE_ROLES = {"admin", "manager", "team_manager", "agent", "consultant", "operations", "finance"}
+# Record scoping: these roles see every record; consultant/agent see only
+# records they own plus unassigned records.
+CRM_VIEW_ALL_ROLES = {"admin", "manager", "team_manager", "operations", "finance", "viewer", "auditor"}
+# Financial visibility policy (remediation plan item 1.4): QuoteLine
+# unit_cost/unit_sell/total_cost/margin and Quote subtotal_cost/margin are
+# visible to roles that build, book, or control money; hidden from viewer
+# and auditor.
+CRM_FINANCIAL_VISIBILITY_ROLES = {"admin", "manager", "team_manager", "finance", "operations", "agent", "consultant"}
+CRM_SEND_QUOTE_ROLES = {"admin", "manager", "team_manager", "agent", "consultant"}
+CRM_CREATE_PAYMENT_ROLES = {"admin", "manager", "finance", "agent", "consultant"}
+CRM_VERIFY_PAYMENT_ROLES = {"admin", "manager", "finance"}
+CRM_EXPORT_ROLES = {"admin", "manager", "team_manager", "finance", "auditor"}
+CRM_MANAGE_USER_ROLES = {"admin", "manager"}
+CRM_MANAGE_CLIENT_ROLES = {"admin", "manager", "team_manager", "agent", "consultant"}
+
+
+def get_user_responsibilities(user: User) -> set[str]:
+    """Resolve the full set of CRM responsibilities for a user.
+
+    Groups are combinable: a user may hold several crm_* groups at once.
+    The legacy "agent" role implies consultant responsibilities.
+    """
+    if not user or not user.is_authenticated:
+        return set()
+
+    if user.is_superuser:
+        return set(CRM_ACCESS_ROLES)
+
+    group_names = set(user.groups.values_list("name", flat=True))
+    roles = {role for group_name, role in CRM_GROUP_ROLE_MAP.items() if group_name in group_names}
+    if "agent" in roles:
+        roles.add("consultant")
+    if user.is_staff:
+        roles.add("manager")
+    return roles
 
 
 def get_user_role(user: User) -> str:
-    if user.is_superuser:
-        return "admin"
-
-    group_names = set(user.groups.values_list("name", flat=True))
-    for group_name, role in CRM_GROUP_ROLE_MAP.items():
-        if group_name in group_names:
+    """Primary role for display/backward compatibility (single value)."""
+    responsibilities = get_user_responsibilities(user)
+    for role in ("admin", "manager", "team_manager", "agent", "consultant", "operations", "finance", "viewer", "auditor", "client"):
+        if role in responsibilities:
             return role
-
-    if user.is_staff:
-        return "manager"
-
     return "none"
 
 
+def _has_any(user: User, roles: set[str]) -> bool:
+    return bool(get_user_responsibilities(user) & roles)
+
+
 def can_access_crm(user: User) -> bool:
-    return get_user_role(user) in CRM_ALLOWED_ROLES
+    return _has_any(user, CRM_ACCESS_ROLES)
+
+
+def can_write_crm(user: User) -> bool:
+    return _has_any(user, CRM_WRITE_ROLES)
+
+
+def can_view_all_records(user: User) -> bool:
+    return _has_any(user, CRM_VIEW_ALL_ROLES)
+
+
+def can_view_financials(user: User) -> bool:
+    return _has_any(user, CRM_FINANCIAL_VISIBILITY_ROLES)
+
+
+def can_send_quotes(user: User) -> bool:
+    return _has_any(user, CRM_SEND_QUOTE_ROLES)
+
+
+def can_advance_workflow(user: User) -> bool:
+    return can_write_crm(user)
+
+
+def can_create_payments(user: User) -> bool:
+    return _has_any(user, CRM_CREATE_PAYMENT_ROLES)
+
+
+def can_verify_payments(user: User) -> bool:
+    return _has_any(user, CRM_VERIFY_PAYMENT_ROLES)
+
+
+def can_export_reports(user: User) -> bool:
+    return _has_any(user, CRM_EXPORT_ROLES)
 
 
 def can_manage_clients(user: User) -> bool:
-    return get_user_role(user) in {"admin", "manager", "agent"}
+    return _has_any(user, CRM_MANAGE_CLIENT_ROLES)
 
 
 def can_manage_users(user: User) -> bool:
-    return get_user_role(user) in {"admin", "manager"}
+    return _has_any(user, CRM_MANAGE_USER_ROLES)
+
+
+def get_user_capabilities(user: User) -> list[str]:
+    responsibilities = get_user_responsibilities(user)
+    capabilities = ["leads.view_all" if responsibilities & CRM_VIEW_ALL_ROLES else "leads.view_own"]
+    if responsibilities & CRM_MANAGE_CLIENT_ROLES:
+        capabilities.append("clients.manage")
+    if responsibilities & CRM_SEND_QUOTE_ROLES:
+        capabilities.append("quotes.send")
+    if responsibilities & CRM_WRITE_ROLES:
+        capabilities.append("workflow.advance")
+    if responsibilities & CRM_CREATE_PAYMENT_ROLES:
+        capabilities.append("payments.create")
+    if responsibilities & CRM_VERIFY_PAYMENT_ROLES:
+        capabilities.append("payments.verify")
+    if responsibilities & CRM_FINANCIAL_VISIBILITY_ROLES:
+        capabilities.append("financials.view")
+    if responsibilities & CRM_EXPORT_ROLES:
+        capabilities.append("reports.export")
+    if responsibilities & CRM_MANAGE_USER_ROLES:
+        capabilities.append("users.admin")
+    return capabilities
+
+
+def user_display_name(user: User) -> str:
+    if not user:
+        return ""
+    full_name = f"{user.first_name} {user.last_name}".strip()
+    return full_name or user.username
+
+
+def scope_records_for_user(queryset, user: User, owner_lookup: str = "owner"):
+    """Restrict a queryset for scoped roles (consultant/agent).
+
+    `owner_lookup` is the ORM path from the queryset model to the owner FK,
+    e.g. "lead__owner" for quotes or "stop__itinerary__lead__owner" for
+    accommodation blocks. Unscoped roles (CRM_VIEW_ALL_ROLES) see all
+    records; scoped roles see their own records plus unassigned ones.
+    """
+    if can_view_all_records(user):
+        return queryset
+    return queryset.filter(Q(**{owner_lookup: user}) | Q(**{f"{owner_lookup}__isnull": True}))
+
+
+class ScopedForeignKeySerializerMixin:
+    """Scope writable FK querysets to records the request user may access.
+
+    `scoped_fk_fields` maps serializer field names to the owner lookup path
+    used by scope_records_for_user (e.g. {"quoteId": "lead__owner"}). Without
+    an authenticated request in the serializer context (seeds, management
+    commands) querysets stay unscoped. Scoped users who reference an
+    out-of-scope parent get a 400 validation error instead of silently
+    attaching children to records they cannot see.
+    """
+
+    scoped_fk_fields: dict = {}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not getattr(user, "is_authenticated", False):
+            return
+        for field_name, owner_lookup in self.scoped_fk_fields.items():
+            field = self.fields.get(field_name)
+            if field is not None and getattr(field, "queryset", None) is not None:
+                field.queryset = scope_records_for_user(field.queryset, user, owner_lookup)
 
 
 def can_manage_user_target(actor: User, target: User) -> bool:
@@ -54,7 +202,7 @@ def can_manage_user_target(actor: User, target: User) -> bool:
     if actor_role == "admin":
         return True
     if actor_role == "manager":
-        return target_role in {"agent", "viewer", "client", "none"}
+        return target_role in {"agent", "viewer", "consultant", "operations", "finance", "auditor", "client", "none"}
     return False
 
 
@@ -62,9 +210,9 @@ def can_assign_user_role(actor: User, role: str) -> bool:
     actor_role = get_user_role(actor)
 
     if actor_role == "admin":
-        return role in {"admin", "manager", "agent", "viewer"}
+        return role in {"admin", "manager", "team_manager", "agent", "consultant", "operations", "finance", "viewer", "auditor"}
     if actor_role == "manager":
-        return role in {"agent", "viewer"}
+        return role in {"agent", "viewer", "consultant", "operations", "finance", "auditor"}
     return False
 
 
@@ -97,9 +245,9 @@ def assign_user_role(user: User, role: str) -> User:
         group, _ = Group.objects.get_or_create(name=group_name)
         user.groups.add(group)
 
-    if role in {"admin", "manager"}:
+    if role in {"admin", "manager", "team_manager"}:
         user.is_staff = True
-    elif role in {"agent", "viewer", "client", "none"}:
+    elif role in {"agent", "consultant", "operations", "finance", "viewer", "auditor", "client", "none"}:
         user.is_staff = False
 
     user.save()
@@ -113,6 +261,11 @@ class ClientSerializer(serializers.ModelSerializer):
     companyName = serializers.CharField(source="company_name", required=False, allow_blank=True)
     preferredContact = serializers.CharField(source="preferred_contact", required=False, allow_blank=True)
     serviceLevel = serializers.CharField(source="service_level", required=False, allow_blank=True)
+    # "owner" stays the legacy free-text label for backward compatibility;
+    # ownerId/ownerName expose the real FK assignment.
+    owner = serializers.CharField(source="owner_label", required=False, allow_blank=True)
+    ownerId = serializers.PrimaryKeyRelatedField(source="owner", queryset=User.objects.all(), required=False, allow_null=True)
+    ownerName = serializers.SerializerMethodField()
     lastRequestAt = serializers.SerializerMethodField()
     activeRequestCount = serializers.SerializerMethodField()
 
@@ -130,11 +283,16 @@ class ClientSerializer(serializers.ModelSerializer):
             "preferredContact",
             "serviceLevel",
             "owner",
+            "ownerId",
+            "ownerName",
             "notes",
             "lastRequestAt",
             "activeRequestCount",
         ]
-        read_only_fields = ["id", "createdAt", "updatedAt", "lastRequestAt", "activeRequestCount"]
+        read_only_fields = ["id", "createdAt", "updatedAt", "ownerName", "lastRequestAt", "activeRequestCount"]
+
+    def get_ownerName(self, obj: Client) -> str:
+        return user_display_name(obj.owner)
 
     def get_lastRequestAt(self, obj: Client) -> str | None:
         lead = obj.leads.order_by("-created_at").first()
@@ -165,7 +323,9 @@ class ClientSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class LeadSerializer(serializers.ModelSerializer):
+class LeadSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"clientId": "owner"}
+
     experienceSnapshot = serializers.JSONField(source='experience_snapshot', read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
@@ -182,7 +342,12 @@ class LeadSerializer(serializers.ModelSerializer):
     companyAccountName = serializers.CharField(source="company_account.name", read_only=True)
     clientId = serializers.PrimaryKeyRelatedField(source="client", queryset=Client.objects.all(), required=False, allow_null=True)
     clientName = serializers.CharField(source="client.name", read_only=True)
+    ownerId = serializers.PrimaryKeyRelatedField(source="owner", queryset=User.objects.all(), required=False, allow_null=True)
+    ownerName = serializers.SerializerMethodField()
     workflowSummary = serializers.SerializerMethodField()
+
+    def get_ownerName(self, obj) -> str:
+        return user_display_name(obj.owner)
 
     def get_workflowSummary(self, obj):
         from .workflow import workflow_for_lead
@@ -191,7 +356,7 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         from copy import copy
-        from .workflow import STATUS_BY_STAGE, _brief_checks, workflow_for_lead
+        from .workflow import STATUS_BY_STAGE, _brief_checks, _check, _intake_checks, workflow_for_lead
 
         if self.instance is None:
             if attrs.get("status", Lead.Status.NEW) != Lead.Status.NEW or attrs.get("lifecycle_stage", Lead.LifecycleStage.NEW_REQUEST) != Lead.LifecycleStage.NEW_REQUEST:
@@ -214,7 +379,16 @@ class LeadSerializer(serializers.ModelSerializer):
         state = workflow_for_lead(candidate)
         early_stages = {Lead.LifecycleStage.NEW_REQUEST, Lead.LifecycleStage.PENDING_INFORMATION}
         if self.instance.lifecycle_stage in early_stages and stage == Lead.LifecycleStage.VALIDATED:
-            blockers = [item["detail"] for item in _brief_checks(candidate) if not item["ready"]]
+            # The briefing "validate" shortcut may jump straight to validated,
+            # but every gate of the skipped stages still applies: intake checks
+            # (including the owner gate) when leaving new_request, the owner
+            # gate whenever it was never satisfied, and the brief checks.
+            gate_checks = list(_brief_checks(candidate))
+            if self.instance.lifecycle_stage == Lead.LifecycleStage.NEW_REQUEST:
+                gate_checks = [*_intake_checks(candidate), *gate_checks]
+            if not candidate.owner_id:
+                gate_checks.append(_check("assigned", "Owner assigned", False, "Assign an owner before the request leaves intake."))
+            blockers = [item["detail"] for item in gate_checks if not item["ready"] and item["severity"] == "blocker"]
             if blockers:
                 raise serializers.ValidationError({"lifecycleStage": blockers})
         elif stage != state["nextStage"] or not state["canAdvance"]:
@@ -253,10 +427,12 @@ class LeadSerializer(serializers.ModelSerializer):
             "companyAccountName",
             "clientId",
             "clientName",
+            "ownerId",
+            "ownerName",
             "workflowSummary",
             "experienceSnapshot",
         ]
-        read_only_fields = ["id", "createdAt", "updatedAt"]
+        read_only_fields = ["id", "createdAt", "updatedAt", "ownerName"]
 
 
 class PublicLeadSerializer(LeadSerializer):
@@ -280,6 +456,9 @@ class WorkflowChecklistItemSerializer(serializers.Serializer):
     label = serializers.CharField()
     ready = serializers.BooleanField()
     detail = serializers.CharField()
+    # "blocker" gates advancement; "missing_info" and "advisory" are surfaced
+    # in the payload without blocking.
+    severity = serializers.ChoiceField(choices=["blocker", "missing_info", "advisory"])
 
 
 class WorkflowStageSerializer(serializers.Serializer):
@@ -297,6 +476,10 @@ class WorkflowStateSerializer(serializers.Serializer):
     nextStageLabel = serializers.CharField(allow_blank=True)
     canAdvance = serializers.BooleanField()
     responsibleOwner = serializers.CharField()
+    responsibleOwnerId = serializers.IntegerField(allow_null=True)
+    # Service-desk label derived from the service type; a queue hint only,
+    # never an owner (owners are real users via responsibleOwner*).
+    serviceDesk = serializers.CharField(allow_blank=True)
     checklist = WorkflowChecklistItemSerializer(many=True)
     blockers = WorkflowChecklistItemSerializer(many=True)
     stages = WorkflowStageSerializer(many=True)
@@ -306,7 +489,9 @@ class WorkflowAdvanceSerializer(serializers.Serializer):
     targetStage = serializers.CharField(required=False, allow_blank=True)
 
 
-class WorkflowReminderSerializer(serializers.ModelSerializer):
+class WorkflowReminderSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"leadId": "owner", "communicationId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
@@ -315,9 +500,20 @@ class WorkflowReminderSerializer(serializers.ModelSerializer):
     reminderType = serializers.ChoiceField(source="reminder_type", choices=WorkflowReminder.ReminderType.choices, required=False)
     sourceStage = serializers.CharField(source="source_stage", required=False, allow_blank=True)
     dueAt = serializers.DateTimeField(source="due_at")
-    assignedTo = serializers.CharField(source="assigned_to", required=False, allow_blank=True)
+    # "assignedTo" stays the legacy free-text label (queue hint); the real
+    # assignee FK is exposed via assignedToId/assignedToName.
+    assignedTo = serializers.CharField(source="assigned_to_label", required=False, allow_blank=True)
+    assignedToId = serializers.PrimaryKeyRelatedField(source="assigned_to", queryset=User.objects.all(), required=False, allow_null=True)
+    assignedToName = serializers.SerializerMethodField()
     createdBy = serializers.PrimaryKeyRelatedField(source="created_by", queryset=User.objects.all(), required=False, allow_null=True)
-    completedAt = serializers.DateTimeField(source="completed_at", required=False, allow_null=True)
+    # origin and completedAt are server-controlled: API-created tasks always
+    # get origin=manager, and completedAt is managed by the complete/cancel
+    # actions and the status transition logic in the viewset.
+    completedAt = serializers.DateTimeField(source="completed_at", read_only=True)
+    origin = serializers.ChoiceField(choices=WorkflowReminder.Origin.choices, read_only=True)
+    completionCondition = serializers.ChoiceField(source="completion_condition", choices=WorkflowReminder.CompletionCondition.choices, required=False)
+    waitingOn = serializers.ChoiceField(source="waiting_on", choices=WorkflowReminder.WaitingOn.choices, required=False, allow_null=True)
+    followUpAt = serializers.DateTimeField(source="follow_up_at", required=False, allow_null=True)
 
     class Meta:
         model = WorkflowReminder
@@ -330,15 +526,24 @@ class WorkflowReminderSerializer(serializers.ModelSerializer):
             "communicationId",
             "reminderType",
             "status",
+            "origin",
+            "completionCondition",
+            "waitingOn",
+            "followUpAt",
             "sourceStage",
             "title",
             "message",
             "dueAt",
             "assignedTo",
+            "assignedToId",
+            "assignedToName",
             "createdBy",
             "completedAt",
         ]
-        read_only_fields = ["id", "createdAt", "updatedAt", "leadName"]
+        read_only_fields = ["id", "createdAt", "updatedAt", "leadName", "assignedToName"]
+
+    def get_assignedToName(self, obj: WorkflowReminder) -> str:
+        return user_display_name(obj.assigned_to)
 
     def validate(self, attrs):
         lead = attrs.get("lead", getattr(self.instance, "lead", None))
@@ -348,7 +553,32 @@ class WorkflowReminderSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class QuoteLineSerializer(serializers.ModelSerializer):
+class FinancialFieldsMixin:
+    """Hide financial fields from serialized output for roles without
+    financial visibility (policy: CRM_FINANCIAL_VISIBILITY_ROLES).
+
+    Fails closed: when no request/user is available in the serializer
+    context, the fields are hidden.
+    """
+
+    financial_fields: tuple = ()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self.financial_fields:
+            return data
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not can_view_financials(user):
+            for field_name in self.financial_fields:
+                data.pop(field_name, None)
+        return data
+
+
+class QuoteLineSerializer(ScopedForeignKeySerializerMixin, FinancialFieldsMixin, serializers.ModelSerializer):
+    financial_fields = ("unitCost", "unitSell", "totalCost", "margin")
+    scoped_fk_fields = {"quoteId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     quoteId = serializers.PrimaryKeyRelatedField(source="quote", queryset=Quote.objects.all())
@@ -359,7 +589,11 @@ class QuoteLineSerializer(serializers.ModelSerializer):
     margin = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     confirmationReference = serializers.CharField(source="confirmation_reference", required=False, allow_blank=True)
     supplierDeadline = serializers.DateField(source="supplier_deadline", required=False, allow_null=True)
-    bookingOwner = serializers.CharField(source="booking_owner", required=False, allow_blank=True)
+    # "bookingOwner" stays the legacy free-text label; the real assignee FK
+    # is exposed via bookingOwnerId/bookingOwnerName.
+    bookingOwner = serializers.CharField(source="booking_owner_label", required=False, allow_blank=True)
+    bookingOwnerId = serializers.PrimaryKeyRelatedField(source="booking_owner", queryset=User.objects.all(), required=False, allow_null=True)
+    bookingOwnerName = serializers.SerializerMethodField()
     bookingNotes = serializers.CharField(source="booking_notes", required=False, allow_blank=True)
     confirmedAt = serializers.DateTimeField(source="confirmed_at", required=False, allow_null=True)
 
@@ -383,14 +617,21 @@ class QuoteLineSerializer(serializers.ModelSerializer):
             "confirmationReference",
             "supplierDeadline",
             "bookingOwner",
+            "bookingOwnerId",
+            "bookingOwnerName",
             "bookingNotes",
             "confirmedAt",
             "notes",
         ]
-        read_only_fields = ["id", "createdAt", "updatedAt", "totalCost", "totalSell", "margin"]
+        read_only_fields = ["id", "createdAt", "updatedAt", "totalCost", "totalSell", "margin", "bookingOwnerName"]
+
+    def get_bookingOwnerName(self, obj: QuoteLine) -> str:
+        return user_display_name(obj.booking_owner)
 
 
-class PaymentRecordSerializer(serializers.ModelSerializer):
+class PaymentRecordSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"leadId": "owner", "quoteId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
@@ -436,7 +677,9 @@ class PaymentRecordSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class CommunicationRecordSerializer(serializers.ModelSerializer):
+class CommunicationRecordSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"leadId": "owner", "quoteId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
@@ -487,7 +730,9 @@ class CommunicationRecordSerializer(serializers.ModelSerializer):
         return full_name or obj.sent_by.username
 
 
-class QuoteApprovalSerializer(serializers.ModelSerializer):
+class QuoteApprovalSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"quoteId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     quoteId = serializers.PrimaryKeyRelatedField(source="quote", queryset=Quote.objects.all())
@@ -511,7 +756,10 @@ class QuoteApprovalSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "createdAt", "updatedAt"]
 
 
-class QuoteSerializer(serializers.ModelSerializer):
+class QuoteSerializer(ScopedForeignKeySerializerMixin, FinancialFieldsMixin, serializers.ModelSerializer):
+    financial_fields = ("subtotalCost", "margin")
+    scoped_fk_fields = {"leadId": "owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
@@ -551,7 +799,9 @@ class QuoteSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "createdAt", "updatedAt", "subtotalCost", "subtotalSell", "margin", "leadName", "lines", "approvals"]
 
 
-class AccommodationBlockSerializer(serializers.ModelSerializer):
+class AccommodationBlockSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"stopId": "itinerary__lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     stopId = serializers.PrimaryKeyRelatedField(source="stop", queryset=ItineraryStop.objects.all())
@@ -607,7 +857,9 @@ class AccommodationBlockSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class ExperienceBlockSerializer(serializers.ModelSerializer):
+class ExperienceBlockSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"stopId": "itinerary__lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     stopId = serializers.PrimaryKeyRelatedField(source="stop", queryset=ItineraryStop.objects.all())
@@ -630,7 +882,9 @@ class ExperienceBlockSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "createdAt", "updatedAt"]
 
 
-class ItineraryStopSerializer(serializers.ModelSerializer):
+class ItineraryStopSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"itineraryId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     itineraryId = serializers.PrimaryKeyRelatedField(source="itinerary", queryset=TripItinerary.objects.all())
@@ -691,7 +945,9 @@ class ItineraryStopSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class TransportSegmentSerializer(serializers.ModelSerializer):
+class TransportSegmentSerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"itineraryId": "lead__owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     itineraryId = serializers.PrimaryKeyRelatedField(source="itinerary", queryset=TripItinerary.objects.all())
@@ -747,7 +1003,9 @@ class TransportSegmentSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class TripItinerarySerializer(serializers.ModelSerializer):
+class TripItinerarySerializer(ScopedForeignKeySerializerMixin, serializers.ModelSerializer):
+    scoped_fk_fields = {"leadId": "owner"}
+
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     leadId = serializers.PrimaryKeyRelatedField(source="lead", queryset=Lead.objects.all())
@@ -841,16 +1099,24 @@ class LoginSerializer(serializers.Serializer):
 
 class UserSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
+    roles = serializers.SerializerMethodField()
+    capabilities = serializers.SerializerMethodField()
     canAccessCrm = serializers.SerializerMethodField()
     canManageClients = serializers.SerializerMethodField()
     canManageUsers = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "first_name", "last_name", "is_staff", "role", "canAccessCrm", "canManageClients", "canManageUsers"]
+        fields = ["id", "username", "email", "first_name", "last_name", "is_staff", "role", "roles", "capabilities", "canAccessCrm", "canManageClients", "canManageUsers"]
 
     def get_role(self, obj: User) -> str:
         return get_user_role(obj)
+
+    def get_roles(self, obj: User) -> list[str]:
+        return sorted(get_user_responsibilities(obj))
+
+    def get_capabilities(self, obj: User) -> list[str]:
+        return get_user_capabilities(obj)
 
     def get_canAccessCrm(self, obj: User) -> bool:
         return can_access_crm(obj)
@@ -873,7 +1139,7 @@ class UserManagementSerializer(UserSerializer):
         read_only_fields = ["id", "groups", "displayName", "date_joined", "last_login", "canAccessCrm", "canManageClients", "canManageUsers"]
 
     def validate_role(self, value: str) -> str:
-        if value not in {"admin", "manager", "agent", "viewer"}:
+        if value not in {"admin", "manager", "team_manager", "agent", "consultant", "operations", "finance", "viewer", "auditor"}:
             raise serializers.ValidationError("Choose a valid CRM role.")
         return value
 

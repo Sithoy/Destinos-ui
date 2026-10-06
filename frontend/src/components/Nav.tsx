@@ -50,7 +50,7 @@ export function Nav({
     return <header className="sticky top-0 z-50 border-b border-white/10 bg-[#07111d] text-white">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:bg-white focus:p-3 focus:text-slate-950">{t('landing.skip')}</a>
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-8">
-        <Link to="/" aria-label="Destinos pelo Mundo" className="min-w-0"><BrandLockup src={pageMeta[page].logo} alt={t(page === 'luxury' ? 'brand.luxuryAlt' : 'brand.corporateAlt')} compact gapClass="gap-3" logoSize="h-9 sm:h-10" logoArtScale="scale-[1.35]" taglineClassName="hidden" /></Link>
+        <Link to="/" aria-label="Destinos pelo Mundo" className="min-w-0"><BrandLockup src={pageMeta[page].logo} alt={t(page === 'luxury' ? 'brand.luxuryAlt' : 'brand.corporateAlt')} compact gapClass="gap-3" logoSize="h-11 sm:h-12" logoArtScale="scale-[1.55]" /></Link>
         <div className="flex items-center gap-6"><nav aria-label={t('landing.navLabel')} className="hidden items-center gap-6 text-sm md:flex"><Link to="/">{t('nav.backHome')}</Link><Link to="/prestige/luxury" aria-current={page === 'luxury' ? 'page' : undefined} className={page === 'luxury' ? 'text-[#ecd792]' : ''}>Luxury</Link><Link to="/prestige/corporate" aria-current={page === 'corporate' ? 'page' : undefined} className={page === 'corporate' ? 'text-[#ecd792]' : ''}>Corporate</Link></nav><LanguageToggle compact /></div>
       </div>
       <nav aria-label={t('landing.navLabel')} className="flex justify-center gap-8 border-t border-white/10 px-4 text-sm md:hidden"><Link to="/" className="py-3">{t('nav.backHome')}</Link><Link to="/prestige/luxury" className="py-3" aria-current={page === 'luxury' ? 'page' : undefined}>Luxury</Link><Link to="/prestige/corporate" className="py-3" aria-current={page === 'corporate' ? 'page' : undefined}>Corporate</Link></nav>
@@ -63,7 +63,7 @@ export function Nav({
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-3 focus:text-slate-950">{t('landing.skip')}</a>
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
           <Link to="/" aria-label="Destinos pelo Mundo" className="min-w-0">
-            <BrandLockup theme="dark" src={pageMeta.home.logo} alt={t('brand.classicAlt')} compact gapClass="gap-3" logoSize="h-9 sm:h-10" logoArtScale="scale-[1.45]" taglineClassName="hidden" />
+            <BrandLockup theme="dark" src={pageMeta.home.logo} alt={t('brand.classicAlt')} compact gapClass="gap-3" logoSize="h-11 sm:h-12" logoArtScale="scale-[1.55]" />
           </Link>
           <nav aria-label={t('landing.navLabel')} className="hidden items-center gap-7 text-sm text-[#365766] lg:flex">
             <a href="/#services" className="py-2 hover:text-[#a65300]">{t('landing.leisure')}</a>
@@ -93,10 +93,9 @@ export function Nav({
             src={pageMeta[page].logo}
             alt={t('brand.footerAlt')}
             compact
-            gapClass={isPrestige ? 'gap-3 sm:gap-5 md:gap-8' : 'gap-3 sm:gap-5 md:gap-7'}
-            logoSize={isPrestige ? 'h-9 sm:h-10 md:h-12' : 'h-9 sm:h-11 md:h-16'}
-            logoArtScale={isPrestige ? 'scale-[1.35] sm:scale-[1.45]' : 'scale-[1.45] sm:scale-[1.55] md:scale-[1.65]'}
-            taglineClassName="hidden md:block"
+            gapClass="gap-2.5"
+            logoSize="h-11 sm:h-14"
+            logoArtScale="scale-[1.55]"
           />
         </button>
 
